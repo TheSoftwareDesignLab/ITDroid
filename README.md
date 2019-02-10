@@ -31,7 +31,7 @@ Languagues can be selected or deselected editing the ``settings.properties`` fil
 ### Example
 ```
 cd ITDroid
-java -jar target/MutAPK-1.0.0.jar foo.apk or.foo.app ./extra/ ./ 2 ./results/
+java -jar target/ITDroid-1.0.0.jar foo.apk or.foo.app ./extra/ ./ 2 ./results/
 ```
 
 ### Output
