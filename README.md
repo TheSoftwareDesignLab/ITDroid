@@ -1,51 +1,38 @@
-# MutAPK
-MutAPK is a mutation analysis framework for Android applications over APK Files.
-MutAPK implements 35 mutation operators specifically for Android apps, covering the following categories:
-- Activity/Intents
-- Android Programming
-- Back-End Services
-- Connectivity
-- Data
-- Database
-- General Programming
-- GUI
-- I/O
-- Non-Functional Requirements
+# ITDroid
 
-The complete list of mutation operators and their specification is available at the [MutAPK website](http://thesoftwaredesignlab.github.io/MutAPK/).
-Given an Android App APK, MutAPK first extracts the Potential Fault Profile (PFP) and then automatically seeds mutants generating mutated copies of the App.
+ITDroid is a testing framework for Android applications oriented to Internationalization.
 
-# Compile
+
+## Compile
 Download and compile MutAPK with the following commands:
 ```
-git clone https://github.com/TheSoftwareDesignLab/MutAPK.git
-cd MutAPK
+git clone https://github.com/TheSoftwareDesignLab/ITDroid.git
+cd ITDroid
 mvn clean
 mvn package
 ```
-The generated runnable jar can be found in: ``MutAPK/target/MutAPK-0.0.1.jar``
+The generated runnable jar can be found in: ``ITDroid/target/ITDroid-0.0.1.jar``
 
-# Usage
-To run MutAPK use the following command, specifying the required arguments:
+## Usage
+To run ITDroid use the following command, specifying the required arguments:
 ```
-java -jar MutAPK-0.0.1.jar <APKPath> <AppPackage> <Output> <ExtraComponentFolder> <operatorsDir> <multithread>
+java -jar ITDroid-0.0.1.jar <APKPath> <AppPackage> <ExtraComponentFolder> <settingsDir> <alpha> <Output>
 ```
 ### Arguments
 Provide the following list of required arguments when running MutAPK:
-1. ``APK path``: relative path of the apk to mutate;
+1. ``APKPath``: relative path of the apk to mutate;
 2. ``AppPackage``: App main package name;
-3. ``Output``: relative path of the folder where the mutantns will be created;
-4. ``ExtraCompFolder``:  relative path of the extra component folder (``MutAPK/extra/``);
-5. ``operatorsDir``: relative path to the folder containing the operators.properties.
-6. ``multithread`` : true or false, specifying whether the mutant generation should be multithreaded or not.
+3. ``ExtraCompFolder``:  relative path of the extra component folder (``ITDroid/extra/``);
+4. ``settingsDir``: relative path to the folder containing the settings.properties.
+5. ``alpha``: Amount of untranslatable strings
+6. ``Output``: relative path of the folder where the test results will be stored;
 
-Mutation operators can be selected or deselected editing the ``operators.properties`` file. To deselect an operator, either comment (#) or delete the corresponding line.
+Languagues can be selected or deselected editing the ``settings.properties`` file. To deselect a language, either comment (#) or delete the corresponding line.
 ### Example
 ```
-cd MutAPK
-java -jar target/MutAPK-1.0.0.jar foo.apk or.foo.app mutants/ extra/ . true
+cd ITDroid
+java -jar target/MutAPK-1.0.0.jar foo.apk or.foo.app ./extra/ ./ 2 ./results/
 ```
 
 ### Output
-The output directory will contain a log file that summarise the mutant generation process and a folder for each generated mutant. 
-The mutants folders are named with the corresponding mutant ID (i.e., numerical ID). The log file contains information about the mutation process as well as the type and location of each mutant generated.
+The output directory will contain the results from the excuted tests and the intermediate steps
