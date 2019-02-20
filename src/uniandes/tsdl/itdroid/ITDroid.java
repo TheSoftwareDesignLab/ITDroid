@@ -95,8 +95,6 @@ public class ITDroid {
 		}
 		System.out.println("");
 
-		
-
 	}
 
 	private static String[] buildStringPaths(String[] lngs) throws UnsupportedEncodingException {
