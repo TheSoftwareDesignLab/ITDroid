@@ -15,8 +15,8 @@ public class Translator {
         this.outputLang = pOutLang;
     }
 
-    public void translate(TranslationInterface translationStrategy){
-        translationStrategy.translate(this.path, this.outputLang, this.outputLang);
+    public void translate(TranslationInterface translationStrategy) throws Exception{
+        translationStrategy.translate(this.path, this.inputLang, this.outputLang);
     }
 
     //Setters and getters

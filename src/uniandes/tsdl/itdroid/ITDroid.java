@@ -7,10 +7,12 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
+import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
 	
@@ -94,6 +96,9 @@ public class ITDroid {
 			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
 		System.out.println("");
+
+		Translator t = new Translator("./temp/res/values/strings.xml", "en", "es");
+		t.translate(new IBMTranslator());
 
 	}
 
