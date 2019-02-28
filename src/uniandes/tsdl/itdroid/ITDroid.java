@@ -98,7 +98,7 @@ public class ITDroid {
 		System.out.println("");
 
 		Translator t = new Translator("./temp/res/values/strings.xml", "en", "es");
-		t.translate(new IBMTranslator());
+		t.translate(new IBMTranslator(langsDir));
 
 	}
 

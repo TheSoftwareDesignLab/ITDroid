@@ -5,18 +5,16 @@ import org.jdom2.Element;
 import org.jdom2.input.SAXBuilder;
 
 import java.io.File;
-import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.List;
 
 public class NotTranslatableStringsDictionary {
     private Hashtable<String, String> diccionario;
-    private static String BASE_STRINGS_PATH = "./docs/strings.xml";
 
-    public NotTranslatableStringsDictionary() throws Exception{
+    public NotTranslatableStringsDictionary(String pDirectory) throws Exception{
         diccionario = new Hashtable<>(70);
         SAXBuilder builder = new SAXBuilder();
-        File xmlFile = new File(BASE_STRINGS_PATH);
+        File xmlFile = new File(pDirectory + "/strings.xml");
         Document document = builder.build(xmlFile);
 
         Element root = document.getRootElement();
