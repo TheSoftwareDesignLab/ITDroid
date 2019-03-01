@@ -105,7 +105,7 @@ public class ITDroid {
 			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
 			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
 			Translator t = new Translator(stringFiles[0], defLang, tLang);
-			t.translate(new IBMTranslator());
+			t.translate(new IBMTranslator(langsDir));
 			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
 
