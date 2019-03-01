@@ -31,19 +31,19 @@ public class APKToolWrapper {
 		// System.out.println(decodedPath);
 	}
 
-	public static boolean buildAPK(String path, String extraPath, String appName, int mutantIndex) throws IOException, InterruptedException{
+	public static boolean buildAPK(String extraPath, String appName, String outputPath) throws IOException, InterruptedException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
-		Process ps = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"apktool.jar").toAbsolutePath().toString(),"b",Paths.get(decodedPath,path,"src").toAbsolutePath().toString(),"-o",Paths.get(decodedPath,path,appName).toAbsolutePath().toString(),"-f"});
-		System.out.println("Building mutant "+mutantIndex+"...");
+		Process ps = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"apktool.jar").toAbsolutePath().toString(),"b",Paths.get(decodedPath,"temp").toAbsolutePath().toString(),"-o",Paths.get(decodedPath,outputPath,appName+".apk").toAbsolutePath().toString(),"-f"});
+		System.out.println("Building mutant");
 		ps.waitFor();
-		Process pss = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"uber-apk-signer.jar").toAbsolutePath().toString(),"-a",Paths.get(decodedPath,path).toAbsolutePath().toString(),"-o",Paths.get(decodedPath,path).toAbsolutePath().toString()});
-		System.out.println("Signing mutant "+mutantIndex+"...");
+		Process pss = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"uber-apk-signer.jar").toAbsolutePath().toString(),"-a",Paths.get(decodedPath,outputPath,appName+".apk").toAbsolutePath().toString(),"-o",Paths.get(decodedPath,outputPath).toAbsolutePath().toString()});
+		System.out.println("Signing mutant");
 		pss.waitFor();
-		if(Files.exists(Paths.get(decodedPath,path,appName).toAbsolutePath())) {
-			System.out.println("SUCCESS: The "+mutantIndex+" mutant APK has been generated.");
+		if(Files.exists(Paths.get(decodedPath,outputPath,appName+"-aligned-debugSigned.apk").toAbsolutePath())) {
+			System.out.println("SUCCESS: The mutated APK has been generated.");
 			return true;
 		} else {
-			System.out.println("ERROR: The "+mutantIndex+" mutant APK has not been generated.");
+			System.out.println("ERROR: The mutated APK has not been generated.");
 			return false;
 		}
 		//				InputStream es = ps.getErrorStream();

@@ -15,7 +15,7 @@ import uniandes.tsdl.itdroid.helper.XMLComparator;
 import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
-	
+
 	static HashMap<String, String> pathsMap = new HashMap<>();
 
 	public static void main(String[] args) {
@@ -47,7 +47,7 @@ public class ITDroid {
 
 			return;
 		}
-		
+
 		//Getting arguments
 		String apkName;
 		String apkPath = args[0];
@@ -55,10 +55,10 @@ public class ITDroid {
 		String extraPath = args[2];
 		String langsDir = args[3];
 		int alpha = Integer.parseInt(args[4]);
-		String output = args[5];
-		
+		String outputPath = args[5];
 
-		
+
+
 		// Fix params based in OS
 		String os = System.getProperty("os.name").toLowerCase();
 		if (os.indexOf("win") >= 0) {
@@ -72,48 +72,92 @@ public class ITDroid {
 		Helper.setPackageName(appName);
 		// Decode the APK
 		APKToolWrapper.openAPK(apkPath, extraPath);
-		
+
 		//Read selected operators
 		LanguageBundle lngBundle = new LanguageBundle(langsDir);
 		System.out.println(lngBundle.printSelectedLanguages());
-		
+
 		String[] lngs = lngBundle.getSelectedLanguagesAsArray();
-		
+
 		String[] stringFiles = buildStringPaths(lngs);
-		
+
 		XMLComparator xmlc = new XMLComparator(stringFiles, alpha);
-		
+
+		//Notify user about translated and not-translated languages
+
 		ArrayList<String> translatedFiles = xmlc.getUsefull();
 		System.out.println("Your application is translated to the following languages:");
 		for (int i = 0; i < translatedFiles.size(); i++) {
 			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(translatedFiles.get(i))));
 		}
 		System.out.println("");
-		
+
 		ArrayList<String> notTrnsltdFiles = xmlc.getUseLess();
 		System.out.println("Your application is not translated to the following languages:");
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
 			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
-		System.out.println("");
 
-		Translator t = new Translator("./temp/res/values/strings.xml", "en", "es");
-		t.translate(new IBMTranslator(langsDir));
+		// Translate the original file into missing languages
+		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
+			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
+			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));	
+			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
+			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
+			Translator t = new Translator(stringFiles[0], defLang, tLang);
+			t.translate(new IBMTranslator());
+			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
+		}
+
+		// builds the APK withh all the languages
+		APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+
+		// Generate the graph for all the translated languages
+		//		for (int i = 0; i < translatedFiles.size(); i++) {
+		for (int i = 0; i < 1; i++) {
+			//callRIP
+			//@param language
+			//@response outputPath ---   <outputPath>/translatedResults/<language>
+
+
+			//Builds the graph for given language
+			//@param languageFolderPath
+
+
+		}
+
+		// Generate the graph for all the nottranslated languages
+		//callRIP
+		//@param language
+		//@response outputPath ---   <outputPath>/notTranslatedResults/<language>
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	}
 
 	private static String[] buildStringPaths(String[] lngs) throws UnsupportedEncodingException {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
-		
+
 		String[] paths = new String[lngs.length+1];
-		
+
 		Path base = Paths.get(decodedPath,"temp","res");
 		paths[0] = base.resolve("values").resolve("strings.xml").toAbsolutePath().toString();
 		for (int i = 1; i < paths.length; i++) {
 			paths[i]=base.resolve("values-"+lngs[i-1]).resolve("strings.xml").toAbsolutePath().toString();
 			pathsMap.put(base.resolve("values-"+lngs[i-1]).resolve("strings.xml").toAbsolutePath().toString(), lngs[i-1]);
 		}
-		
+
 		return paths;
 	}
 
