@@ -5,6 +5,7 @@ import com.ibm.watson.developer_cloud.language_translator.v3.model.TranslateOpti
 import com.ibm.watson.developer_cloud.language_translator.v3.model.Translation;
 import com.ibm.watson.developer_cloud.language_translator.v3.model.TranslationResult;
 import com.ibm.watson.developer_cloud.service.security.IamOptions;
+import io.github.cdimascio.dotenv.Dotenv;
 import org.jdom2.Document;
 import org.jdom2.Element;
 import org.jdom2.input.SAXBuilder;
@@ -14,7 +15,8 @@ import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
 import uniandes.tsdl.itdroid.translator.TranslationInterface;
 
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +36,7 @@ public class IBMTranslator implements TranslationInterface {
     }
     @Override
     public void translate(String xmlPath, String inputLang, String outputLang) throws Exception {
+        Dotenv dotenv = Dotenv.load();
         //Initialize the dictionary to exclude automatically translated strings.
         NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(propertiesDirectory);
         //Read the default strings.xml file
@@ -59,22 +62,24 @@ public class IBMTranslator implements TranslationInterface {
         //Extract the strings that should be translated
         Element e;
         String attributeValue;
+        String text;
         for(int i = 0; i < strings.size(); i++){
             e = strings.get(i);
             attributeValue = e.getAttributeValue("name");
+            text = e.getText();
             //If the string has not been translated, add it to the list
-            if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue))){
-                values.add(e.getText());
+            if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue) && !isOnlyNumbersAndSpecs(text))){
+                values.add(text);
                 names.add(attributeValue);
             }
         }
         //Call the IBM API to translate strings.
-        IamOptions options = new IamOptions.Builder().apiKey("taeNhB6MVcU4pn6TMPj7bCiwGSGL_w4hPCmwuwX24r3u").build();
+        IamOptions options = new IamOptions.Builder().apiKey(dotenv.get("API_KEY")).build();
         LanguageTranslator languageTranslator = new LanguageTranslator(
                 "2018-05-01",
                 options);
         System.out.println("model: " + inputLang + "-" + outputLang);
-        languageTranslator.setEndPoint("https://gateway.watsonplatform.net/language-translator/api");
+        languageTranslator.setEndPoint(dotenv.get("GATEWAY"));
         TranslateOptions translateOptions = new TranslateOptions.Builder().text(values).modelId(inputLang + '-' + outputLang).build();
         //Get the translation results.
         TranslationResult result = languageTranslator.translate(translateOptions)
@@ -91,6 +96,15 @@ public class IBMTranslator implements TranslationInterface {
         //Save changes.
         XMLOutputter output = new XMLOutputter();
         output.setFormat(Format.getPrettyFormat());
-        output.output(outputDocument, new FileWriter(xmlOutputFile));
+        output.output(outputDocument, new OutputStreamWriter(new FileOutputStream(xmlOutputFile), "UTF8"));
+    }
+
+    /**
+     * Checks if a string only contains numbers and special characters
+     * @param string
+     * @return
+     */
+    public boolean isOnlyNumbersAndSpecs(String string){
+        return string.matches("[\\d-/@#$%^&_+=():sd\\s]+");
     }
 }
