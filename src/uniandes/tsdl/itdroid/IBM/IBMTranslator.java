@@ -49,6 +49,10 @@ public class IBMTranslator implements TranslationInterface {
         // Read the language specific strings.xml file
         SAXBuilder builder2 = new SAXBuilder();
         File xmlOutputFile = new File(OUTPUT_FOLDER + "-" + outputLang + "/strings.xml");
+        // Create the output directory if it doesn't exists.
+        if(! xmlOutputFile.exists()){
+            xmlOutputFile.mkdir();
+        }
         Document outputDocument = builder2.build(xmlOutputFile);
         Element outputRoot = outputDocument.getRootElement();
         //Get the strings that were previously translated by the developer.
