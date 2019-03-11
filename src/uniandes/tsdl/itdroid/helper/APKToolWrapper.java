@@ -31,7 +31,7 @@ public class APKToolWrapper {
 		// System.out.println(decodedPath);
 	}
 
-	public static boolean buildAPK(String extraPath, String appName, String outputPath) throws IOException, InterruptedException{
+	public static String buildAPK(String extraPath, String appName, String outputPath) throws IOException, InterruptedException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		Process ps = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"apktool.jar").toAbsolutePath().toString(),"b",Paths.get(decodedPath,"temp").toAbsolutePath().toString(),"-o",Paths.get(decodedPath,outputPath,appName+".apk").toAbsolutePath().toString(),"-f"});
 		System.out.println("Building mutant");
@@ -41,10 +41,10 @@ public class APKToolWrapper {
 		pss.waitFor();
 		if(Files.exists(Paths.get(decodedPath,outputPath,appName+"-aligned-debugSigned.apk").toAbsolutePath())) {
 			System.out.println("SUCCESS: The mutated APK has been generated.");
-			return true;
+			return Paths.get(decodedPath,outputPath,appName+"-aligned-debugSigned.apk").toAbsolutePath().toString();
 		} else {
 			System.out.println("ERROR: The mutated APK has not been generated.");
-			return false;
+			return "";
 		}
 		//				InputStream es = ps.getErrorStream();
 		//				byte e[] = new byte[es.available()];

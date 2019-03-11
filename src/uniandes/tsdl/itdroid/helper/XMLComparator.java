@@ -44,17 +44,22 @@ public class XMLComparator {
 					
 					file = xmls[i];
 					inputFile = new File(file);
-					//doc = dBuilder.parse(inputFile);
-					doc = dBuilder.parse(inputFile);
-					doc.getDocumentElement().normalize();
-					xPath = XPathFactory.newInstance().newXPath();
+					if(inputFile.exists()) {
+						//doc = dBuilder.parse(inputFile);
+						doc = dBuilder.parse(inputFile);
+						doc.getDocumentElement().normalize();
+						xPath = XPathFactory.newInstance().newXPath();
+						
+						NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
+					            doc, XPathConstants.NODESET);
+						numNodes = (nodeList.getLength()-numLinesUseless);
+						if(numNodes >= (usefulValues - alpha) && (usefulValues - alpha) >= 0) {
+							useful.add(file);
+						} else {useless.add(file);}
+					} else {
+						useless.add(file);
+					}
 					
-					NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
-				            doc, XPathConstants.NODESET);
-					numNodes = (nodeList.getLength()-numLinesUseless);
-					if(numNodes >= (usefulValues - alpha) && (usefulValues - alpha) >= 0) {
-						useful.add(file);
-					}else {useless.add(file);}
 					
 				}
 			}

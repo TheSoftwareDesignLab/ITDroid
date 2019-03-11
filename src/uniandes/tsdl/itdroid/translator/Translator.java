@@ -16,6 +16,7 @@ public class Translator {
     }
 
     public void translate(TranslationInterface translationStrategy) throws Exception{
+    	System.out.println(this.path+" - "+this.inputLang+" - "+this.outputLang);
         translationStrategy.translate(this.path, this.inputLang, this.outputLang);
     }
 

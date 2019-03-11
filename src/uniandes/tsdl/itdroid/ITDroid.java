@@ -9,8 +9,10 @@ import java.util.HashMap;
 
 import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
+import uniandes.tsdl.itdroid.helper.EmulatorHelper;
 import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
+import uniandes.tsdl.itdroid.helper.RIPHelper;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
 import uniandes.tsdl.itdroid.translator.Translator;
 
@@ -99,25 +101,36 @@ public class ITDroid {
 		}
 
 		// Translate the original file into missing languages
-		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
-			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
-			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));	
-			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
-			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
-			Translator t = new Translator(stringFiles[0], defLang, tLang);
-			t.translate(new IBMTranslator(langsDir));
-			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
-		}
+		System.out.println("We are going to translate your strings...");
+//		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
+//			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
+//			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));	
+//			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
+//			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
+//			Translator t = new Translator(stringFiles[0], defLang, tLang);
+//			t.translate(new IBMTranslator(langsDir));
+//			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
+//		}
 
-		// builds the APK withh all the languages
-		APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+		// builds the APK with all the languages
+		String newApkPath = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+
+		if(newApkPath.equals("")) {
+			return ;
+		}
 
 		// Generate the graph for all the translated languages
 		//		for (int i = 0; i < translatedFiles.size(); i++) {
-		for (int i = 0; i < 1; i++) {
+		for (int i = 0; i < translatedFiles.size(); i++) {
+
+			String lang = pathsMap.get(translatedFiles.get(i));
+			System.out.println("Processing "+ lang +" app version");
+			EmulatorHelper.changeLanguage(lang);
 			//callRIP
 			//@param language
 			//@response outputPath ---   <outputPath>/translatedResults/<language>
+			RIPHelper.runRIP(lang, outputPath, true, extraPath, newApkPath);
+
 
 
 			//Builds the graph for given language
@@ -130,19 +143,20 @@ public class ITDroid {
 		//callRIP
 		//@param language
 		//@response outputPath ---   <outputPath>/notTranslatedResults/<language>
+		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
 
+			String lang = pathsMap.get(notTrnsltdFiles.get(i));
+			System.out.println("Processing "+ lang +" app version");
+			EmulatorHelper.changeLanguage(lang);
+			//callRIP
+			//@param language
+			//@response outputPath ---   <outputPath>/translatedResults/<language>
+			RIPHelper.runRIP(lang, outputPath, true, extraPath, newApkPath);
 
+			//Builds the graph for given language
+			//@param languageFolderPath
 
-
-
-
-
-
-
-
-
-
-
+		}
 
 	}
 

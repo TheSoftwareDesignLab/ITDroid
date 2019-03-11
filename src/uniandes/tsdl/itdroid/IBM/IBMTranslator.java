@@ -1,26 +1,30 @@
 package uniandes.tsdl.itdroid.IBM;
 
-import com.ibm.watson.developer_cloud.language_translator.v3.LanguageTranslator;
-import com.ibm.watson.developer_cloud.language_translator.v3.model.TranslateOptions;
-import com.ibm.watson.developer_cloud.language_translator.v3.model.Translation;
-import com.ibm.watson.developer_cloud.language_translator.v3.model.TranslationResult;
-import com.ibm.watson.developer_cloud.service.security.IamOptions;
-import io.github.cdimascio.dotenv.Dotenv;
-import org.jdom2.Document;
-import org.jdom2.Element;
-import org.jdom2.input.SAXBuilder;
-import org.jdom2.output.Format;
-import org.jdom2.output.XMLOutputter;
-import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
-import uniandes.tsdl.itdroid.translator.TranslationInterface;
-
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import org.jdom2.Document;
+import org.jdom2.Element;
+import org.jdom2.input.SAXBuilder;
+import org.jdom2.output.Format;
+import org.jdom2.output.XMLOutputter;
+
+import com.ibm.watson.developer_cloud.language_translator.v3.LanguageTranslator;
+import com.ibm.watson.developer_cloud.language_translator.v3.model.TranslateOptions;
+import com.ibm.watson.developer_cloud.language_translator.v3.model.Translation;
+import com.ibm.watson.developer_cloud.language_translator.v3.model.TranslationResult;
+import com.ibm.watson.developer_cloud.service.security.IamOptions;
+
+import io.github.cdimascio.dotenv.Dotenv;
+import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
+import uniandes.tsdl.itdroid.translator.TranslationInterface;
 
 public class IBMTranslator implements TranslationInterface {
 
@@ -37,6 +41,7 @@ public class IBMTranslator implements TranslationInterface {
     @Override
     public void translate(String xmlPath, String inputLang, String outputLang) throws Exception {
         Dotenv dotenv = Dotenv.load();
+        System.out.println(dotenv.get("GATEWAY"));
         //Initialize the dictionary to exclude automatically translated strings.
         NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(propertiesDirectory);
         //Read the default strings.xml file
@@ -48,10 +53,20 @@ public class IBMTranslator implements TranslationInterface {
         Set<String> translatedStrings = new HashSet<>();
         // Read the language specific strings.xml file
         SAXBuilder builder2 = new SAXBuilder();
+        File xmlOutputFolder = new File(OUTPUT_FOLDER + "-" + outputLang + "/");
         File xmlOutputFile = new File(OUTPUT_FOLDER + "-" + outputLang + "/strings.xml");
         // Create the output directory if it doesn't exists.
-        if(! xmlOutputFile.exists()){
-            xmlOutputFile.mkdir();
+        if(!xmlOutputFolder.exists()){
+        	xmlOutputFolder.mkdirs();
+            xmlOutputFile.createNewFile();
+            BufferedWriter writer = new BufferedWriter(new FileWriter(xmlOutputFile));
+            writer.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+            writer.newLine();
+            writer.write("<resources>");
+            writer.newLine();
+            writer.write("</resources>");
+            writer.newLine();
+            writer.close();
         }
         Document outputDocument = builder2.build(xmlOutputFile);
         Element outputRoot = outputDocument.getRootElement();
