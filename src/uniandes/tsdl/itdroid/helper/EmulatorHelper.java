@@ -6,7 +6,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Paths;
 
 public class EmulatorHelper {
-	
+
 	public static boolean changeLanguage(String language, String extraPath) throws IOException, InterruptedException{
 		// Change emulator language
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"adb","shell","setprop persist.sys.locale "+language});
@@ -18,18 +18,31 @@ public class EmulatorHelper {
 		ps = pB.start();
 		System.out.println("Emulator is being restarted");
 		// Running command that waits emulator for idle state
-//		System.out.println(Paths.get(Helper.getInstance().getCurrentDirectory(),extraPath,"./whileCommand").toAbsolutePath().toString());
-//		ProcessBuilder pBB = new ProcessBuilder(new String[]{Paths.get(Helper.getInstance().getCurrentDirectory(),extraPath,"./whileCommand").toAbsolutePath().toString()});
-//		Process pss = pBB.start();
-//		BufferedReader reader = new BufferedReader(new InputStreamReader(pss.getInputStream()));
-//		String line;
-//		while ((line = reader.readLine())!=null) {
-//			System.out.println(line);
-//		}
-//		System.out.println("waiting for idle");
-//		pss.waitFor();
+		//		System.out.println(Paths.get(Helper.getInstance().getCurrentDirectory(),extraPath,"./whileCommand").toAbsolutePath().toString());
 		ps.waitFor();
-		Thread.sleep(15000);
+		Thread.sleep(5000);
+		ProcessBuilder pBB = new ProcessBuilder(new String[]{"adb","shell","getprop init.svc.bootanim"});
+		Process pss;
+		boolean termino = false;
+		System.out.println("waiting for idle");
+		while (!termino) {
+			pss = pBB.start();
+			BufferedReader reader = new BufferedReader(new InputStreamReader(pss.getInputStream()));
+			String line;
+			String resp = "";
+			while ((line = reader.readLine())!=null) {
+				System.out.println(line);
+				resp += line;
+			}
+			pss.waitFor();
+			System.out.println(resp);
+			if(resp.contains("stopped")) {
+				termino = true;
+			} else {
+				Thread.sleep(2000);
+			}
+		}
+//		Thread.sleep(15000);
 		return true;
 	}
 

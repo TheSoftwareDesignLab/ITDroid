@@ -1,7 +1,9 @@
 package uniandes.tsdl.itdroid.helper;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Paths;
 
 public class RIPHelper {
@@ -16,11 +18,11 @@ public class RIPHelper {
 		tempFolder.mkdirs();
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"RIPi18n.jar").toAbsolutePath().toString(),apkLocation,tempFolder.getCanonicalPath(),"false"});
 		Process ps = pB.start();
-//		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
-//		String line;
-//		while ((line = reader.readLine())!=null) {
-//			System.out.println(line);
-//		}
+		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+		String line;
+		while ((line = reader.readLine())!=null) {
+			System.out.println(line);
+		}
 		System.out.println("Going through your app");
 		ps.waitFor();
 		Thread.sleep(5000);
