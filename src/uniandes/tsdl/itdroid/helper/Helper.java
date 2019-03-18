@@ -62,7 +62,6 @@ public class Helper {
 	public String getCurrentDirectory() throws UnsupportedEncodingException {
 
 		String dir = System.getProperty("user.dir");
-
 		return dir;
 
 	}

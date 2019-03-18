@@ -118,18 +118,23 @@ public class ITDroid {
 		if(newApkPath.equals("")) {
 			return ;
 		}
+		
+		EmulatorHelper.changeLanguage(lngBundle.getBundle().getObject("defaultLng").toString(), extraPath);
+		RIPHelper.runRIPI18N(lngBundle.getBundle().getObject("defaultLng").toString(), outputPath, true, extraPath, newApkPath);
+		
 
+		System.out.println("Inspecting translated versions");
 		// Generate the graph for all the translated languages
 		//		for (int i = 0; i < translatedFiles.size(); i++) {
 		for (int i = 0; i < translatedFiles.size(); i++) {
 
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing "+ lang +" app version");
-			EmulatorHelper.changeLanguage(lang);
+			EmulatorHelper.changeLanguage(lang, extraPath);
 			//callRIP
 			//@param language
 			//@response outputPath ---   <outputPath>/translatedResults/<language>
-			RIPHelper.runRIP(lang, outputPath, true, extraPath, newApkPath);
+			RIPHelper.runRIPI18N(lang, outputPath, true, extraPath, newApkPath);
 
 
 
@@ -139,6 +144,7 @@ public class ITDroid {
 
 		}
 
+		System.out.println("Inspecting non translated versions");
 		// Generate the graph for all the nottranslated languages
 		//callRIP
 		//@param language
@@ -147,11 +153,11 @@ public class ITDroid {
 
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing "+ lang +" app version");
-			EmulatorHelper.changeLanguage(lang);
+			EmulatorHelper.changeLanguage(lang, extraPath);
 			//callRIP
 			//@param language
 			//@response outputPath ---   <outputPath>/translatedResults/<language>
-			RIPHelper.runRIP(lang, outputPath, true, extraPath, newApkPath);
+			RIPHelper.runRIPI18N(lang, outputPath, false, extraPath, newApkPath);
 
 			//Builds the graph for given language
 			//@param languageFolderPath
