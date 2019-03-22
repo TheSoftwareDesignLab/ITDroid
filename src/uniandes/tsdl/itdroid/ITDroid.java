@@ -1,7 +1,6 @@
 package uniandes.tsdl.itdroid;
 
-import java.io.File;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -37,7 +36,7 @@ public class ITDroid {
 
 	public static void runITDroid(String[] args) throws Exception {
 		//Usage Error
-		if (args.length != 6) {
+		if (args.length != 7) {
 			System.out.println("******* ERROR: INCORRECT USAGE *******");
 			System.out.println("Argument List:");
 			System.out.println("1. APK path");
@@ -46,6 +45,7 @@ public class ITDroid {
 			System.out.println("4. Directory containing the settings.properties file");
 			System.out.println("5. Amount of untranslatable strings");
 			System.out.println("6. Path where test output will be stored");
+			System.out.println("7. Name of the emulator in which the app is going to be executed");
 
 			return;
 		}
@@ -58,8 +58,15 @@ public class ITDroid {
 		String langsDir = args[3];
 		int alpha = Integer.parseInt(args[4]);
 		String outputPath = args[5];
+		String emulatorName = args[6];
 
+		//Launch the emulator
 
+		String androidHome = System.getenv("ANDROID_HOME");
+		boolean successfullLaunch = launchEmulator(emulatorName, androidHome);
+		if (!successfullLaunch){
+			return;
+		}
 
 		// Fix params based in OS
 		String os = System.getProperty("os.name").toLowerCase();
@@ -179,6 +186,78 @@ public class ITDroid {
 		}
 
 		return paths;
+	}
+
+	public static boolean launchEmulator(String emulatorName, String pAndroidHome) throws IOException {
+		//Get system properties
+		String os = System.getProperty("os.name").toLowerCase();
+		String avdRoute = pAndroidHome + "/emulator";
+		// Set the avd directory as the working directory
+		ProcessBuilder pb = new ProcessBuilder();
+		pb.directory(new File(avdRoute));
+		//Verify if emulator exists
+		pb.command("emulator", "-list-avds");
+		Process process = pb.start();
+		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+		boolean emulatorExists = false;
+		String line;
+		while((line = reader.readLine()) != null) {
+			if(line.equals(emulatorName)) {
+				emulatorExists = true;
+			}
+		}
+		if(emulatorExists) {
+			boolean valid = isGoogleApis(pAndroidHome, emulatorName);
+			//Verify if the emulator can be executed in root mode
+			if(valid) {
+				//Launch emulator
+				pb.command("emulator", "-avd", emulatorName);
+				pb.start();
+				return true;
+			}
+			else {
+				System.out.println("The emulator provided cannot be run in root mode");
+				System.out.println("Try installing a emulator with Google APIs target");
+				return false;
+			}
+		}
+		else {
+			System.out.println("The name of the emulator provided could not be found");
+			return false;
+		}
+	}
+
+	public static boolean isGoogleApis(String pAndroidHome, String emulatorName) throws IOException {
+		String avdManagerRoute = pAndroidHome + "/tools/bin";
+		ProcessBuilder pb = new ProcessBuilder();
+		pb.directory(new File(avdManagerRoute));
+		pb.command("cmd", "/c" ,"avdmanager.bat list avd");
+		Process p = pb.start();
+		BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+		String line;
+		String[] lineSplitted;
+		String tag;
+		String target;
+		while((line = reader.readLine()) != null) {
+			lineSplitted = line.split(": ");
+			tag = lineSplitted[0];
+			tag = tag.replaceAll(" ","");
+			if(tag.equals("Name")) {
+				if(emulatorName.equals(lineSplitted[1])) {
+					while (!(line.contains("Target"))) {
+						line = reader.readLine();
+					}
+					target = line.split(": ")[1];
+					if(target.contains("Google APIs")) {
+						return true;
+					}
+					else {
+						return false;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 
