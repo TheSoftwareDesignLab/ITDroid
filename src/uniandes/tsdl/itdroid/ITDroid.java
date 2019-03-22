@@ -190,8 +190,7 @@ public class ITDroid {
 
 	public static boolean launchEmulator(String emulatorName, String pAndroidHome) throws IOException {
 		//Get system properties
-		String os = System.getProperty("os.name").toLowerCase();
-		String avdRoute = pAndroidHome + "/emulator";
+		String avdRoute = pAndroidHome+File.separator+"emulator";
 		// Set the avd directory as the working directory
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdRoute));
@@ -201,7 +200,7 @@ public class ITDroid {
 		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 		boolean emulatorExists = false;
 		String line;
-		while((line = reader.readLine()) != null) {
+		while((line = reader.readLine()) != null && !emulatorExists) {
 			if(line.equals(emulatorName)) {
 				emulatorExists = true;
 			}
@@ -231,7 +230,7 @@ public class ITDroid {
 		String avdManagerRoute = pAndroidHome + "/tools/bin";
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdManagerRoute));
-		pb.command("cmd", "/c" ,"avdmanager.bat list avd");
+		pb.command("cmd", "/c" ,"avdmanager"+(Helper.getInstance().isWindows()?".bat":"")+" list avd");
 		Process p = pb.start();
 		BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
 		String line;
