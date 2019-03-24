@@ -6,14 +6,12 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.EmulatorHelper;
 import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.RIPHelper;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
-import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
 
@@ -63,7 +61,7 @@ public class ITDroid {
 		//Launch the emulator
 
 		String androidHome = System.getenv("ANDROID_HOME");
-		boolean successfullLaunch = launchEmulator(emulatorName, androidHome);
+		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
 		if (!successfullLaunch){
 			return;
 		}
@@ -186,78 +184,6 @@ public class ITDroid {
 		}
 
 		return paths;
-	}
-
-	public static boolean launchEmulator(String emulatorName, String pAndroidHome) throws IOException {
-		//Get system properties
-		String os = System.getProperty("os.name").toLowerCase();
-		String avdRoute = pAndroidHome + "/emulator";
-		// Set the avd directory as the working directory
-		ProcessBuilder pb = new ProcessBuilder();
-		pb.directory(new File(avdRoute));
-		//Verify if emulator exists
-		pb.command("emulator", "-list-avds");
-		Process process = pb.start();
-		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-		boolean emulatorExists = false;
-		String line;
-		while((line = reader.readLine()) != null) {
-			if(line.equals(emulatorName)) {
-				emulatorExists = true;
-			}
-		}
-		if(emulatorExists) {
-			boolean valid = isGoogleApis(pAndroidHome, emulatorName);
-			//Verify if the emulator can be executed in root mode
-			if(valid) {
-				//Launch emulator
-				pb.command("emulator", "-avd", emulatorName);
-				pb.start();
-				return true;
-			}
-			else {
-				System.out.println("The emulator provided cannot be run in root mode");
-				System.out.println("Try installing a emulator with Google APIs target");
-				return false;
-			}
-		}
-		else {
-			System.out.println("The name of the emulator provided could not be found");
-			return false;
-		}
-	}
-
-	public static boolean isGoogleApis(String pAndroidHome, String emulatorName) throws IOException {
-		String avdManagerRoute = pAndroidHome + "/tools/bin";
-		ProcessBuilder pb = new ProcessBuilder();
-		pb.directory(new File(avdManagerRoute));
-		pb.command("cmd", "/c" ,"avdmanager.bat list avd");
-		Process p = pb.start();
-		BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-		String line;
-		String[] lineSplitted;
-		String tag;
-		String target;
-		while((line = reader.readLine()) != null) {
-			lineSplitted = line.split(": ");
-			tag = lineSplitted[0];
-			tag = tag.replaceAll(" ","");
-			if(tag.equals("Name")) {
-				if(emulatorName.equals(lineSplitted[1])) {
-					while (!(line.contains("Target"))) {
-						line = reader.readLine();
-					}
-					target = line.split(": ")[1];
-					if(target.contains("Google APIs")) {
-						return true;
-					}
-					else {
-						return false;
-					}
-				}
-			}
-		}
-		return false;
 	}
 
 
