@@ -109,7 +109,7 @@ public class IBMTranslator implements TranslationInterface {
         for (int i = 0; i < translations.size(); i++){
             newString = new Element("string");
             newString.setAttribute("name", names.get(i));
-            newString.setText(translations.get(i).getTranslationOutput());
+            newString.setText(replaceUnscapedCharacters(translations.get(i).getTranslationOutput()));
             outputRoot.addContent(newString);
         }
         //Save changes.
@@ -125,5 +125,11 @@ public class IBMTranslator implements TranslationInterface {
      */
     public boolean isOnlyNumbersAndSpecs(String string){
         return string.matches("[\\d-/@#$%^&_+=():sd\\s]+");
+    }
+
+    public static String replaceUnscapedCharacters(String text) {
+        String modifier1 = text.replaceAll("(?<!\\\\)\"", "\\\\\"");
+        String modifier2 = modifier1.replaceAll("(?<!\\\\)\'", "\\\\\'");
+        return modifier2;
     }
 }
