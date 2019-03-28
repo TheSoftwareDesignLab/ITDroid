@@ -62,11 +62,11 @@ public class ITDroid {
 
 		//Launch the emulator
 
-		String androidHome = System.getenv("ANDROID_HOME");
-		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
-		if (!successfullLaunch){
-			return;
-		}
+//		String androidHome = System.getenv("ANDROID_HOME");
+//		boolean successfullLaunch = launchEmulator(emulatorName, androidHome);
+//		if (!successfullLaunch){
+//			return;
+//		}
 
 		// Fix params based in OS
 		String os = System.getProperty("os.name").toLowerCase();
@@ -127,12 +127,11 @@ public class ITDroid {
 		}
 		
 		EmulatorHelper.changeLanguage(lngBundle.getBundle().getObject("defaultLng").toString(), extraPath);
-		RIPHelper.runRIPI18N(lngBundle.getBundle().getObject("defaultLng").toString(), outputPath, true, extraPath, newApkPath);
+		String resultFolderPath = RIPHelper.runRIPI18N(lngBundle.getBundle().getObject("defaultLng").toString(), outputPath, true, extraPath, newApkPath);
 		
 
 		System.out.println("Inspecting translated versions");
 		// Generate the graph for all the translated languages
-		//		for (int i = 0; i < translatedFiles.size(); i++) {
 		for (int i = 0; i < translatedFiles.size(); i++) {
 
 			String lang = pathsMap.get(translatedFiles.get(i));
@@ -141,13 +140,10 @@ public class ITDroid {
 			//callRIP
 			//@param language
 			//@response outputPath ---   <outputPath>/translatedResults/<language>
-			RIPHelper.runRIPI18N(lang, outputPath, true, extraPath, newApkPath);
-
-
-
+			RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
+			
 			//Builds the graph for given language
 			//@param languageFolderPath
-
 
 		}
 
@@ -164,7 +160,7 @@ public class ITDroid {
 			//callRIP
 			//@param language
 			//@response outputPath ---   <outputPath>/translatedResults/<language>
-			RIPHelper.runRIPI18N(lang, outputPath, false, extraPath, newApkPath);
+			RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
 
 			//Builds the graph for given language
 			//@param languageFolderPath
