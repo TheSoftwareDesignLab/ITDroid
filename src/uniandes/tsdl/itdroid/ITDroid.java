@@ -146,10 +146,10 @@ public class ITDroid {
 			System.out.println("Processing "+ lang +" app version");
 			EmulatorHelper.changeLanguage(lang, extraPath);
 			//call RIP R&R
-			resultFolderPath = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
+			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
 			
 			//Builds the graph for given language
-			LanguageResult langGraph = new LanguageResult(lang, resultFolderPath);
+			LanguageResult langGraph = new LanguageResult(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
 			
 		}
@@ -162,10 +162,10 @@ public class ITDroid {
 			System.out.println("Processing "+ lang +" app version");
 			EmulatorHelper.changeLanguage(lang, extraPath);
 			//call RIP R&R
-			resultFolderPath = RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
+			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
 
 			//Builds the graph for given language
-			LanguageResult langGraph = new LanguageResult(lang, resultFolderPath);
+			LanguageResult langGraph = new LanguageResult(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
 
 		}
