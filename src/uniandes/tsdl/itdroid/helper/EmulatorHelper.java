@@ -34,7 +34,8 @@ public class EmulatorHelper {
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdRoute));
 		//Verify if emulator exists
-		pb.command("./emulator", "-list-avds");
+        String os = System.getProperty("os.name").toLowerCase();
+		pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) + "emulator", "-list-avds");
 		Process process = pb.start();
 		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 		boolean emulatorExists = false;
@@ -49,7 +50,7 @@ public class EmulatorHelper {
 			//Verify if the emulator can be executed in root mode
 			if(valid) {
 				//Launch emulator
-				pb.command("./emulator", "-avd", emulatorName);
+				pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) +  "emulator", "-avd", emulatorName);
 				pb.start().waitFor(1, TimeUnit.SECONDS);
 				isIdle();
 				//Execute adb root command
@@ -78,7 +79,7 @@ public class EmulatorHelper {
 		if(Helper.isWindows()) {
 			pb.command("cmd", "/c" ,"avdmanager.bat list avd");
 		} else {
-			pb.command("./avdmanager","list","avd");
+			pb.command( "./avdmanager","list","avd");
 		}
 		Process p = pb.start();
 		BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
@@ -130,5 +131,13 @@ public class EmulatorHelper {
 			}
 		}
 		return true;
+	}
+
+	public static void wipePackageData(String packageName) throws IOException, InterruptedException {
+		// Change emulator language
+		ProcessBuilder pB = new ProcessBuilder(new String[]{"adb","shell","pm clear " + packageName});
+		Process ps = pB.start();
+		System.out.println("Wiping app data");
+		ps.waitFor();
 	}
 }
