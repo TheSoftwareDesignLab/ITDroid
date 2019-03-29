@@ -1,0 +1,14 @@
+package uniandes.tsdl.itdroid.model;
+
+public enum TransitionType {
+    GUI_CLICK_BUTTON,
+    GUI_RANDOM,
+    CONTEXT_INTERNET_ON,
+    CONTEXT_INTERNET_OFF,
+    CONTEXT_LOCATION_ON,
+    CONTEXT_LOCATION_OFF,
+    ROTATE_LANDSCAPE,
+    ROTATE_PORTRAIT,
+    BUTTON_BACK,
+    FIRST_INTERACTION
+}

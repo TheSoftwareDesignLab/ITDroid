@@ -1,6 +1,7 @@
 package uniandes.tsdl.itdroid;
 
-import java.io.*;
+import java.io.File;
+import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -13,11 +14,15 @@ import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.RIPHelper;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
+import uniandes.tsdl.itdroid.model.LanguageResult;
 import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
 
 	static HashMap<String, String> pathsMap = new HashMap<>();
+	
+	static HashMap<String, LanguageResult> graphs = new HashMap<String, LanguageResult>();
+	
 
 	public static void main(String[] args) {
 		try {
@@ -29,7 +34,6 @@ public class ITDroid {
 			// System.out.println(finalTime-initialTime);
 
 		} catch (Exception e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
@@ -62,11 +66,12 @@ public class ITDroid {
 
 		//Launch the emulator
 
-//		String androidHome = System.getenv("ANDROID_HOME");
-//		boolean successfullLaunch = launchEmulator(emulatorName, androidHome);
-//		if (!successfullLaunch){
-//			return;
-//		}
+		String androidHome = System.getenv("ANDROID_HOME");
+//		String androidHome = System.getenv("ANDROID_SDK");
+		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
+		if (!successfullLaunch){
+			return;
+		}
 
 		// Fix params based in OS
 		String os = System.getProperty("os.name").toLowerCase();
@@ -126,8 +131,11 @@ public class ITDroid {
 			return ;
 		}
 		
-		EmulatorHelper.changeLanguage(lngBundle.getBundle().getObject("defaultLng").toString(), extraPath);
-		String resultFolderPath = RIPHelper.runRIPI18N(lngBundle.getBundle().getObject("defaultLng").toString(), outputPath, true, extraPath, newApkPath);
+		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
+		EmulatorHelper.changeLanguage(deftLanguage, extraPath);
+		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
+		LanguageResult defltGraph = new LanguageResult(deftLanguage, resultFolderPath);
+		graphs.put(deftLanguage, defltGraph);
 		
 
 		System.out.println("Inspecting translated versions");
@@ -137,38 +145,35 @@ public class ITDroid {
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing "+ lang +" app version");
 			EmulatorHelper.changeLanguage(lang, extraPath);
-			//callRIP
-			//@param language
-			//@response outputPath ---   <outputPath>/translatedResults/<language>
-			RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
+			//call RIP R&R
+			resultFolderPath = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
 			
 			//Builds the graph for given language
-			//@param languageFolderPath
-
+			LanguageResult langGraph = new LanguageResult(lang, resultFolderPath);
+			graphs.put(lang, langGraph);
+			
 		}
 
 		System.out.println("Inspecting non translated versions");
-		// Generate the graph for all the nottranslated languages
-		//callRIP
-		//@param language
-		//@response outputPath ---   <outputPath>/notTranslatedResults/<language>
+		// Generate the graph for all the not translated languages
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
 
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing "+ lang +" app version");
 			EmulatorHelper.changeLanguage(lang, extraPath);
-			//callRIP
-			//@param language
-			//@response outputPath ---   <outputPath>/translatedResults/<language>
-			RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
+			//call RIP R&R
+			resultFolderPath = RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
 
 			//Builds the graph for given language
-			//@param languageFolderPath
+			LanguageResult langGraph = new LanguageResult(lang, resultFolderPath);
+			graphs.put(lang, langGraph);
 
 		}
+		
+		
 
 	}
-
+	
 	private static String[] buildStringPaths(String[] lngs) throws UnsupportedEncodingException {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 

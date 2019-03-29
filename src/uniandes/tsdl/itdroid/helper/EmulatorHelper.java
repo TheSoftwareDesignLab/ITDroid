@@ -4,7 +4,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 
 public class EmulatorHelper {
 
@@ -34,7 +34,7 @@ public class EmulatorHelper {
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdRoute));
 		//Verify if emulator exists
-		pb.command("emulator", "-list-avds");
+		pb.command("./emulator", "-list-avds");
 		Process process = pb.start();
 		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 		boolean emulatorExists = false;
@@ -49,8 +49,8 @@ public class EmulatorHelper {
 			//Verify if the emulator can be executed in root mode
 			if(valid) {
 				//Launch emulator
-				pb.command("emulator", "-avd", emulatorName);
-				pb.start();
+				pb.command("./emulator", "-avd", emulatorName);
+				pb.start().waitFor(1, TimeUnit.SECONDS);
 				isIdle();
 				//Execute adb root command
 				ProcessBuilder pB1 = new ProcessBuilder();
@@ -75,7 +75,11 @@ public class EmulatorHelper {
 		String avdManagerRoute = pAndroidHome + "/tools/bin";
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdManagerRoute));
-		pb.command("cmd", "/c" ,"avdmanager"+(Helper.getInstance().isWindows()?".bat":"")+" list avd");
+		if(Helper.isWindows()) {
+			pb.command("cmd", "/c" ,"avdmanager.bat list avd");
+		} else {
+			pb.command("./avdmanager","list","avd");
+		}
 		Process p = pb.start();
 		BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
 		String line;
@@ -108,20 +112,19 @@ public class EmulatorHelper {
 		ProcessBuilder pBB = new ProcessBuilder(new String[]{"adb","shell","getprop init.svc.bootanim"});
 		Process pss;
 		boolean termino = false;
-		System.out.println("waiting for idle");
+		System.out.println("waiting for emulator's idle state");
 		while (!termino) {
 			pss = pBB.start();
 			BufferedReader reader = new BufferedReader(new InputStreamReader(pss.getInputStream()));
 			String line;
 			String resp = "";
 			while ((line = reader.readLine())!=null) {
-				System.out.println(line);
 				resp += line;
 			}
 			pss.waitFor();
-			System.out.println(resp);
 			if(resp.contains("stopped")) {
 				termino = true;
+				System.out.println("Emulator now is in idle state");
 			} else {
 				Thread.sleep(2000);
 			}

@@ -1,9 +1,7 @@
 package uniandes.tsdl.itdroid.helper;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Paths;
 
 public class RIPHelper {
@@ -30,7 +28,7 @@ public class RIPHelper {
 		return tempFolder.getCanonicalPath();
 	}
 
-	public static void runRIPRR(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException{
+	public static String runRIPRR(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		//		System.out.println(decodedPath);
@@ -52,5 +50,6 @@ public class RIPHelper {
 		System.out.println("Going through your app");
 		ps.waitFor();
 		System.out.println("The app has been inspected");
+		return tempFolder.getCanonicalPath();
 	}
 }
