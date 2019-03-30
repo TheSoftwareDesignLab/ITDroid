@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.jdom2.Document;
 import org.jdom2.Element;
@@ -88,6 +90,8 @@ public class IBMTranslator implements TranslationInterface {
             text = e.getText();
             //If the string has not been translated, add it to the list
             if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue) && !isOnlyNumbersAndSpecs(text))){
+                text = replaceInjectedStrings1(text);
+                text = replaceInjectedDigits1(text);
                 values.add(text);
                 names.add(attributeValue);
             }
@@ -106,10 +110,14 @@ public class IBMTranslator implements TranslationInterface {
         List<Translation> translations = result.getTranslations();
         //Add the translated strings to the specific language strings.xml file.
         Element newString;
+        String text2;
         for (int i = 0; i < translations.size(); i++){
             newString = new Element("string");
             newString.setAttribute("name", names.get(i));
-            newString.setText(replaceUnscapedCharacters(translations.get(i).getTranslationOutput()));
+            text2 = replaceUnscapedCharacters(translations.get(i).getTranslationOutput());
+            text2 = replaceInjectedStrings2(text2);
+            text2 = replaceInjectedDigits2(text2);
+            newString.setText(text2);
             outputRoot.addContent(newString);
         }
         //Save changes.
@@ -127,9 +135,88 @@ public class IBMTranslator implements TranslationInterface {
         return string.matches("[\\d-/@#$%^&_+=():sd\\s]+");
     }
 
+    /**
+     * Replaces " and ' that are unscaped.
+     * @param text
+     * @return
+     */
     public static String replaceUnscapedCharacters(String text) {
         String modifier1 = text.replaceAll("(?<!\\\\)\"", "\\\\\"");
         String modifier2 = modifier1.replaceAll("(?<!\\\\)\'", "\\\\\'");
         return modifier2;
+    }
+
+    /**
+     * Replaces the injected strings for non translatable strings
+     * @param input
+     * @return
+     */
+    public static String  replaceInjectedStrings1 (String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("%\\d\\$s");
+        Matcher matcher = pattern.matcher(repleaceable);
+        while(matcher.find()) {
+            String injectedCharacter = matcher.group(0);
+            char number = injectedCharacter.charAt(1);
+            repleaceable = matcher.replaceFirst("xyz" + number);
+            matcher = pattern.matcher(repleaceable);
+        }
+
+        return repleaceable;
+    }
+
+    /**
+     * Replaces the non translatable string for the injected parameters values.
+     * @param input
+     * @return
+     */
+    public static String replaceInjectedStrings2 (String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("xyz\\d");
+        Matcher matcher = pattern.matcher(repleaceable);
+        while(matcher.find()) {
+            String injectedCharacter = matcher.group(0);
+            char number = injectedCharacter.charAt(3);
+            repleaceable = matcher.replaceFirst("%" + number + "\\$s");
+            matcher = pattern.matcher(repleaceable);
+        }
+        return repleaceable;
+
+    }
+    /**
+     * Replaces the injected digits for non translatable strings
+     * @param input
+     * @return
+     */
+    public static String  replaceInjectedDigits1 (String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("%\\d\\$d");
+        Matcher matcher = pattern.matcher(repleaceable);
+        while(matcher.find()) {
+            String injectedCharacter = matcher.group(0);
+            char number = injectedCharacter.charAt(1);
+            repleaceable = matcher.replaceFirst("jkl" + number);
+            matcher = pattern.matcher(repleaceable);
+        }
+
+        return repleaceable;
+    }
+    /**
+     * Replaces the non translatable string for the injected parameters values.
+     * @param input
+     * @return
+     */
+    public static String replaceInjectedDigits2 (String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("jkl\\d");
+        Matcher matcher = pattern.matcher(repleaceable);
+        while(matcher.find()) {
+            String injectedCharacter = matcher.group(0);
+            char number = injectedCharacter.charAt(3);
+            repleaceable = matcher.replaceFirst("%" + number + "\\$d");
+            matcher = pattern.matcher(repleaceable);
+        }
+        return repleaceable;
+
     }
 }
