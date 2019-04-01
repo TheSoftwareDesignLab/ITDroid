@@ -39,8 +39,8 @@ public class EmulatorHelper {
 		} else {
 			pb.command("./emulator","-list-avds");
 		}
-        String os = System.getProperty("os.name").toLowerCase();
-		pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) + "emulator", "-list-avds");
+//        String os = System.getProperty("os.name").toLowerCase();
+//		pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) + "emulator", "-list-avds");
 		Process process = pb.start();
 		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 		boolean emulatorExists = false;
@@ -60,7 +60,7 @@ public class EmulatorHelper {
 				} else {
 					pb.command("./emulator","-avd",emulatorName);
 				}
-				pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) +  "emulator", "-avd", emulatorName);
+//				pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) +  "emulator", "-avd", emulatorName);
 				pb.start().waitFor(1, TimeUnit.SECONDS);
 				isIdle();
 				//Execute adb root command

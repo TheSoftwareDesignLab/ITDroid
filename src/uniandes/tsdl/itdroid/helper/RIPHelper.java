@@ -18,14 +18,14 @@ public class RIPHelper {
 		tempFolder.mkdirs();
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"RIPi18n.jar").toAbsolutePath().toString(),apkLocation,tempFolder.getCanonicalPath(),"false"});
 		Process ps = pB.start();
-		
-		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
-		String line;
-		while ((line = reader.readLine())!=null) {
-			System.out.println(line);
-		}
-		
 		System.out.println("Going through your app");
+
+				BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+				String line;
+				while ((line = reader.readLine())!=null) {
+//					System.out.println(line);
+				}
+
 		ps.waitFor();
 		Thread.sleep(5000);
 		System.out.println("The app has been inspected");
@@ -41,7 +41,7 @@ public class RIPHelper {
 			tempFolder.delete();
 		}
 		tempFolder.mkdirs();
-		Process ps = Runtime.getRuntime().exec(
+		ProcessBuilder pB = new ProcessBuilder(
 				new String[]{
 						"java",
 						"-jar",
@@ -51,7 +51,13 @@ public class RIPHelper {
 						resultPath+File.separator+"result.json"
 				}
 				);
+		Process ps = pB.start();
 		System.out.println("Going through your app");
+		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+		String line;
+		while ((line = reader.readLine())!=null) {
+//			System.out.println(line);
+		}
 		ps.waitFor();
 		System.out.println("The app has been inspected");
 		return tempFolder.getCanonicalPath();

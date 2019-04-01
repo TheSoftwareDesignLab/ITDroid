@@ -132,6 +132,8 @@ public class ITDroid {
 		}
 		
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
+		//Wipes package data
+		EmulatorHelper.wipePackageData(appName);
 		EmulatorHelper.changeLanguage(deftLanguage, extraPath);
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
 		LanguageResult defltGraph = new LanguageResult(deftLanguage, resultFolderPath);
@@ -144,6 +146,8 @@ public class ITDroid {
 
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing "+ lang +" app version");
+			//Wipes package data
+			EmulatorHelper.wipePackageData(appName);
 			EmulatorHelper.changeLanguage(lang, extraPath);
 			//call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
@@ -152,8 +156,6 @@ public class ITDroid {
 			LanguageResult langGraph = new LanguageResult(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
 
-			//Wipes package data
-			EmulatorHelper.wipePackageData(appName);
 
 		}
 
@@ -163,6 +165,8 @@ public class ITDroid {
 
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing "+ lang +" app version");
+			//Wipes package data
+			EmulatorHelper.wipePackageData(appName);
 			EmulatorHelper.changeLanguage(lang, extraPath);
 			//call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
