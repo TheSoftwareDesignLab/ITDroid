@@ -34,6 +34,11 @@ public class EmulatorHelper {
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdRoute));
 		//Verify if emulator exists
+		if(Helper.isWindows()) {
+			pb.command("cmd", "/c" ,".\\emulator.exe -list-avds");
+		} else {
+			pb.command("./emulator","-list-avds");
+		}
         String os = System.getProperty("os.name").toLowerCase();
 		pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) + "emulator", "-list-avds");
 		Process process = pb.start();
@@ -50,6 +55,11 @@ public class EmulatorHelper {
 			//Verify if the emulator can be executed in root mode
 			if(valid) {
 				//Launch emulator
+				if(Helper.isWindows()) {
+					pb.command("cmd", "/c" ,".\\emulator -avd "+emulatorName);
+				} else {
+					pb.command("./emulator","-avd",emulatorName);
+				}
 				pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) +  "emulator", "-avd", emulatorName);
 				pb.start().waitFor(1, TimeUnit.SECONDS);
 				isIdle();
@@ -125,6 +135,7 @@ public class EmulatorHelper {
 			pss.waitFor();
 			if(resp.contains("stopped")) {
 				termino = true;
+				Thread.sleep(2000);
 				System.out.println("Emulator now is in idle state");
 			} else {
 				Thread.sleep(2000);

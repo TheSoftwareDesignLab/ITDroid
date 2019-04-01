@@ -114,15 +114,15 @@ public class ITDroid {
 
 		// Translate the original file into missing languages
 		System.out.println("We are going to translate your strings...");
-		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
-						System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
-						System.out.println(lngBundle.getBundle().getObject("defaultLng"));
-			 String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
-			 String tLang = pathsMap.get(notTrnsltdFiles.get(i));
-			 Translator t = new Translator(stringFiles[0], defLang, tLang);
-			 t.translate(new IBMTranslator(langsDir));
-						System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
-		}
+//		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
+//			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
+//			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));
+//			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
+//			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
+//			Translator t = new Translator(stringFiles[0], defLang, tLang);
+//			t.translate(new IBMTranslator(langsDir));
+//			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
+//		}
 
 		// builds the APK with all the languages
 		String newApkPath = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
