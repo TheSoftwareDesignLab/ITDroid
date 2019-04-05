@@ -14,14 +14,16 @@ import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.RIPHelper;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
-import uniandes.tsdl.itdroid.model.LanguageResult;
+import uniandes.tsdl.itdroid.model.LayoutGraph;
+import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
 import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
 
 	static HashMap<String, String> pathsMap = new HashMap<>();
 	
-	static HashMap<String, LanguageResult> graphs = new HashMap<String, LanguageResult>();
+	static HashMap<String, LayoutGraph> graphs = new HashMap<String, LayoutGraph>();
+	static HashMap<String, LayoutGraphComparision> lgcomparisions = new HashMap<String, LayoutGraphComparision>();
 	
 
 	public static void main(String[] args) {
@@ -84,28 +86,25 @@ public class ITDroid {
 		}
 		Helper.getInstance();
 		Helper.setPackageName(appName);
+		
 		// Decode the APK
 		APKToolWrapper.openAPK(apkPath, extraPath);
 
 		//Read selected operators
 		LanguageBundle lngBundle = new LanguageBundle(langsDir);
 		System.out.println(lngBundle.printSelectedLanguages());
-
+		
+		//Identify translated and notTranslated languages
 		String[] lngs = lngBundle.getSelectedLanguagesAsArray();
-
 		String[] stringFiles = buildStringPaths(lngs);
-
 		XMLComparator xmlc = new XMLComparator(stringFiles, alpha);
 
 		//Notify user about translated and not-translated languages
-
 		ArrayList<String> translatedFiles = xmlc.getUsefull();
 		System.out.println("Your application is translated to the following languages:");
 		for (int i = 0; i < translatedFiles.size(); i++) {
 			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(translatedFiles.get(i))));
 		}
-		System.out.println("");
-
 		ArrayList<String> notTrnsltdFiles = xmlc.getUseLess();
 		System.out.println("Your application is not translated to the following languages:");
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
@@ -124,7 +123,7 @@ public class ITDroid {
 //			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 //		}
 
-		// builds the APK with all the languages
+		// Builds the APK with all the languages
 		String newApkPath = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
 
 		if(newApkPath.equals("")) {
@@ -132,11 +131,10 @@ public class ITDroid {
 		}
 		
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
-		//Wipes package data
 		EmulatorHelper.wipePackageData(appName);
-		EmulatorHelper.changeLanguage(deftLanguage, extraPath);
+		EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
-		LanguageResult defltGraph = new LanguageResult(deftLanguage, resultFolderPath);
+		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		graphs.put(deftLanguage, defltGraph);
 		
 
@@ -148,14 +146,17 @@ public class ITDroid {
 			System.out.println("Processing "+ lang +" app version");
 			//Wipes package data
 			EmulatorHelper.wipePackageData(appName);
-			EmulatorHelper.changeLanguage(lang, extraPath);
+			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			//call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
 			
 			//Builds the graph for given language
-			LanguageResult langGraph = new LanguageResult(lang, resultFolderPathh);
+			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
-
+			
+			//Compares the default graph with the current language graph
+			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph);
+			lgcomparisions.put(lang, lgc);
 
 		}
 
@@ -167,13 +168,17 @@ public class ITDroid {
 			System.out.println("Processing "+ lang +" app version");
 			//Wipes package data
 			EmulatorHelper.wipePackageData(appName);
-			EmulatorHelper.changeLanguage(lang, extraPath);
+			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			//call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath, resultFolderPath);
 
 			//Builds the graph for given language
-			LanguageResult langGraph = new LanguageResult(lang, resultFolderPathh);
+			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
+			
+			//Compares the default graph with the current language graph
+			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph);
+			lgcomparisions.put(lang, lgc);
 
 		}
 		
