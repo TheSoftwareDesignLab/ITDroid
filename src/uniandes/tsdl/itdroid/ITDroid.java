@@ -155,7 +155,7 @@ public class ITDroid {
 			graphs.put(lang, langGraph);
 			
 			//Compares the default graph with the current language graph
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph);
+			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph, resultFolderPathh);
 			lgcomparisions.put(lang, lgc);
 
 		}
@@ -177,7 +177,7 @@ public class ITDroid {
 			graphs.put(lang, langGraph);
 			
 			//Compares the default graph with the current language graph
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph);
+			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph, resultFolderPathh);
 			lgcomparisions.put(lang, lgc);
 
 		}

@@ -1,5 +1,9 @@
 package uniandes.tsdl.itdroid.model;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,7 +24,7 @@ public class LayoutGraphComparision {
 	public Set<Integer> defltStatesNotProcessed = new HashSet<Integer>();
 	public Set<Integer> langStatesNotProcessed = new HashSet<Integer>();
 
-	public LayoutGraphComparision(String deftLanguage, LayoutGraph defltGraph, String lang, LayoutGraph langGraph) {
+	public LayoutGraphComparision(String deftLanguage, LayoutGraph defltGraph, String lang, LayoutGraph langGraph, String resultFolderPath) throws IOException {
 
 		defltLanguage = deftLanguage;
 		defltLayoutGraph = defltGraph;
@@ -48,11 +52,16 @@ public class LayoutGraphComparision {
 			uniqueIPFsList.sort(comp);
 			
 			System.out.println("There are "+uniqueIPFsList.size()+" Internationalization Presentation Failures for "+destLanguage+" app version.");
-			System.out.println("\t"+"IPF Score"+"\t"+"IPF Information");
+			BufferedWriter bw = new BufferedWriter(new FileWriter(resultFolderPath+File.separator+"ipfs.csv"));
+			bw.write("state;nodePos;ipfScore");
+			bw.newLine();
 			for (int i = 0; i < uniqueIPFsList.size(); i++) {
 				IPF tempIPF = uniqueIPFsList.get(i);
-				System.out.println("\t"+result.get(tempIPF.getID())+"\t\t"+tempIPF.toString());
+				bw.write(tempIPF.getState().getId()+";"+tempIPF.getNodePos()+";"+result.get(tempIPF.getID()));
+				bw.newLine();
 			}
+			bw.close();
+			
 		} else {
 			System.out.println("There was not Internationalization Presentation Failures for "+destLanguage+" app version.");
 		}
