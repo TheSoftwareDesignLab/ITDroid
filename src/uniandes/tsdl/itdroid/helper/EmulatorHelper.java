@@ -8,11 +8,11 @@ import java.util.concurrent.TimeUnit;
 
 public class EmulatorHelper {
 
-	public static boolean changeLanguage(String language, String extraPath) throws IOException, InterruptedException{
+	public static boolean changeLanguage(String language, String expresiveLanguage, String extraPath) throws IOException, InterruptedException{
 		// Change emulator language
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"adb","shell","setprop persist.sys.locale "+language});
 		Process ps = pB.start();
-		System.out.println("Emulator language changed to "+language);
+		System.out.println("Emulator language changed to "+expresiveLanguage);
 		ps.waitFor();
 		// Restart emulator for language change to be taken into account
 		pB.command(new String[]{"adb","shell","setprop ctl.restart zygote"});

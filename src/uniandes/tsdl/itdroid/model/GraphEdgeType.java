@@ -1,5 +1,8 @@
 package uniandes.tsdl.itdroid.model;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public enum GraphEdgeType {
 	ABOVE,
 	BELOW,
@@ -12,5 +15,26 @@ public enum GraphEdgeType {
 	CONTAINS,
 	CONTAINED,
 	INTERSECTS,
-	DEFAULT
+	DEFAULT;
+
+	
+	public static Set<GraphEdgeType> getAligmentTypes() {
+		Set<GraphEdgeType> set = new HashSet<GraphEdgeType>();
+		set.add(TOP_ALIGNED);
+		set.add(BOTTOM_ALIGNED);
+		set.add(LEFT_ALIGNED);
+		set.add(RIGHT_ALIGNED);
+		return set;
+	}
+	
+	public static Set<GraphEdgeType> getDirectionTypes() {
+		Set<GraphEdgeType> set = new HashSet<GraphEdgeType>();
+		set.add(ABOVE);
+		set.add(BELOW);
+		set.add(LEFT);
+		set.add(RIGHT);
+		return set;
+	}
+	
 }
+

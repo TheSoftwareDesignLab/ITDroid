@@ -4,7 +4,10 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -16,6 +19,8 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
+
+import uniandes.tsdl.itdroid.helper.Helper;
 
 public class State {
 
@@ -56,7 +61,7 @@ public class State {
 
 	private String screenShot;
 
-	private ArrayList<GraphEdgeType>[][] graph;
+	private Set<GraphEdgeType>[][] graph;
 
 	/**
 	 * Creates a new state
@@ -89,7 +94,7 @@ public class State {
 		NodeList allNodes = parsedXML.getElementsByTagName("node");
 		Node currentNode;
 		AndroidNode newAndroidNode;
-		graph = (ArrayList<GraphEdgeType>[][]) new ArrayList[allNodes.getLength()][allNodes.getLength()];
+		graph = (Set<GraphEdgeType>[][]) new Set[allNodes.getLength()][allNodes.getLength()];
 		for (int i = 0; i < allNodes.getLength(); i++) {
 			currentNode = allNodes.item(i);
 			newAndroidNode = new AndroidNode(this, currentNode);
@@ -105,12 +110,12 @@ public class State {
 			AndroidNode tempItem = stateNodes.get(i);
 			graph = compareNodes(lastItem, lastItemIndex, tempItem, i, graph);
 		}
-		graph[lastItemIndex][lastItemIndex] = new ArrayList<GraphEdgeType>();
+		graph[lastItemIndex][lastItemIndex] = new HashSet<GraphEdgeType>();
 		graph[lastItemIndex][lastItemIndex].add(GraphEdgeType.DEFAULT);
 	}
 
-	private ArrayList<GraphEdgeType>[][] compareNodes(AndroidNode firstNode, int firstNodeIndex, AndroidNode secondNode,
-			int secondNodeIndex, ArrayList<GraphEdgeType>[][] tempGraph) {
+	private Set<GraphEdgeType>[][] compareNodes(AndroidNode firstNode, int firstNodeIndex, AndroidNode secondNode,
+			int secondNodeIndex, Set<GraphEdgeType>[][] tempGraph) {
 		int[] firstNodeCoor1 = firstNode.getPoint1();
 		int[] firstNodeCoor2 = firstNode.getPoint2();
 		int[] secondNodeCoor1 = secondNode.getPoint1();
@@ -118,8 +123,8 @@ public class State {
 		int xCoord = 0;
 		int yCoord = 1;
 		
-		tempGraph[secondNodeIndex][firstNodeIndex] = new ArrayList<GraphEdgeType>();
-		tempGraph[firstNodeIndex][secondNodeIndex] = new ArrayList<GraphEdgeType>();
+		tempGraph[secondNodeIndex][firstNodeIndex] = new HashSet<GraphEdgeType>();
+		tempGraph[firstNodeIndex][secondNodeIndex] = new HashSet<GraphEdgeType>();
 
 		if(firstNodeCoor1[yCoord]>=secondNodeCoor2[yCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.ABOVE);
@@ -261,6 +266,10 @@ public class State {
 	public String getScreenShot() {
 		return screenShot;
 	}
+	
+	public Set<GraphEdgeType>[][] getGraph() {
+		return graph;
+	}
 
 	public AndroidNode getAndroidNode(String resourceID, String xpath, String text) {
 
@@ -286,8 +295,9 @@ public class State {
 		for (int i = 0; i < graph.length; i++) {
 			for (int j = 0; j < graph[0].length; j++) {
 				result += i+" -> "+j+" := ";
-				for (int k = 0; k < graph[i][j].size(); k++) {
-					result += graph[i][j].get(k)+";";
+				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
+				while(iter.hasNext()) {
+					result += iter.next()+";";
 				}
 				result += "\n";
 			}
@@ -314,12 +324,33 @@ public class State {
 		for (int i = 0; i < graph.length; i++) {
 			for (int j = 0; j < graph[0].length; j++) {
 				bw.write("\t"+i+" -> "+j+" := ");
-				for (int k = 0; k < graph[i][j].size(); k++) {
-					bw.write(graph[i][j].get(k)+";");
+				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
+				while(iter.hasNext()) {
+					bw.write(iter.next()+";");
 				}
 				bw.newLine();
 			}
 		}
+	}
+
+	public boolean compareTo(State langTempState) {
+		
+		if(!activityName.equals(langTempState.getActivityName())) {
+			return false;
+		}
+		int amntNodesDiff = Math.abs(stateNodes.size()-langTempState.getStateNodes().size());
+//		System.out.println("compareStates :: AmountNodesDiff "+id+" "+langTempState.getId()+" "+amntNodesDiff);
+		if(amntNodesDiff>1) {
+			return false;
+		}
+		// false, if the levenshtein distance is greater than 3% of rawXML length
+		int acceptancePercentage = 10;
+		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
+//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
+		if(lvnshtnDist>((rawXML.length()*acceptancePercentage)/100)) {
+			return false;
+		}
+		return true;
 	}
 
 }
