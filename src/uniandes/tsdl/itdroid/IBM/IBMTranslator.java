@@ -31,13 +31,16 @@ import uniandes.tsdl.itdroid.translator.TranslationInterface;
 public class IBMTranslator implements TranslationInterface {
 
     private static final String OUTPUT_FOLDER = "./temp/res/values";
+    private static final String NO_ATTRIBUTE_FOUND = "NOT_FOUND";
 
     private List<String> values;
     private List<String> names;
+    private List<String> formatted;
     private String propertiesDirectory;
     public IBMTranslator(String directory){
         values = new ArrayList<>();
         names = new ArrayList<>();
+        formatted = new ArrayList<>();
         propertiesDirectory = directory;
     }
     @Override
@@ -84,16 +87,20 @@ public class IBMTranslator implements TranslationInterface {
         Element e;
         String attributeValue;
         String text;
+        String attributeFormatted;
         for(int i = 0; i < strings.size(); i++){
             e = strings.get(i);
             attributeValue = e.getAttributeValue("name");
+            attributeFormatted = e.getAttributeValue("formatted", NO_ATTRIBUTE_FOUND);
             text = e.getText();
             //If the string has not been translated, add it to the list
             if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue) && !isOnlyNumbersAndSpecs(text))){
                 text = replaceInjectedStrings1(text);
                 text = replaceInjectedDigits1(text);
+                text = replaceInjectedStrings3(text);
                 values.add(text);
                 names.add(attributeValue);
+                formatted.add(attributeFormatted);
             }
         }
         //Call the IBM API to translate strings.
@@ -111,12 +118,18 @@ public class IBMTranslator implements TranslationInterface {
         //Add the translated strings to the specific language strings.xml file.
         Element newString;
         String text2;
+        String attributeFormatted2;
         for (int i = 0; i < translations.size(); i++){
             newString = new Element("string");
             newString.setAttribute("name", names.get(i));
+            attributeFormatted2 = formatted.get(i);
+            if(!attributeFormatted2.equals(NO_ATTRIBUTE_FOUND)){
+                newString.setAttribute("formatted", attributeFormatted2);
+            }
             text2 = replaceUnscapedCharacters(translations.get(i).getTranslationOutput());
             text2 = replaceInjectedStrings2(text2);
             text2 = replaceInjectedDigits2(text2);
+            text2 = replaceInjectedStrings4(text2);
             newString.setText(text2);
             outputRoot.addContent(newString);
         }
@@ -216,6 +229,30 @@ public class IBMTranslator implements TranslationInterface {
             repleaceable = matcher.replaceFirst("%" + number + "\\$d");
             matcher = pattern.matcher(repleaceable);
         }
+        return repleaceable;
+
+    }
+
+    public static String replaceInjectedStrings3 (String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("%s");
+        Matcher matcher = pattern.matcher(repleaceable);
+        if(matcher.find()) {
+            repleaceable = matcher.replaceAll("dfg");
+        }
+
+        return repleaceable;
+
+    }
+
+    public static String replaceInjectedStrings4 (String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("dfg");
+        Matcher matcher = pattern.matcher(repleaceable);
+        if(matcher.find()) {
+            repleaceable = matcher.replaceAll("%s");
+        }
+
         return repleaceable;
 
     }
