@@ -122,7 +122,7 @@ public class State {
 		int[] secondNodeCoor2 = secondNode.getPoint2();
 		int xCoord = 0;
 		int yCoord = 1;
-		
+
 		tempGraph[secondNodeIndex][firstNodeIndex] = new HashSet<GraphEdgeType>();
 		tempGraph[firstNodeIndex][secondNodeIndex] = new HashSet<GraphEdgeType>();
 
@@ -160,15 +160,15 @@ public class State {
 		}
 		if(firstNodeCoor1[xCoord]<=secondNodeCoor1[xCoord]
 				&& firstNodeCoor1[yCoord]<=secondNodeCoor1[yCoord]
-				&& firstNodeCoor2[xCoord]>=secondNodeCoor2[xCoord]
-				&& firstNodeCoor2[yCoord]>=secondNodeCoor2[yCoord]) {
+						&& firstNodeCoor2[xCoord]>=secondNodeCoor2[xCoord]
+								&& firstNodeCoor2[yCoord]>=secondNodeCoor2[yCoord]) {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINS);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINED);
 		}
 		if(firstNodeCoor1[xCoord]>=secondNodeCoor1[xCoord]
 				&& firstNodeCoor1[yCoord]>=secondNodeCoor1[yCoord]
-				&& firstNodeCoor2[xCoord]<=secondNodeCoor2[xCoord]
-				&& firstNodeCoor2[yCoord]<=secondNodeCoor2[yCoord]) {
+						&& firstNodeCoor2[xCoord]<=secondNodeCoor2[xCoord]
+								&& firstNodeCoor2[yCoord]<=secondNodeCoor2[yCoord]) {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINED);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINS);
 		}
@@ -246,16 +246,12 @@ public class State {
 		NamedNodeMap attributes;
 		for (int i = 0; i < allNodes.getLength(); i++) {
 			currentNode = allNodes.item(i);
-			attributes = currentNode.getAttributes();
-			for (int j = 0; j < attributes.getLength(); j++) {
-				Node attribute = attributes.item(j);
-				newAndroidNode = new AndroidNode(this, currentNode);
-				if (newAndroidNode.isAButton() || newAndroidNode.isClickable() || (newAndroidNode.isEnabled())) {
-					stateNodes.add(newAndroidNode);
-					break;
-				}
-
+			newAndroidNode = new AndroidNode(this, currentNode);
+			stateNodes.add(newAndroidNode);
+			if (newAndroidNode.isAButton() || newAndroidNode.isClickable() || (newAndroidNode.isEnabled())) {
+//				possibleTransitions.push(new Transition(this, TransitionType.GUI_CLICK_BUTTON, newAndroidNode));
 			}
+
 		}
 	}
 
@@ -266,7 +262,7 @@ public class State {
 	public String getScreenShot() {
 		return screenShot;
 	}
-	
+
 	public Set<GraphEdgeType>[][] getGraph() {
 		return graph;
 	}
@@ -282,7 +278,7 @@ public class State {
 		return null;
 
 	}
-	
+
 	@Override
 	public String toString() {
 		String result = id+" - "+activityName+"\n";
@@ -334,19 +330,19 @@ public class State {
 	}
 
 	public boolean compareTo(State langTempState) {
-		
+
 		if(!activityName.equals(langTempState.getActivityName())) {
 			return false;
 		}
 		int amntNodesDiff = Math.abs(stateNodes.size()-langTempState.getStateNodes().size());
-//		System.out.println("compareStates :: AmountNodesDiff "+id+" "+langTempState.getId()+" "+amntNodesDiff);
+		//		System.out.println("compareStates :: AmountNodesDiff "+id+" "+langTempState.getId()+" "+amntNodesDiff);
 		if(amntNodesDiff>1) {
 			return false;
 		}
 		// false, if the levenshtein distance is greater than 3% of rawXML length
 		int acceptancePercentage = 10;
 		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
-//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
+		//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
 		if(lvnshtnDist>((rawXML.length()*acceptancePercentage)/100)) {
 			return false;
 		}

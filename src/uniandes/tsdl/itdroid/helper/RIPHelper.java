@@ -2,9 +2,12 @@ package uniandes.tsdl.itdroid.helper;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Paths;
+
+import org.json.simple.JSONObject;
 
 public class RIPHelper {
 
@@ -16,15 +19,16 @@ public class RIPHelper {
 			tempFolder.delete();
 		}
 		tempFolder.mkdirs();
-		ProcessBuilder pB = new ProcessBuilder(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"RIPi18n.jar").toAbsolutePath().toString(),apkLocation,tempFolder.getCanonicalPath(),"false"});
+		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), "");
+		ProcessBuilder pB = new ProcessBuilder(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"RIPi18n.jar").toAbsolutePath().toString(), ripconfig});
 		Process ps = pB.start();
 		System.out.println("Going through your app");
 
-				BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
-				String line;
-				while ((line = reader.readLine())!=null) {
-//					System.out.println(line);
-				}
+		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+		String line;
+		while ((line = reader.readLine())!=null) {
+//			System.out.println(line);
+		}
 
 		ps.waitFor();
 		Thread.sleep(5000);
@@ -41,14 +45,13 @@ public class RIPHelper {
 			tempFolder.delete();
 		}
 		tempFolder.mkdirs();
+		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), resultPath+File.separator+"result.json");
 		ProcessBuilder pB = new ProcessBuilder(
 				new String[]{
 						"java",
 						"-jar",
 						Paths.get(decodedPath,extraPath,"RIPRR.jar").toAbsolutePath().toString(),
-						apkLocation,tempFolder.getAbsolutePath(),
-						"false",
-						resultPath+File.separator+"result.json"
+						ripconfig
 				}
 				);
 		Process ps = pB.start();
@@ -56,10 +59,35 @@ public class RIPHelper {
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
 		while ((line = reader.readLine())!=null) {
-//			System.out.println(line);
+			//			System.out.println(line);
 		}
 		ps.waitFor();
 		System.out.println("The app has been inspected");
 		return tempFolder.getCanonicalPath();
+	}
+
+	private static String buildRIPConfig(String newApkPath, String ripConfig, String outputPath, String rrScript) {
+
+		JSONObject ripconfig = new JSONObject();
+		ripconfig.put("apkPath", newApkPath);
+		ripconfig.put("outputFolder", outputPath);
+		ripconfig.put("isHybrid", false);
+		ripconfig.put("executionMode", "dfs");
+		if(!rrScript.equals("")) {
+			ripconfig.put("scriptPath", rrScript);
+		}
+
+		//Write JSON file
+		try (FileWriter file = new FileWriter(ripConfig+File.separator+"rip_config.json")) {
+
+			file.write(ripconfig.toJSONString());
+			file.flush();
+			
+			return ripConfig+File.separator+"rip_config.json";
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return "";
 	}
 }

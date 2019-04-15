@@ -1,0 +1,18 @@
+{
+	"apkPath": "./com.evancharlton.mileage_3110.apk",
+	"packageName": "com.evancharlton.mileage",
+	"extraPath": "../extra/",
+	"languagesFilePath": "../settings.properties",
+	"alpha": 2,
+	"outputFolder": "./output/",
+	"emulatorName": "Nexus_6_API_27",
+	"ripParams": {
+		"isHybrid": false,
+		"executionMode": "events",
+		"scriptPath": "./outputt/result.json",
+		"executionParams": {
+			"events": 10,
+			"time": 10000
+		}
+	}
+}

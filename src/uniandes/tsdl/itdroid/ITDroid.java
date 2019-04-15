@@ -1,12 +1,16 @@
 package uniandes.tsdl.itdroid;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+import org.json.simple.JSONObject;
 import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.EmulatorHelper;
@@ -69,7 +73,7 @@ public class ITDroid {
 		//Launch the emulator
 
 		String androidHome = System.getenv("ANDROID_HOME");
-//		String androidHome = System.getenv("ANDROID_SDK");
+		// String androidHome = System.getenv("ANDROID_SDK");
 		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
 		if (!successfullLaunch){
 			return;
@@ -113,15 +117,15 @@ public class ITDroid {
 
 		// Translate the original file into missing languages
 		System.out.println("We are going to translate your strings...");
-//		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
-//			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
-//			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));
-//			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
-//			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
-//			Translator t = new Translator(stringFiles[0], defLang, tLang);
-//			t.translate(new IBMTranslator(langsDir));
-//			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
-//		}
+		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
+			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
+			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));
+			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
+			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
+			Translator t = new Translator(stringFiles[0], defLang, tLang);
+			t.translate(new IBMTranslator(langsDir));
+			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
+		}
 
 		// Builds the APK with all the languages
 		String newApkPath = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
@@ -136,6 +140,11 @@ public class ITDroid {
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		graphs.put(deftLanguage, defltGraph);
+		
+		BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath+File.separator+"ipfs.csv", true));
+		bw.write("language;state;nodePos;ipfScore");
+		bw.newLine();
+		bw.close();
 		
 
 		System.out.println("Inspecting translated versions");
@@ -155,7 +164,7 @@ public class ITDroid {
 			graphs.put(lang, langGraph);
 			
 			//Compares the default graph with the current language graph
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph, resultFolderPathh);
+			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath);
 			lgcomparisions.put(lang, lgc);
 
 		}
@@ -177,15 +186,12 @@ public class ITDroid {
 			graphs.put(lang, langGraph);
 			
 			//Compares the default graph with the current language graph
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), langGraph, resultFolderPathh);
+			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath);
 			lgcomparisions.put(lang, lgc);
 
-		}
-		
-		
-
+		}		
 	}
-	
+
 	private static String[] buildStringPaths(String[] lngs) throws UnsupportedEncodingException {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 
