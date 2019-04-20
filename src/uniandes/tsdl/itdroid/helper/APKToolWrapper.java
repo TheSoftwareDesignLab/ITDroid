@@ -7,7 +7,7 @@ import java.nio.file.Paths;
 
 public class APKToolWrapper {
 
-	public static void openAPK(String path, String extraPath) throws IOException, InterruptedException{
+	public static String openAPK(String path, String extraPath) throws IOException, InterruptedException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 //		System.out.println(decodedPath);
@@ -20,6 +20,7 @@ public class APKToolWrapper {
 		System.out.println("Processing your APK...");
 		ps.waitFor();
 		System.out.println("Wow... that was an amazing APK to proccess!!! :D");
+		return Paths.get(decodedPath,"temp").toAbsolutePath().toString();
 		// InputStream es = ps.getErrorStream();
 		// byte e[] = new byte[es.available()];
 		// es.read(e,0,e.length);

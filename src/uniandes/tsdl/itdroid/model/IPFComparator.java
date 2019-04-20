@@ -7,9 +7,9 @@ public class IPFComparator implements Comparator<IPF>{
 
 	Map<String, Long> orderCriteria;
 	
-	public IPFComparator(Map<String, Long> orderCriteria) {
+	public IPFComparator(Map<String, Long> result) {
 		super();
-		this.orderCriteria = orderCriteria;
+		this.orderCriteria = result;
 	}
 
 	@Override

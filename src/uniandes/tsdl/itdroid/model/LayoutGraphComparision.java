@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class LayoutGraphComparision {
@@ -45,7 +44,7 @@ public class LayoutGraphComparision {
 		
 		if(ipfs.size()>0) {
 			
-			Map<String, Long> result = ipfs.stream().collect(Collectors.groupingBy(w -> w.getID(),Collectors.counting() ));
+			Map<String, Long> result = ipfs.stream().collect(Collectors.groupingBy(w -> w.getID(), Collectors.counting() ));
 			Set<IPF> uniqueIPFs = new HashSet<IPF>(ipfs);
 			ArrayList<IPF> uniqueIPFsList = new ArrayList<IPF>(uniqueIPFs);
 			IPFComparator comp = new IPFComparator(result);

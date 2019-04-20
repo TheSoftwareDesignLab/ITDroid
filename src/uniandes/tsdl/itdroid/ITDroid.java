@@ -3,16 +3,15 @@ package uniandes.tsdl.itdroid;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import org.json.simple.JSONObject;
 import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
+import uniandes.tsdl.itdroid.helper.ASTHelper;
 import uniandes.tsdl.itdroid.helper.EmulatorHelper;
 import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
@@ -25,10 +24,10 @@ import uniandes.tsdl.itdroid.translator.Translator;
 public class ITDroid {
 
 	static HashMap<String, String> pathsMap = new HashMap<>();
-	
+
 	static HashMap<String, LayoutGraph> graphs = new HashMap<String, LayoutGraph>();
 	static HashMap<String, LayoutGraphComparision> lgcomparisions = new HashMap<String, LayoutGraphComparision>();
-	
+
 
 	public static void main(String[] args) {
 		try {
@@ -70,14 +69,6 @@ public class ITDroid {
 		String outputPath = args[5];
 		String emulatorName = args[6];
 
-		//Launch the emulator
-
-		String androidHome = System.getenv("ANDROID_HOME");
-		// String androidHome = System.getenv("ANDROID_SDK");
-		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
-		if (!successfullLaunch){
-			return;
-		}
 
 		// Fix params based in OS
 		String os = System.getProperty("os.name").toLowerCase();
@@ -90,17 +81,26 @@ public class ITDroid {
 		}
 		Helper.getInstance();
 		Helper.setPackageName(appName);
-		
+
 		// Decode the APK
-		APKToolWrapper.openAPK(apkPath, extraPath);
+		String decodedFolderPath = APKToolWrapper.openAPK(apkPath, extraPath);
+
+		int possibleIPFS = ASTHelper.findHardCodedStrings(decodedFolderPath, extraPath, appName, outputPath);
+
 
 		//Read selected operators
 		LanguageBundle lngBundle = new LanguageBundle(langsDir);
 		System.out.println(lngBundle.printSelectedLanguages());
-		
+
 		//Identify translated and notTranslated languages
 		String[] lngs = lngBundle.getSelectedLanguagesAsArray();
 		String[] stringFiles = buildStringPaths(lngs);
+
+		File baseStrings = new File(stringFiles[0]);
+		if(!baseStrings.exists()) {
+			System.out.println("Your application do not have a strings.xml file.");
+			return ;
+		}
 		XMLComparator xmlc = new XMLComparator(stringFiles, alpha);
 
 		//Notify user about translated and not-translated languages
@@ -133,19 +133,27 @@ public class ITDroid {
 		if(newApkPath.equals("")) {
 			return ;
 		}
-		
+
+		//Launch the emulator
+		String androidHome = System.getenv("ANDROID_HOME");
+		// String androidHome = System.getenv("ANDROID_SDK");
+		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
+		if (!successfullLaunch){
+			return;
+		}
+
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
 		EmulatorHelper.wipePackageData(appName);
 		EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		graphs.put(deftLanguage, defltGraph);
-		
+
 		BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath+File.separator+"ipfs.csv", true));
 		bw.write("language;state;nodePos;ipfScore");
 		bw.newLine();
 		bw.close();
-		
+
 
 		System.out.println("Inspecting translated versions");
 		// Generate the graph for all the translated languages
@@ -158,11 +166,11 @@ public class ITDroid {
 			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			//call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath, resultFolderPath);
-			
+
 			//Builds the graph for given language
 			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
-			
+
 			//Compares the default graph with the current language graph
 			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath);
 			lgcomparisions.put(lang, lgc);
@@ -184,7 +192,7 @@ public class ITDroid {
 			//Builds the graph for given language
 			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
 			graphs.put(lang, langGraph);
-			
+
 			//Compares the default graph with the current language graph
 			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph, lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath);
 			lgcomparisions.put(lang, lgc);
