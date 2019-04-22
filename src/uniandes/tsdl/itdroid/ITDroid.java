@@ -3,13 +3,15 @@ package uniandes.tsdl.itdroid;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import uniandes.tsdl.itdroid.IBM.IBMTranslator;
+import org.json.simple.JSONObject;
+
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.ASTHelper;
 import uniandes.tsdl.itdroid.helper.EmulatorHelper;
@@ -19,7 +21,6 @@ import uniandes.tsdl.itdroid.helper.RIPHelper;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
-import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
 
