@@ -40,7 +40,7 @@ public class RIPHelper {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		//		System.out.println(decodedPath);
-		File tempFolder = new File(decodedPath+File.separator+outputFolder+(translated?"trnsResults":"noTrnsResults")+File.separator+language);
+		File tempFolder = new File(decodedPath+File.separator+outputFolder+File.separator+(translated?"trnsResults":"noTrnsResults")+File.separator+language);
 		if(tempFolder.exists()) {
 			tempFolder.delete();
 		}
