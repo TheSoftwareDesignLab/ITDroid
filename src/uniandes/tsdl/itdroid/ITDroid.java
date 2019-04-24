@@ -12,6 +12,7 @@ import java.util.HashMap;
 
 import org.json.simple.JSONObject;
 
+import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.ASTHelper;
 import uniandes.tsdl.itdroid.helper.EmulatorHelper;
@@ -21,6 +22,7 @@ import uniandes.tsdl.itdroid.helper.RIPHelper;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
+import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
 
@@ -102,7 +104,7 @@ public class ITDroid {
 			System.out.println("Your application do not have a strings.xml file.");
 			return ;
 		}
-		XMLComparator xmlc = new XMLComparator(stringFiles, alpha);
+		XMLComparator xmlc = new XMLComparator(stringFiles, alpha, langsDir);
 
 		//Notify user about translated and not-translated languages
 		ArrayList<String> translatedFiles = xmlc.getUsefull();
@@ -121,10 +123,10 @@ public class ITDroid {
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
 			//			System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
 			//			System.out.println(lngBundle.getBundle().getObject("defaultLng"));
-			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
-			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
-			Translator t = new Translator(stringFiles[0], defLang, tLang);
-			t.translate(new IBMTranslator(langsDir));
+			 String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
+			 String tLang = pathsMap.get(notTrnsltdFiles.get(i));
+			 Translator t = new Translator(stringFiles[0], defLang, tLang);
+			 t.translate(new IBMTranslator(langsDir));
 			//			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
 
