@@ -14,7 +14,7 @@ public class IPFComparator implements Comparator<IPF>{
 
 	@Override
 	public int compare(IPF o1, IPF o2) {
-		return (int) (orderCriteria.get(o1.getID()) - orderCriteria.get(o2.getID()));
+		return (int) (orderCriteria.get(o2.getID()) - orderCriteria.get(o1.getID()));
 	}
 
 }
