@@ -27,7 +27,7 @@ public class RIPHelper {
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
 		while ((line = reader.readLine())!=null) {
-//			System.out.println(line);
+			System.out.println(line);
 		}
 
 		ps.waitFor();
@@ -59,7 +59,7 @@ public class RIPHelper {
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
 		while ((line = reader.readLine())!=null) {
-			//			System.out.println(line);
+						System.out.println(line);
 		}
 		ps.waitFor();
 		System.out.println("The app has been inspected");
