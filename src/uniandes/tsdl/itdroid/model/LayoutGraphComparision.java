@@ -45,9 +45,9 @@ public class LayoutGraphComparision {
 			ArrayList<IPF> stateIPFs = compareStates(defltState, defltLayoutGraph.getState(defltState), destLangLayoutGraph.getState(defltState));
 			ipfs.addAll(stateIPFs);
 		}
-		
+
 		if(ipfs.size()>0) {
-			
+
 			Map<String, Long> result = ipfs.stream().collect(Collectors.groupingBy(w -> w.getID(), Collectors.counting() ));
 			Set<IPF> uniqueIPFs = new HashSet<IPF>();
 			Iterator iter = result.keySet().iterator();
@@ -66,7 +66,7 @@ public class LayoutGraphComparision {
 				tempIPFJSON.put("nodeID", tempIPF.getNodePos());
 				JSONArray relations = new JSONArray();
 				Set<GraphEdgeType>[][][] relationss = results.get(tempIPF.getStateId()-1);
-				for (int j = 0; relationss!= null && j < relationss[0][tempIPF.getNodePos()-1].length; j++) {
+				for (int j = 0; relationss!= null && relationss[0][tempIPF.getNodePos()] != null && j < relationss[0][tempIPF.getNodePos()].length; j++) {
 					if((relationss[0][tempIPF.getNodePos()][j]!= null && relationss[0][tempIPF.getNodePos()][j].size()>0) ||(relationss[1][tempIPF.getNodePos()][j] != null && relationss[1][tempIPF.getNodePos()][j].size()>0)) {
 						JSONObject relationsJ = new JSONObject();
 						relationsJ.put("relNode", j);
@@ -89,33 +89,33 @@ public class LayoutGraphComparision {
 				ipfs.add(tempIPFJSON);
 			}
 			dfltLangJSONTrans.put("ipfs", ipfs);
-			
+
 			System.out.println("There are "+uniqueIPFsList.size()+" Internationalization Presentation Failures for "+destLanguage+" app version.");
 			BufferedWriter bw = new BufferedWriter(new FileWriter(outputFolder+File.separator+"ipfs.csv", true));
-//			bw.write("state;nodePos;ipfScore");
-//			bw.newLine();
+			//			bw.write("state;nodePos;ipfScore");
+			//			bw.newLine();
 			for (int i = 0; i < uniqueIPFsList.size(); i++) {
 				IPF tempIPF = uniqueIPFsList.get(i);
 				bw.write(destLanguage+";"+tempIPF.getStateId()+";"+tempIPF.getNodePos()+";"+result.get(tempIPF.getID()));
 				bw.newLine();
 			}
 			bw.close();
-			
+
 		} else {
 			System.out.println("There are not Internationalization Presentation Failures for "+destLanguage+" app version.");
 		}
-		
-		
+
+
 	}
 
 	private ArrayList<IPF> compareStates(int defltState, State dfltState, State langState) {
 
-		
+
 		Set<GraphEdgeType>[][] dfltGraph = dfltState.getGraph();
 		Set<GraphEdgeType>[][] langGraph = langState.getGraph();
 		ArrayList<IPF> ipfss = new ArrayList<IPF>();
 		Set<GraphEdgeType>[][][] resultts = (Set<GraphEdgeType>[][][]) new Set[2][dfltGraph.length][dfltGraph[0].length];
-		
+
 		int maxI = Math.min(dfltGraph.length,langGraph.length);
 		int maxJ = Math.min(dfltGraph[0].length,langGraph[0].length);
 		for (int i = 0; i < maxI ; i++) {
@@ -126,15 +126,15 @@ public class LayoutGraphComparision {
 
 				Set<GraphEdgeType> lostRelationsBA = new HashSet<GraphEdgeType>(dfltGraph[j][i]);
 				lostRelationsBA.removeAll(langGraph[j][i]);
-//				lostRelationsBA.addAll(lostRelationsAB);
+				//				lostRelationsBA.addAll(lostRelationsAB);
 
 				Set<GraphEdgeType> addedRelationsAB = new HashSet<GraphEdgeType>(langGraph[i][j]);
 				addedRelationsAB.removeAll(dfltGraph[i][j]);
 
 				Set<GraphEdgeType> addedRelationsBA = new HashSet<GraphEdgeType>(langGraph[j][i]);
 				addedRelationsBA.removeAll(dfltGraph[j][i]);
-//				addedRelationsBA.addAll(addedRelationsAB);
-				
+				//				addedRelationsBA.addAll(addedRelationsAB);
+
 				if((dfltState.getStateNodes().get(i).getpClass().contains("TextView") && !langState.getStateNodes().get(j).getpClass().contains("TextView"))
 						|| (!dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(j).getpClass().contains("TextView"))
 						|| (dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(j).getpClass().contains("TextView"))) {
@@ -148,19 +148,19 @@ public class LayoutGraphComparision {
 				resultts[0][j][i]=lostRelationsBA;
 				resultts[1][i][j]=addedRelationsAB;
 				resultts[1][j][i]=addedRelationsBA;
-				
+
 				if((lostRelationsAB.size()+lostRelationsBA.size()+addedRelationsAB.size()+addedRelationsBA.size())>0) {
 					AndroidNode iLangNode = langState.getStateNodes().get(i);
 					AndroidNode jLangNode = langState.getStateNodes().get(j);
 					ipfss.add(new IPF(destLanguage, langState, iLangNode, i));						
 					ipfss.add(new IPF(destLanguage, langState, jLangNode, j));						
-					
+
 				}
 			}
 		}
-		
+
 		results.put(defltState, resultts);
-		
+
 		return ipfss;
 	}
 

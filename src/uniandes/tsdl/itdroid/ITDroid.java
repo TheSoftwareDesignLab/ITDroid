@@ -3,6 +3,7 @@ package uniandes.tsdl.itdroid;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -11,8 +12,6 @@ import java.util.HashMap;
 
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
-
-import com.google.gson.JsonParser;
 
 import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
@@ -161,8 +160,8 @@ public class ITDroid {
 		}
 
 		// Launch the emulator
-		String androidHome = System.getenv("ANDROID_HOME");
-		// String androidHome = System.getenv("ANDROID_SDK");
+		//String androidHome = System.getenv("ANDROID_HOME");
+		String androidHome = System.getenv("ANDROID_SDK");
 		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
 		if (!successfullLaunch) {
 			return;

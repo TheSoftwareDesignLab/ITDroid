@@ -1,0 +1,133 @@
+{
+    "emulatorName": "Pixel_API_25",
+    "apkName": "\/a2dp.Vol.apk",
+    "langsReport": {
+        "ar": {
+            "amStates": 2,
+            "missingLangStates": 0,
+            "missingDfltStates": 0,
+            "lang": "Arabic",
+            "amTrans": 1
+        },
+        "hi": {
+            "amStates": 2,
+            "missingLangStates": 0,
+            "missingDfltStates": 0,
+            "lang": "Hindi",
+            "amTrans": 1
+        },
+        "ru": {
+            "amStates": 2,
+            "ipfs": [
+                {
+                    "stateID": 1,
+                    "relations": [
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 6
+                        },
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 8
+                        }
+                    ],
+                    "nodeID": 7
+                },
+                {
+                    "stateID": 1,
+                    "relations": [
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 7
+                        },
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 9
+                        }
+                    ],
+                    "nodeID": 6
+                },
+                {
+                    "stateID": 1,
+                    "relations": [
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 7
+                        },
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 9
+                        }
+                    ],
+                    "nodeID": 8
+                },
+                {
+                    "stateID": 1,
+                    "relations": [
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 6
+                        },
+                        {
+                            "removed": "BOTTOM_ALIGNED;",
+                            "added": "",
+                            "relNode": 8
+                        }
+                    ],
+                    "nodeID": 9
+                }
+            ],
+            "missingLangStates": 0,
+            "amIPFs": 4,
+            "missingDfltStates": 0,
+            "lang": "Russian",
+            "amTrans": 1
+        },
+        "pt": {
+            "amStates": 2,
+            "missingLangStates": 0,
+            "missingDfltStates": 0,
+            "lang": "Portuguese",
+            "amTrans": 1
+        },
+        "en": {
+            "amStates": 2,
+            "lang": "en",
+            "amTrans": 2,
+            "dflt": true
+        },
+        "it": {
+            "amStates": 2,
+            "missingLangStates": 0,
+            "missingDfltStates": 0,
+            "lang": "Italian",
+            "amTrans": 1
+        },
+        "fr": {
+            "amStates": 2,
+            "missingLangStates": 0,
+            "missingDfltStates": 0,
+            "lang": "French",
+            "amTrans": 1
+        },
+        "es": {
+            "amStates": 2,
+            "missingLangStates": 0,
+            "missingDfltStates": 0,
+            "lang": "Spanish",
+            "amTrans": 1
+        }
+    },
+    "appName": "a2dp.Vol",
+    "alpha": 15,
+    "dfltLang": "en",
+    "outputFolder": ".\/results\/a2dp.Vol",
+    "hardcoded": 444
+}
