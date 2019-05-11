@@ -94,7 +94,7 @@ public class IBMTranslator implements TranslationInterface {
             attributeFormatted = e.getAttributeValue("formatted", NO_ATTRIBUTE_FOUND);
             text = e.getText();
             //If the string has not been translated, add it to the list
-            if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue) && !isOnlyNumbersAndSpecs(text))){
+            if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue))&& !isOnlyNumbersAndSpecs(text)){
                 text = replaceInjectedStrings1(text);
                 text = replaceInjectedDigits1(text);
                 text = replaceInjectedStrings3(text);
