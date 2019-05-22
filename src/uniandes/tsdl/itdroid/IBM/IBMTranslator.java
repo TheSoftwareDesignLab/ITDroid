@@ -32,6 +32,7 @@ public class IBMTranslator implements TranslationInterface {
 
     private static final String OUTPUT_FOLDER = "./temp/res/values";
     private static final String NO_ATTRIBUTE_FOUND = "NOT_FOUND";
+    private static final int TRANSLATOR_PACKAGE_SIZE = 50;
 
     private List<String> values;
     private List<String> names;
@@ -94,7 +95,7 @@ public class IBMTranslator implements TranslationInterface {
             attributeFormatted = e.getAttributeValue("formatted", NO_ATTRIBUTE_FOUND);
             text = e.getText();
             //If the string has not been translated, add it to the list
-            if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue))&& !isOnlyNumbersAndSpecs(text)){
+            if(dictionary.translatable(attributeValue) && !(translatedStrings.contains(attributeValue))&& !isOnlyNumbersAndSpecs(text) && !text.startsWith("@")){
                 text = replaceInjectedStrings1(text);
                 text = replaceInjectedDigits1(text);
                 text = replaceInjectedStrings3(text);
@@ -103,30 +104,52 @@ public class IBMTranslator implements TranslationInterface {
                 formatted.add(attributeFormatted);
             }
         }
-        //Call the IBM API to translate strings.
-        IamOptions options = new IamOptions.Builder().apiKey(dotenv.get("API_KEY")).build();
-        LanguageTranslator languageTranslator = new LanguageTranslator(
-                "2018-05-01",
-                options);
-        System.out.println("model: " + inputLang + "-" + outputLang);
-        languageTranslator.setEndPoint(dotenv.get("GATEWAY"));
-        TranslateOptions translateOptions = new TranslateOptions.Builder().text(values).modelId(inputLang + '-' + outputLang).build();
-        //Get the translation results.
-        TranslationResult result = languageTranslator.translate(translateOptions)
-                .execute();
-        List<Translation> translations = result.getTranslations();
+
+        int index = 0;
+        List<String> toTranslate;
+        List<String> fullTranslations = new ArrayList();
+        while (index < values.size()){
+            toTranslate = new ArrayList();
+            for(int i = index; (i <  (index + TRANSLATOR_PACKAGE_SIZE)); i++) {
+                if(i >= values.size()){
+                    break;
+                } else {
+                    toTranslate.add(values.get(i));
+                }
+            }
+            //Call the IBM API to translate strings.
+            IamOptions options = new IamOptions.Builder().apiKey(dotenv.get("API_KEY")).build();
+            LanguageTranslator languageTranslator = new LanguageTranslator(
+                    "2018-05-01",
+                    options);
+            System.out.println("model: " + inputLang + "-" + outputLang);
+            languageTranslator.setEndPoint(dotenv.get("GATEWAY"));
+            TranslateOptions translateOptions = new TranslateOptions.Builder().text(toTranslate).modelId(inputLang + '-' + outputLang).build();
+            //Get the translation results.
+            TranslationResult result = languageTranslator.translate(translateOptions)
+                    .execute();
+            List<Translation> translations = result.getTranslations();
+
+            for(int i = 0; i < translations.size(); i++){
+                fullTranslations.add(translations.get(i).getTranslationOutput());
+            }
+
+            index += TRANSLATOR_PACKAGE_SIZE;
+        }
+
+
         //Add the translated strings to the specific language strings.xml file.
         Element newString;
         String text2;
         String attributeFormatted2;
-        for (int i = 0; i < translations.size(); i++){
+        for (int i = 0; i < fullTranslations.size(); i++){
             newString = new Element("string");
             newString.setAttribute("name", names.get(i));
             attributeFormatted2 = formatted.get(i);
             if(!attributeFormatted2.equals(NO_ATTRIBUTE_FOUND)){
                 newString.setAttribute("formatted", attributeFormatted2);
             }
-            text2 = replaceUnscapedCharacters(translations.get(i).getTranslationOutput());
+            text2 = replaceUnscapedCharacters(fullTranslations.get(i));
             text2 = replaceInjectedStrings2(text2);
             text2 = replaceInjectedDigits2(text2);
             text2 = replaceInjectedStrings4(text2);
