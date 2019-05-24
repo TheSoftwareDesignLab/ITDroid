@@ -29,6 +29,10 @@ public class AndroidNode {
 		return result;
 	}
 
+	public String getIndex(){
+		return index;
+	}
+
 	public AndroidNode(State state, Node domNode) {
 		this.state = state;
 		loadAttributesFromDom(domNode);

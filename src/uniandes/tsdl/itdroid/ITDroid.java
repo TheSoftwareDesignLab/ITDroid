@@ -160,8 +160,8 @@ public class ITDroid {
 		}
 
 		// Launch the emulator
-		//String androidHome = System.getenv("ANDROID_HOME");
-		String androidHome = System.getenv("ANDROID_SDK");
+		String androidHome = System.getenv("ANDROID_HOME");
+		//String androidHome = System.getenv("ANDROID_SDK");
 		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
 		if (!successfullLaunch) {
 			return;

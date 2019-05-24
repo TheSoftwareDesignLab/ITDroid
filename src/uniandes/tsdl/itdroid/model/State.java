@@ -13,6 +13,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
+import org.json.simple.JSONObject;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
@@ -327,6 +328,71 @@ public class State {
 				bw.newLine();
 			}
 		}
+	}
+
+	public JSONObject getStateInfo(){
+		JSONObject state = new JSONObject();
+		state.put("id", id);
+		state.put("activityName", activityName);
+		JSONObject transitions = new JSONObject();
+		JSONObject transition;
+		Transition t;
+		//Get transitions information
+		for(int i = 0; i< outboundTransitions.size(); i++){
+			transition = new JSONObject();
+			t = outboundTransitions.get(i);
+			transition.put("origin", t.getOrigin().getId());
+			transition.put("destination", t.getDestination().getId());
+			transition.put("type", t.getType().toString());
+			transitions.put(i, transition);
+		}
+		state.put("transitions", transitions);
+		//Get nodes information
+		JSONObject nodes = new JSONObject();
+		JSONObject point1;
+		JSONObject point2;
+		JSONObject node;
+		for(int i = 0; i < stateNodes.size(); i++ ){
+			node = new JSONObject();
+			node.put("index", stateNodes.get(i).getIndex());
+			node.put("xPath", stateNodes.get(i).getxPath());
+			point1 = new JSONObject();
+			point1.put("x", stateNodes.get(i).getPoint1()[0]);
+			point1.put("y", stateNodes.get(i).getPoint1()[1]);
+			point2 = new JSONObject();
+			point2.put("x", stateNodes.get(i).getPoint2()[0]);
+			point2.put("y", stateNodes.get(i).getPoint2()[1]);
+			node.put("point1", point1);
+			node.put("point2", point2);
+
+			nodes.put(i,node);
+		}
+		state.put("nodes", nodes);
+		//Get edges information
+		JSONObject edges = new JSONObject();
+		JSONObject edge;
+		JSONObject relations;
+		int totalEdges = 0;
+		for (int i = 0; i < graph.length; i++) {
+			for (int j = 0; j < graph[0].length; j++) {
+				edge = new JSONObject();
+				relations = new JSONObject();
+				edge.put("origin",i);
+				edge.put("destination", j);
+				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
+				int index = 0;
+				while(iter.hasNext()) {
+					relations.put(index, iter.next().toString());
+					index ++;
+				}
+				edge.put("relations", relations);
+
+				edges.put(totalEdges,edge);
+				totalEdges ++;
+			}
+		}
+		state.put("edges", edges);
+		return state;
 	}
 
 	public boolean compareTo(State langTempState) {

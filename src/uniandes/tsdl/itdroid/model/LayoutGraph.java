@@ -6,6 +6,8 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -91,6 +93,14 @@ public class LayoutGraph {
 			for (int i = 0; i < states.size(); i++) {
 				states.get(i).writeFile(bw);
 			}
+			JSONObject langReport = new JSONObject();
+			langReport.put("language", language);
+			JSONObject jsonStates = new JSONObject();
+			for(int i = 0; i < states.size(); i++){
+				jsonStates.put(i, states.get(i).getStateInfo());
+			}
+			langReport.put("states", jsonStates);
+			Files.write(Paths.get(resultFolderPath+File.separator+"graph.json"), langReport.toJSONString().getBytes());
 			bw.close();
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
