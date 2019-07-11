@@ -8,12 +8,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+
+import uniandes.tsdl.itdroid.helper.Helper;
 
 public class LayoutGraphComparision {
 
@@ -110,9 +113,11 @@ public class LayoutGraphComparision {
 
 	private ArrayList<IPF> compareStates(int defltState, State dfltState, State langState) {
 
-
 		Set<GraphEdgeType>[][] dfltGraph = dfltState.getGraph();
 		Set<GraphEdgeType>[][] langGraph = langState.getGraph();
+		
+		int[] pairedStateNodes = pairStateNodes(dfltState, langState);
+				
 		ArrayList<IPF> ipfss = new ArrayList<IPF>();
 		Set<GraphEdgeType>[][][] resultts = (Set<GraphEdgeType>[][][]) new Set[2][dfltGraph.length][dfltGraph[0].length];
 
@@ -122,22 +127,22 @@ public class LayoutGraphComparision {
 			for (int j = i; j < maxJ; j++) {
 
 				Set<GraphEdgeType> lostRelationsAB = new HashSet<GraphEdgeType>(dfltGraph[i][j]);
-				lostRelationsAB.removeAll(langGraph[i][j]);
+				lostRelationsAB.removeAll(langGraph[i][pairedStateNodes[j]]);
 
 				Set<GraphEdgeType> lostRelationsBA = new HashSet<GraphEdgeType>(dfltGraph[j][i]);
-				lostRelationsBA.removeAll(langGraph[j][i]);
+				lostRelationsBA.removeAll(langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
 				//				lostRelationsBA.addAll(lostRelationsAB);
 
-				Set<GraphEdgeType> addedRelationsAB = new HashSet<GraphEdgeType>(langGraph[i][j]);
+				Set<GraphEdgeType> addedRelationsAB = new HashSet<GraphEdgeType>(langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
 				addedRelationsAB.removeAll(dfltGraph[i][j]);
 
-				Set<GraphEdgeType> addedRelationsBA = new HashSet<GraphEdgeType>(langGraph[j][i]);
+				Set<GraphEdgeType> addedRelationsBA = new HashSet<GraphEdgeType>(langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
 				addedRelationsBA.removeAll(dfltGraph[j][i]);
 				//				addedRelationsBA.addAll(addedRelationsAB);
 
-				if((dfltState.getStateNodes().get(i).getpClass().contains("TextView") && !langState.getStateNodes().get(j).getpClass().contains("TextView"))
-						|| (!dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(j).getpClass().contains("TextView"))
-						|| (dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(j).getpClass().contains("TextView"))) {
+				if((dfltState.getStateNodes().get(i).getpClass().contains("TextView") && !langState.getStateNodes().get(pairedStateNodes[j]).getpClass().contains("TextView"))
+						|| (!dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(pairedStateNodes[j]).getpClass().contains("TextView"))
+						|| (dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(pairedStateNodes[j]).getpClass().contains("TextView"))) {
 					lostRelationsAB.removeAll(GraphEdgeType.getAligmentTypes());
 					lostRelationsBA.removeAll(GraphEdgeType.getAligmentTypes());
 					addedRelationsAB.removeAll(GraphEdgeType.getAligmentTypes());
@@ -150,8 +155,8 @@ public class LayoutGraphComparision {
 				resultts[1][j][i]=addedRelationsBA;
 
 				if((lostRelationsAB.size()+lostRelationsBA.size()+addedRelationsAB.size()+addedRelationsBA.size())>0) {
-					AndroidNode iLangNode = langState.getStateNodes().get(i);
-					AndroidNode jLangNode = langState.getStateNodes().get(j);
+					AndroidNode iLangNode = langState.getStateNodes().get(pairedStateNodes[i]);
+					AndroidNode jLangNode = langState.getStateNodes().get(pairedStateNodes[j]);
 					ipfss.add(new IPF(destLanguage, langState, iLangNode, i));						
 					ipfss.add(new IPF(destLanguage, langState, jLangNode, j));						
 
@@ -162,6 +167,31 @@ public class LayoutGraphComparision {
 		results.put(defltState, resultts);
 
 		return ipfss;
+	}
+
+	private int[] pairStateNodes(State dfltState, State langState) {
+		
+		List<AndroidNode> dfltStateNodes = dfltState.getStateNodes();
+		List<AndroidNode> langStateNodes = dfltState.getStateNodes();
+		int[] result = new int[Math.min(dfltStateNodes.size(), langStateNodes.size())];
+		
+		for (int i = 0; i < result.length; i++) {
+			
+			AndroidNode dfltNode = dfltStateNodes.get(i);
+			
+			int minIndex = i;
+			int minValue = Integer.MAX_VALUE;
+			
+			for (int j = 0; j < langStateNodes.size(); j++) {
+				AndroidNode langNode = langStateNodes.get(j);
+				if(dfltNode.compare(langNode)<minValue) {
+					minValue = dfltNode.compare(langNode);
+					minIndex = j;
+				}
+			}
+			result[i]=minIndex;
+		}
+		return result;
 	}
 
 	private void pairStates(JSONObject dfltLangJSONTrans) {

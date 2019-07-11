@@ -3,6 +3,8 @@ package uniandes.tsdl.itdroid.model;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 
+import uniandes.tsdl.itdroid.helper.Helper;
+
 public class AndroidNode {
 
 	public static String TRUE = "true";
@@ -24,7 +26,7 @@ public class AndroidNode {
 	
 	@Override
 	public String toString() {
-		String result = index+" - ["+point1[0]+","+point1[1]+"]["+point2[0]+","+point2[1]+"] - "+xPath;
+		String result = name+xPath+resourceID;
 		
 		return result;
 	}
@@ -169,6 +171,10 @@ public class AndroidNode {
 
 	public boolean isEnabled() {
 		return enabled;
+	}
+
+	public int compare(AndroidNode langNode) {
+		return Helper.levenshteinDistance(toString(), langNode.toString());
 	}
 
 }

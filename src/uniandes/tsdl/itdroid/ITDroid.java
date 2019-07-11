@@ -143,13 +143,10 @@ public class ITDroid {
 		// Translate the original file into missing languages
 		System.out.println("We are going to translate your strings...");
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
-			// System.out.println(pathsMap.get(notTrnsltdFiles.get(i)));
-			// System.out.println(lngBundle.getBundle().getObject("defaultLng"));
 			String defLang = lngBundle.getBundle().getObject("defaultLng").toString();
 			String tLang = pathsMap.get(notTrnsltdFiles.get(i));
 			Translator t = new Translator(stringFiles[0], defLang, tLang);
 			t.translate(new IBMTranslator(langsDir));
-			// System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
 
 		// Builds the APK with all the languages
@@ -170,12 +167,15 @@ public class ITDroid {
 
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
 		report.put("dfltLang", deftLanguage);
+		
+		// Explore app using default language
 		EmulatorHelper.wipePackageData(appName);
 		EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		JSONObject dfltLangJSON = new JSONObject();
-		dfltLangJSON.put("lang", deftLanguage);
+		dfltLangJSON.put("lang", "English");
+		dfltLangJSON.put("dflt", true);
 		dfltLangJSON.put("amStates", defltGraph.getStates().size());
 		dfltLangJSON.put("amTrans", defltGraph.getTransitions().size());
 		lngsResults.put(deftLanguage, dfltLangJSON);

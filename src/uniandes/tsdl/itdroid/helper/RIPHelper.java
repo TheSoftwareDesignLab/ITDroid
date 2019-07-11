@@ -22,12 +22,13 @@ public class RIPHelper {
 		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), "");
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"RIPi18n.jar").toAbsolutePath().toString(), ripconfig});
 		Process ps = pB.start();
-		System.out.println("Going through your app");
+		System.out.print("Going through your app");
 
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
 		while ((line = reader.readLine())!=null) {
-			System.out.println(line);
+//			System.out.println(line);
+			System.out.print(".");
 		}
 
 		ps.waitFor();
@@ -55,11 +56,12 @@ public class RIPHelper {
 				}
 				);
 		Process ps = pB.start();
-		System.out.println("Going through your app");
+		System.out.print("Going through your app");
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
 		while ((line = reader.readLine())!=null) {
-						System.out.println(line);
+//						System.out.println(line);
+			System.out.print(".");
 		}
 		ps.waitFor();
 		System.out.println("The app has been inspected");

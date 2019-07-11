@@ -58,7 +58,7 @@ public class EmulatorHelper {
 				if(Helper.isWindows()) {
 					pb.command("cmd", "/c" ,".\\emulator -avd "+emulatorName);//+" -no-audio -no-window");
 				} else {
-					pb.command("./emulator","-avd",emulatorName,"-no-audio","-no-window");//,"-no-audio","-no-window");
+					pb.command("./emulator","-avd",emulatorName);//,"-no-audio","-no-window");
 				}
 //				pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) +  "emulator", "-avd", emulatorName);
 				pb.start().waitFor(1, TimeUnit.SECONDS);

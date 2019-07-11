@@ -330,6 +330,7 @@ public class State {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	public JSONObject getStateInfo(){
 		JSONObject state = new JSONObject();
 		state.put("id", id);
@@ -405,7 +406,7 @@ public class State {
 		if(amntNodesDiff>1) {
 			return false;
 		}
-		// false, if the levenshtein distance is greater than 3% of rawXML length
+		// false, if the levenshtein distance is greater than 10% of rawXML length
 		int acceptancePercentage = 10;
 		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
 		//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
