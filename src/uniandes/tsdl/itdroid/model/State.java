@@ -399,18 +399,23 @@ public class State {
 	public boolean compareTo(State langTempState) {
 
 		if(!activityName.equals(langTempState.getActivityName())) {
+			System.out.println(activityName);
+			System.out.println(langTempState.getActivityName());
 			return false;
 		}
 		int amntNodesDiff = Math.abs(stateNodes.size()-langTempState.getStateNodes().size());
 		//		System.out.println("compareStates :: AmountNodesDiff "+id+" "+langTempState.getId()+" "+amntNodesDiff);
 		if(amntNodesDiff>1) {
+			System.out.println(amntNodesDiff);
 			return false;
 		}
 		// false, if the levenshtein distance is greater than 10% of rawXML length
 		int acceptancePercentage = 10;
 		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
 		//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
-		if(lvnshtnDist>((rawXML.length()*acceptancePercentage)/100)) {
+		if(lvnshtnDist>=((rawXML.length()*acceptancePercentage)/100)) {
+			System.out.println(lvnshtnDist);
+			System.out.println(((rawXML.length()*acceptancePercentage)/100));
 			return false;
 		}
 		return true;

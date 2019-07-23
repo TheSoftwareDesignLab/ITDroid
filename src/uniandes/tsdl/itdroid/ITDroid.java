@@ -157,8 +157,8 @@ public class ITDroid {
 		}
 
 		// Launch the emulator
-		String androidHome = System.getenv("ANDROID_HOME");
-		//String androidHome = System.getenv("ANDROID_SDK");
+		//String androidHome = System.getenv("ANDROID_HOME");
+		String androidHome = System.getenv("ANDROID_SDK");
 		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
 		if (!successfullLaunch) {
 			return;
@@ -196,7 +196,7 @@ public class ITDroid {
 			EmulatorHelper.wipePackageData(appName);
 			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			// call RIP R&R
-			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, true, extraPath, newApkPath,
+			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,
 					resultFolderPath);
 
 			// Builds the graph for given language
@@ -226,7 +226,7 @@ public class ITDroid {
 			EmulatorHelper.wipePackageData(appName);
 			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			// call RIP R&R
-			String resultFolderPathh = RIPHelper.runRIPRR(lang, outputPath, false, extraPath, newApkPath,
+			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
 					resultFolderPath);
 
 			// Builds the graph for given language

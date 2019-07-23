@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>ITDroid</groupId>
 	<artifactId>ITDroid</artifactId>
-	<version>0.0.1</version>
+	<version>1.0.0</version>
 	<name>ITDroid</name>
 	<description>Internationalization Tests for Android Apps</description>
 	<build>

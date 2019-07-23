@@ -173,8 +173,8 @@ public class AndroidNode {
 		return enabled;
 	}
 
-	public int compare(AndroidNode langNode) {
-		return Helper.levenshteinDistance(toString(), langNode.toString());
+	public double compare(AndroidNode langNode) {
+		return (Helper.levenshteinDistance(toString(), langNode.toString()))/(double)toString().length();
 	}
 
 }

@@ -72,23 +72,57 @@ public class Helper {
 		return false;
 	}
 
-	public static int levenshteinDistance(String a, String b) {
-        a = a.toLowerCase();
-        b = b.toLowerCase();
+	public static int levenshteinDistance(String left, String right) {
+		left = left.toLowerCase();
+		right = right.toLowerCase();
         // i == 0
-        int [] costs = new int [b.length() + 1];
-        for (int j = 0; j < costs.length; j++)
-            costs[j] = j;
-        for (int i = 1; i <= a.length(); i++) {
-            // j == 0; nw = lev(i - 1, j)
-            costs[0] = i;
-            int nw = i - 1;
-            for (int j = 1; j <= b.length(); j++) {
-                int cj = Math.min(1 + Math.min(costs[j], costs[j - 1]), a.charAt(i - 1) == b.charAt(j - 1) ? nw : nw + 1);
-                nw = costs[j];
-                costs[j] = cj;
+        int n = left.length(); // length of left
+        int m = right.length(); // length of right
+
+        if (n == 0) {
+            return m;
+        } else if (m == 0) {
+            return n;
+        }
+
+        if (n > m) {
+            // swap the input strings to consume less memory
+            final String tmp = left;
+            left = right;
+            right = tmp;
+            n = m;
+            m = right.length();
+        }
+
+        int[] p = new int[n + 1];
+
+        // indexes into strings left and right
+        int i; // iterates through left
+        int j; // iterates through right
+        int upper_left;
+        int upper;
+
+        char rightJ; // jth character of right
+        int cost; // cost
+
+        for (i = 0; i <= n; i++) {
+            p[i] = i;
+        }
+
+        for (j = 1; j <= m; j++) {
+            upper_left = p[0];
+            rightJ = right.charAt(j - 1);
+            p[0] = j;
+
+            for (i = 1; i <= n; i++) {
+                upper = p[i];
+                cost = left.charAt(i - 1) == rightJ ? 0 : 1;
+                // minimum of cell to the left+1, to the top+1, diagonally left and up +cost
+                p[i] = Math.min(Math.min(p[i - 1] + 1, p[i] + 1), upper_left + cost);
+                upper_left = upper;
             }
         }
-        return costs[b.length()];
+
+        return p[n];
     }
 }

@@ -180,7 +180,7 @@ public class LayoutGraphComparision {
 			AndroidNode dfltNode = dfltStateNodes.get(i);
 			
 			int minIndex = i;
-			int minValue = Integer.MAX_VALUE;
+			double minValue = Integer.MAX_VALUE;
 			
 			for (int j = 0; j < langStateNodes.size(); j++) {
 				AndroidNode langNode = langStateNodes.get(j);
