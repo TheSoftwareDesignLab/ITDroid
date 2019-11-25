@@ -1,9 +1,14 @@
 package uniandes.tsdl.itdroid.helper;
 
+import org.apache.commons.io.IOUtils;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class EmulatorHelper {
@@ -27,7 +32,7 @@ public class EmulatorHelper {
 		return true;
 	}
 
-	public static boolean launchEmulator(String emulatorName, String pAndroidHome) throws IOException, InterruptedException {
+	public static boolean launchEmulator(String emulatorName, String pAndroidHome, Boolean wipeData) throws IOException, InterruptedException {
 		//Get system properties
 		String avdRoute = pAndroidHome+File.separator+"emulator";
 		// Set the avd directory as the working directory
@@ -55,10 +60,14 @@ public class EmulatorHelper {
 			//Verify if the emulator can be executed in root mode
 			if(valid) {
 				//Launch emulator
-				if(Helper.isWindows()) {
+				if(Helper.isWindows() && !wipeData) {
 					pb.command("cmd", "/c" ,".\\emulator -avd "+emulatorName);//+" -no-audio -no-window");
-				} else {
+				} else if(!Helper.isWindows() && !wipeData) {
 					pb.command("./emulator","-avd",emulatorName);//,"-no-audio","-no-window");
+				}else if(Helper.isWindows() && wipeData){
+					pb.command("cmd", "/c" ,".\\emulator -wipe-data -avd "+emulatorName);
+				}else{
+					//TODO realizar el llamado al comando para ejecutar wipe data en un compu no windows
 				}
 //				pb.command( ((os.indexOf("win") >= 0) ? "" : "./" ) +  "emulator", "-avd", emulatorName);
 				pb.start().waitFor(1, TimeUnit.SECONDS);
@@ -144,11 +153,53 @@ public class EmulatorHelper {
 		return true;
 	}
 
-	public static void wipePackageData(String packageName) throws IOException, InterruptedException {
+	public static void wipePackageData(String packageName) throws IOException, InterruptedException{
 		// Change emulator language
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"adb","shell","pm clear " + packageName});
 		Process ps = pB.start();
 		System.out.println("Wiping app data");
 		ps.waitFor();
+	}
+
+	public static void startEmulatorWipeData(String emulatorName) throws Exception {
+		if(emulatorName == null){
+			emulatorName = "Nexus_6_API_27";
+		}
+		List<String> commands = Arrays.asList("emulator","-wipe-data","-avd",emulatorName);
+		ProcessBuilder pb = new ProcessBuilder();
+		List<String> emulatorList = getAvailableEmulators();
+		if(emulatorList.contains(emulatorName)){
+			pb.command(commands);
+			pb.start().waitFor(1,TimeUnit.SECONDS);
+			isIdle();
+			ProcessBuilder pB1 = new ProcessBuilder();
+			pB1.command("adb", "root");
+			Process root = pB1.start();
+			root.waitFor();
+		}else{
+			throw new Exception("There is no an emulator with the specified name in this system");
+		}
+	}
+
+	public static List<String> getAvailableEmulators()throws IOException{
+		ProcessBuilder pb = new ProcessBuilder();
+		List<String> commands = Arrays.asList("emulator","-list-avds");
+		pb.command(commands);
+		Process spb = pb.start();
+		String response = IOUtils.toString(spb.getInputStream(), "UTF-8");
+		String[] emulatorsList= response.split("\\n");
+		List<String> responseList = new ArrayList();
+		String aux = "";
+		for(int i =0; i< emulatorsList.length;i++){
+			aux = emulatorsList[i].trim();
+			responseList.add(aux);
+		}
+		return  responseList;
+	}
+
+	public static void shutdownEmulators() throws IOException{
+		List<String> commands = Arrays.asList("adb","emu","kill");
+		ProcessBuilder pb = new ProcessBuilder(commands);
+		pb.start();
 	}
 }

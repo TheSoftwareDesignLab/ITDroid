@@ -1,12 +1,9 @@
 package uniandes.tsdl.itdroid.helper;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.file.Paths;
 
+import org.apache.commons.io.IOUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -70,7 +67,7 @@ public class RIPHelper {
 		return tempFolder.getCanonicalPath();
 	}
 	
-	public static String runRIPRRi18n(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException{
+	public static String runRIPRRi18n(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException,Exception{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		//		System.out.println(decodedPath);
@@ -92,10 +89,24 @@ public class RIPHelper {
 		System.out.print("Going through your app");
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
+
+		//Error handling
+		//TODO revisar cómo volver esto un IPF (?)
+		String err;
+		while((err = reader.readLine()) != null){
+			if (err.contains("OLD TRANSITIONS EMPTY")){
+				throw new Exception("OLD TRANSITIONS EMPTY");
+			}
+			if(err.contains("EXITING EXECUTION. START STATE != CURRENT STATE")){
+				throw new Exception("EXITING EXECUTION. START STATE != CURRENT STATE");
+			}
+		}
+
 		while ((line = reader.readLine())!=null) {
 			//						System.out.println(line);
 			System.out.print(".");
 		}
+
 		ps.waitFor();
 		System.out.println("The app has been inspected");
 		return tempFolder.getCanonicalPath();
@@ -122,7 +133,6 @@ public class RIPHelper {
 
 			return ripConfig+File.separator+"rip_config.json";
 		} catch (ParseException e1) {
-			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		} catch (IOException e) {
 			e.printStackTrace();

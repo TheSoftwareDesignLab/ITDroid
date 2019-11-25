@@ -157,9 +157,9 @@ public class ITDroid {
 		}
 
 		// Launch the emulator
-		//String androidHome = System.getenv("ANDROID_HOME");
-		String androidHome = System.getenv("ANDROID_SDK");
-		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome);
+		String androidHome = System.getenv("ANDROID_HOME");
+		//String androidHome = System.getenv("ANDROID_SDK");
+		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome,true);
 		if (!successfullLaunch) {
 			return;
 		}
@@ -167,11 +167,12 @@ public class ITDroid {
 
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
 		report.put("dfltLang", deftLanguage);
-		
+		//TODO es importante que cuando se ejecuta de nuevo una aplicación el emulador sea completamente nuevo. Hay aplicaciones que le cambian configuraciones a los dispositivos y estas no vuelven a la normalidad cuando la aplicación es eliminada.
 		// Explore app using default language
-		EmulatorHelper.wipePackageData(appName);
+		//EmulatorHelper.wipePackageData(appName);
 		EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
+
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		JSONObject dfltLangJSON = new JSONObject();
 		dfltLangJSON.put("lang", "English");
@@ -193,7 +194,10 @@ public class ITDroid {
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
 			// Wipes package data
-			EmulatorHelper.wipePackageData(appName);
+			//TODO es importante que cuando se ejecuta de nuevo una aplicación el emulador sea completamente nuevo. Hay aplicaciones que le cambian configuraciones a los dispositivos y estas no vuelven a la normalidad cuando la aplicación es eliminada.
+			//The emulator should be new because some applications may change device configuration
+			EmulatorHelper.shutdownEmulators();
+			EmulatorHelper.startEmulatorWipeData(emulatorName);
 			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			// call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,
@@ -223,7 +227,10 @@ public class ITDroid {
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
 			// Wipes package data
-			EmulatorHelper.wipePackageData(appName);
+			//EmulatorHelper.wipePackageData(appName);
+			//The emulator should be new because some applications may change device configuration
+			EmulatorHelper.shutdownEmulators();
+			EmulatorHelper.startEmulatorWipeData(emulatorName);
 			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			// call RIP R&R
 			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
@@ -245,7 +252,6 @@ public class ITDroid {
 
 			lngsResults.put(lang, dfltLangJSONTrans);
 		}
-
 		report.put("langsReport", lngsResults);
 	}
 
