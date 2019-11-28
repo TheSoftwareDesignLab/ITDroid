@@ -91,7 +91,7 @@ public class EmulatorHelper {
 		}
 	}
 
-	public static boolean isGoogleApis(String pAndroidHome, String emulatorName) throws IOException {
+	private static boolean isGoogleApis(String pAndroidHome, String emulatorName) throws IOException {
 		String avdManagerRoute = pAndroidHome + "/tools/bin";
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.directory(new File(avdManagerRoute));
@@ -128,7 +128,7 @@ public class EmulatorHelper {
 		return false;
 	}
 
-	public static boolean isIdle() throws IOException, InterruptedException {
+	private static boolean isIdle() throws IOException, InterruptedException {
 		ProcessBuilder pBB = new ProcessBuilder(new String[]{"adb","shell","getprop init.svc.bootanim"});
 		Process pss;
 		boolean termino = false;
@@ -151,55 +151,5 @@ public class EmulatorHelper {
 			}
 		}
 		return true;
-	}
-
-	public static void wipePackageData(String packageName) throws IOException, InterruptedException{
-		// Change emulator language
-		ProcessBuilder pB = new ProcessBuilder(new String[]{"adb","shell","pm clear " + packageName});
-		Process ps = pB.start();
-		System.out.println("Wiping app data");
-		ps.waitFor();
-	}
-
-	public static void startEmulatorWipeData(String emulatorName) throws Exception {
-		if(emulatorName == null){
-			emulatorName = "Nexus_6_API_27";
-		}
-		List<String> commands = Arrays.asList("emulator","-wipe-data","-avd",emulatorName);
-		ProcessBuilder pb = new ProcessBuilder();
-		List<String> emulatorList = getAvailableEmulators();
-		if(emulatorList.contains(emulatorName)){
-			pb.command(commands);
-			pb.start().waitFor(1,TimeUnit.SECONDS);
-			isIdle();
-			ProcessBuilder pB1 = new ProcessBuilder();
-			pB1.command("adb", "root");
-			Process root = pB1.start();
-			root.waitFor();
-		}else{
-			throw new Exception("There is no an emulator with the specified name in this system");
-		}
-	}
-
-	public static List<String> getAvailableEmulators()throws IOException{
-		ProcessBuilder pb = new ProcessBuilder();
-		List<String> commands = Arrays.asList("emulator","-list-avds");
-		pb.command(commands);
-		Process spb = pb.start();
-		String response = IOUtils.toString(spb.getInputStream(), "UTF-8");
-		String[] emulatorsList= response.split("\\n");
-		List<String> responseList = new ArrayList();
-		String aux = "";
-		for(int i =0; i< emulatorsList.length;i++){
-			aux = emulatorsList[i].trim();
-			responseList.add(aux);
-		}
-		return  responseList;
-	}
-
-	public static void shutdownEmulators() throws IOException{
-		List<String> commands = Arrays.asList("adb","emu","kill");
-		ProcessBuilder pb = new ProcessBuilder(commands);
-		pb.start();
 	}
 }

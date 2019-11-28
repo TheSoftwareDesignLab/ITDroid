@@ -10,7 +10,7 @@ import org.json.simple.parser.ParseException;
 
 public class RIPHelper {
 
-	public static String runRIPI18N(String language, String outputFolder, boolean translated, String extraPath, String apkLocation) throws IOException, InterruptedException{
+	public static String runRIPI18N(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String expresiveLanguage) throws IOException, InterruptedException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		File tempFolder = new File(Paths.get(decodedPath,outputFolder,(translated?"trnsResults":"noTrnsResults"),language).toAbsolutePath().toString());
@@ -18,7 +18,7 @@ public class RIPHelper {
 			tempFolder.delete();
 		}
 		tempFolder.mkdirs();
-		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), "");
+		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), "",language, extraPath,expresiveLanguage);
 		ProcessBuilder pB = new ProcessBuilder(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"RIPi18n.jar").toAbsolutePath().toString(), ripconfig});
 		Process ps = pB.start();
 		System.out.print("Going through your app");
@@ -36,7 +36,7 @@ public class RIPHelper {
 		return tempFolder.getCanonicalPath();
 	}
 
-	public static String runRIPRR(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException{
+	public static String runRIPRR(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath,String expresiveLanguage) throws IOException, InterruptedException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		//		System.out.println(decodedPath);
@@ -45,7 +45,7 @@ public class RIPHelper {
 			tempFolder.delete();
 		}
 		tempFolder.mkdirs();
-		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), resultPath+File.separator+"result.json");
+		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), resultPath+File.separator+"result.json",language,extraPath,expresiveLanguage);
 		ProcessBuilder pB = new ProcessBuilder(
 				new String[]{
 						"java",
@@ -67,7 +67,7 @@ public class RIPHelper {
 		return tempFolder.getCanonicalPath();
 	}
 	
-	public static String runRIPRRi18n(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException,Exception{
+	public static String runRIPRRi18n(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath, String expresiveLanguage) throws IOException, InterruptedException,Exception{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		//		System.out.println(decodedPath);
@@ -76,7 +76,7 @@ public class RIPHelper {
 			tempFolder.delete();
 		}
 		tempFolder.mkdirs();
-		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), resultPath+File.separator+"result.json");
+		String ripconfig = buildRIPConfig(apkLocation, outputFolder, tempFolder.getAbsolutePath(), resultPath+File.separator+"result.json",language,extraPath,expresiveLanguage);
 		ProcessBuilder pB = new ProcessBuilder(
 				new String[]{
 						"java",
@@ -112,7 +112,7 @@ public class RIPHelper {
 		return tempFolder.getCanonicalPath();
 	}
 
-	private static String buildRIPConfig(String newApkPath, String ripConfig, String outputPath, String rrScript) {
+	private static String buildRIPConfig(String newApkPath, String ripConfig, String outputPath, String rrScript, String targetLanguage, String extraPath, String expresiveLanguage) {
 
 		try {
 			JSONObject ripconfig = new JSONObject();
@@ -120,6 +120,9 @@ public class RIPHelper {
 			ripconfig.put("outputFolder", outputPath);
 			ripconfig.put("isHybrid", false);
 			ripconfig.put("executionMode", "events");
+			ripconfig.put("translateTo", targetLanguage);
+			ripconfig.put("expresiveLanguage",expresiveLanguage);
+			ripconfig.put("extraPath",extraPath);
 			if(!rrScript.equals("")) {
 				ripconfig.put("scriptPath", rrScript);
 			}

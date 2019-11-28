@@ -159,20 +159,17 @@ public class ITDroid {
 		// Launch the emulator
 		String androidHome = System.getenv("ANDROID_HOME");
 		//String androidHome = System.getenv("ANDROID_SDK");
-		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome,true);
-		if (!successfullLaunch) {
-			return;
-		}
+//		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome,true);
+//		if (!successfullLaunch) {
+//			return;
+//		}
 		JSONObject lngsResults = new JSONObject();
 
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
 		report.put("dfltLang", deftLanguage);
-		//TODO es importante que cuando se ejecuta de nuevo una aplicación el emulador sea completamente nuevo. Hay aplicaciones que le cambian configuraciones a los dispositivos y estas no vuelven a la normalidad cuando la aplicación es eliminada.
 		// Explore app using default language
-		//EmulatorHelper.wipePackageData(appName);
-		EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
-		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath);
-
+		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath,deftLanguage);
+		//EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		JSONObject dfltLangJSON = new JSONObject();
 		dfltLangJSON.put("lang", "English");
@@ -193,16 +190,9 @@ public class ITDroid {
 
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
-			// Wipes package data
-			//TODO es importante que cuando se ejecuta de nuevo una aplicación el emulador sea completamente nuevo. Hay aplicaciones que le cambian configuraciones a los dispositivos y estas no vuelven a la normalidad cuando la aplicación es eliminada.
-			//The emulator should be new because some applications may change device configuration
-			EmulatorHelper.shutdownEmulators();
-			EmulatorHelper.startEmulatorWipeData(emulatorName);
-			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
+			//EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			// call RIP R&R
-			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,
-					resultFolderPath);
-
+			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,resultFolderPath,lngBundle.getBundle().getString(lang));
 			// Builds the graph for given language
 			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
 			JSONObject dfltLangJSONTrans = new JSONObject();
@@ -226,15 +216,9 @@ public class ITDroid {
 
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
-			// Wipes package data
-			//EmulatorHelper.wipePackageData(appName);
-			//The emulator should be new because some applications may change device configuration
-			EmulatorHelper.shutdownEmulators();
-			EmulatorHelper.startEmulatorWipeData(emulatorName);
-			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
+			//EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			// call RIP R&R
-			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
-					resultFolderPath);
+			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath, resultFolderPath,lngBundle.getBundle().getString(lang));
 
 			// Builds the graph for given language
 			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
