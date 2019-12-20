@@ -18,8 +18,10 @@ import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.ASTHelper;
 import uniandes.tsdl.itdroid.helper.EmulatorHelper;
 import uniandes.tsdl.itdroid.helper.Helper;
+import uniandes.tsdl.itdroid.helper.ITDroidException;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.RIPHelper;
+import uniandes.tsdl.itdroid.helper.RipException;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
@@ -49,10 +51,10 @@ public class ITDroid {
 			// print report
 			if(outputPath!=null) {
 				try (FileWriter file = new FileWriter(outputPath + File.separator+"report.json")) {
-					
+
 					file.write(report.toJSONString());
 					file.flush();
-					
+
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -61,7 +63,7 @@ public class ITDroid {
 	}
 
 	@SuppressWarnings("unchecked")
-	public static void runITDroid(String[] args) throws Exception {
+	public static void runITDroid(String[] args) throws RipException, Exception {
 		// Usage Error
 		if (args.length != 7) {
 			System.out.println("******* ERROR: INCORRECT USAGE *******");
@@ -124,7 +126,7 @@ public class ITDroid {
 		if (!baseStrings.exists()) {
 			report.put("error", "Your application do not have a strings.xml file.");
 			System.out.println("Your application do not have a strings.xml file.");
-			throw new Exception("Your application do not have a strings.xml file.");
+			throw new ITDroidException("Your application do not have a strings.xml file.");
 		}
 		XMLComparator xmlc = new XMLComparator(stringFiles, alpha, langsDir);
 
@@ -167,6 +169,7 @@ public class ITDroid {
 
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
 		report.put("dfltLang", deftLanguage);
+
 		// Explore app using default language
 		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath,deftLanguage);
 		//EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
@@ -190,24 +193,33 @@ public class ITDroid {
 
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
-			//EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
-			// call RIP R&R
-			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,resultFolderPath,lngBundle.getBundle().getString(lang));
-			// Builds the graph for given language
-			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
+			// Wipes package data
+			EmulatorHelper.wipePackageData(appName);
+			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			JSONObject dfltLangJSONTrans = new JSONObject();
-			dfltLangJSONTrans.put("lang", lngBundle.getBundle().getString(lang));
-			dfltLangJSONTrans.put("amStates", langGraph.getStates().size());
-			dfltLangJSONTrans.put("amTrans", langGraph.getTransitions().size());
-			graphs.put(lang, langGraph);
+			try {
+				// call RIP R&R
+				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,resultFolderPath);
 
-			// Compares the default graph with the current language graph
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
-					lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath,
-					dfltLangJSONTrans);
-			lgcomparisions.put(lang, lgc);
+				// Builds the graph for given language
+				LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
+				dfltLangJSONTrans.put("lang", lngBundle.getBundle().getString(lang));
+				dfltLangJSONTrans.put("amStates", langGraph.getStates().size());
+				dfltLangJSONTrans.put("amTrans", langGraph.getTransitions().size());
+				graphs.put(lang, langGraph);
+
+				// Compares the default graph with the current language graph
+				LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
+						lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath,
+						dfltLangJSONTrans);
+				lgcomparisions.put(lang, lgc);				
+
+			} catch (RipException e) {
+				dfltLangJSONTrans.put("error", e.getMessage());
+			}
 
 			lngsResults.put(lang, dfltLangJSONTrans);
+
 		}
 
 		System.out.println("Inspecting non translated versions");
@@ -216,24 +228,30 @@ public class ITDroid {
 
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
-			//EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
-			// call RIP R&R
-			String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath, resultFolderPath,lngBundle.getBundle().getString(lang));
-
-			// Builds the graph for given language
-			LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
+			// Wipes package data
+			EmulatorHelper.wipePackageData(appName);
+			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			JSONObject dfltLangJSONTrans = new JSONObject();
-			dfltLangJSONTrans.put("lang", lngBundle.getBundle().getString(lang));
-			dfltLangJSONTrans.put("amStates", langGraph.getStates().size());
-			dfltLangJSONTrans.put("amTrans", langGraph.getTransitions().size());
-			graphs.put(lang, langGraph);
+			try {
+				// call RIP R&R
+				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
+						resultFolderPath);
 
-			// Compares the default graph with the current language graph
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
-					lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath,
-					dfltLangJSONTrans);
-			lgcomparisions.put(lang, lgc);
+				// Builds the graph for given language
+				LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
+				dfltLangJSONTrans.put("lang", lngBundle.getBundle().getString(lang));
+				dfltLangJSONTrans.put("amStates", langGraph.getStates().size());
+				dfltLangJSONTrans.put("amTrans", langGraph.getTransitions().size());
+				graphs.put(lang, langGraph);
 
+				// Compares the default graph with the current language graph
+				LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
+						lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath,
+						dfltLangJSONTrans);
+				lgcomparisions.put(lang, lgc);
+			} catch(RipException e) {
+				dfltLangJSONTrans.put("error", e.getMessage());
+			}
 			lngsResults.put(lang, dfltLangJSONTrans);
 		}
 		report.put("langsReport", lngsResults);

@@ -67,7 +67,7 @@ public class RIPHelper {
 		return tempFolder.getCanonicalPath();
 	}
 	
-	public static String runRIPRRi18n(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath, String expresiveLanguage) throws IOException, InterruptedException,Exception{
+	public static String runRIPRRi18n(String language, String outputFolder, boolean translated, String extraPath, String apkLocation, String resultPath) throws IOException, InterruptedException, RipException{
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// Creates folder for decoded app
 		//		System.out.println(decodedPath);
@@ -88,23 +88,14 @@ public class RIPHelper {
 		Process ps = pB.start();
 		System.out.print("Going through your app");
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
-		String line;
-
-		//Error handling
-		//TODO revisar cómo volver esto un IPF (?)
-		String err;
-		while((err = reader.readLine()) != null){
-			if (err.contains("OLD TRANSITIONS EMPTY")){
-				throw new Exception("OLD TRANSITIONS EMPTY");
-			}
-			if(err.contains("EXITING EXECUTION. START STATE != CURRENT STATE")){
-				throw new Exception("EXITING EXECUTION. START STATE != CURRENT STATE");
-			}
-		}
-
-		while ((line = reader.readLine())!=null) {
+		BufferedReader errorReader = new BufferedReader(new InputStreamReader(ps.getErrorStream()));
+		String line, errorLine = "";
+		while ((line = reader.readLine())!=null || (errorLine = errorReader.readLine())!= null) {
 			//						System.out.println(line);
 			System.out.print(".");
+			if(errorLine != null && !errorLine.contains("OLD TRANSITIONS EMPTY")) {
+				throw new RipException("New replay failure");
+			}
 		}
 
 		ps.waitFor();
