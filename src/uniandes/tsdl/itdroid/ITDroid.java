@@ -54,6 +54,7 @@ public class ITDroid {
 
 					file.write(report.toJSONString());
 					file.flush();
+					System.out.println("Internationalization analysis is finished, please check the report.json file for the results");
 
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -158,21 +159,14 @@ public class ITDroid {
 			return;
 		}
 
-		// Launch the emulator
-		String androidHome = System.getenv("ANDROID_HOME");
-		//String androidHome = System.getenv("ANDROID_SDK");
-//		boolean successfullLaunch = EmulatorHelper.launchEmulator(emulatorName, androidHome,true);
-//		if (!successfullLaunch) {
-//			return;
-//		}
 		JSONObject lngsResults = new JSONObject();
 
 		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
 		report.put("dfltLang", deftLanguage);
 
 		// Explore app using default language
-		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath,deftLanguage);
-		//EmulatorHelper.changeLanguage(deftLanguage, deftLanguage, extraPath);
+		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath, appName, deftLanguage);
+		System.out.println("The app has been inspected");
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		JSONObject dfltLangJSON = new JSONObject();
 		dfltLangJSON.put("lang", "English");
@@ -193,13 +187,11 @@ public class ITDroid {
 
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
-			// Wipes package data
-			EmulatorHelper.wipePackageData(appName);
-			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			JSONObject dfltLangJSONTrans = new JSONObject();
 			try {
 				// call RIP R&R
-				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,resultFolderPath);
+				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath, resultFolderPath, appName, lngBundle.getBundle().getString(lang));
+				System.out.println("The app has been inspected");
 
 				// Builds the graph for given language
 				LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
@@ -216,6 +208,7 @@ public class ITDroid {
 
 			} catch (RipException e) {
 				dfltLangJSONTrans.put("error", e.getMessage());
+				System.out.println("This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
 			}
 
 			lngsResults.put(lang, dfltLangJSONTrans);
@@ -228,14 +221,11 @@ public class ITDroid {
 
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
-			// Wipes package data
-			EmulatorHelper.wipePackageData(appName);
-			EmulatorHelper.changeLanguage(lang, lngBundle.getBundle().getString(lang), extraPath);
 			JSONObject dfltLangJSONTrans = new JSONObject();
 			try {
 				// call RIP R&R
-				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
-						resultFolderPath);
+				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath, resultFolderPath, appName, lngBundle.getBundle().getString(lang));
+				System.out.println("The app has been inspected");
 
 				// Builds the graph for given language
 				LayoutGraph langGraph = new LayoutGraph(lang, resultFolderPathh);
@@ -251,9 +241,11 @@ public class ITDroid {
 				lgcomparisions.put(lang, lgc);
 			} catch(RipException e) {
 				dfltLangJSONTrans.put("error", e.getMessage());
+				System.out.println("This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
 			}
 			lngsResults.put(lang, dfltLangJSONTrans);
 		}
+		
 		report.put("langsReport", lngsResults);
 	}
 
