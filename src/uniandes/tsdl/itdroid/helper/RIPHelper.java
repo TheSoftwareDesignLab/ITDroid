@@ -26,8 +26,8 @@ public class RIPHelper {
 		BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream()));
 		String line;
 		while ((line = reader.readLine())!=null) {
-						System.out.println(line);
-//			System.out.print(".");
+//						System.out.println(line);
+			System.out.print(".");
 		}
 
 		ps.waitFor();
@@ -89,8 +89,8 @@ public class RIPHelper {
 		BufferedReader errorReader = new BufferedReader(new InputStreamReader(ps.getErrorStream()));
 		String line, errorLine = "";
 		while ((line = reader.readLine())!=null || (errorLine = errorReader.readLine())!= null) {
-									System.out.println(line);
-//			System.out.print(".");
+//									System.out.println(line);
+			System.out.print(".");
 			if(errorLine != null && errorLine.contains("EXITING EXECUTION. START STATE != CURRENT STATE")) {
 				throw new RipException("New replay failure");
 			}
