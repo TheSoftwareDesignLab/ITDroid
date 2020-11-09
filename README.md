@@ -1,6 +1,7 @@
 # Purpose
 
-This project was created by The Sofware Design Lab at the Universidad de los Andes.  
+This project was created by The Sofware Design Lab at the Universidad de los Andes. The main goal of ITDroid project is to automatically detecting i18n
+changes in Android apps in a source-codeless fashion (i.e., without having access to the apps source code). ITDroid combines APK static analysis, automated translation of strings, and dynamic analysis techniques (i.e., GUI ripping and automated replay), to identify violations of GUI constraints when simulating apps execution with different languages. ITDroid also detects strings hard coded and declared in resource and code files that are not internationalized. The proposed approach operates in a source-codeless fashions, thus, it is agnostic of the native language used for creating the app (i.e.,, Java and Kotlin) because the analysis is done at the APK level.
 
 <!-- # Video
 
