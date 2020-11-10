@@ -10,8 +10,8 @@ changes in Android apps in a source-codeless fashion (i.e., without having acces
 
 # Publications
 
-- _"An Empirical Study of i18n Collateral Changes and Bugs in GUIs of Android apps"_, [Camilo Escobar-Velásquez](https://caev03.github.io), Michael Osorio-Riaño, Juan Dominguez-Osorio, Maria Arevalo, and [Mario Linares-Vásquez](https://profesores.virtual.uniandes.edu.co/mlinaresv/en/inicio-en/), in _The 36th IEEE International Conference on Software Maintenance and Evolution ([ICSME'20](https://icsme2020.github.io/))_, Research Track, Adelaide, Australia, September 27th - October 3rd, 2020, to appear 10 pages (24.9% Acceptance Rate) [[pdf]()][[DOI]()][[bibtex](/assets/pdfs/escobar2020itdroid.bib)]
-
+- _"An Empirical Study of i18n Collateral Changes and Bugs in GUIs of Android apps"_, [Camilo Escobar-Velásquez](https://caev03.github.io), [Michael Osorio-Riaño](https://michaelosorio2017.github.io/), Juan Dominguez-Osorio, Maria Arevalo, and [Mario Linares-Vásquez](https://profesores.virtual.uniandes.edu.co/mlinaresv/en/inicio-en/), in _The 36th IEEE International Conference on Software Maintenance and Evolution ([ICSME'20](https://icsme2020.github.io/))_, Research Track, Adelaide, Australia, September 27th - October 3rd, 2020, to appear 10 pages (24.9% Acceptance Rate) [[DOI](https://doi.org/10.1109/ICSME46990.2020.00061)][[bibtex](/assets/pdfs/escobar2020itdroid.bib)]
+  
 # Summary
 <!-- MutAPK is a mutation analysis framework for Android applications over APK Files.
 MutAPK implements 35 mutation operators specifically for Android apps, covering the following categories:
@@ -44,8 +44,9 @@ To run ITDroid use the following command, specifying the required arguments:
 ```
 java -jar ITDroid-0.0.1.jar <APKPath> <AppPackage> <ExtraComponentFolder> <settingsDir> <alpha> <Output>
 ```
+
 ### Arguments
-Provide the following list of required arguments when running MutAPK:
+Provide the following list of required arguments when running ITDroid:
 1. ``APKPath``: relative path of the apk to mutate;
 2. ``AppPackage``: App main package name;
 3. ``ExtraCompFolder``:  relative path of the extra component folder (``ITDroid/extra/``);
@@ -54,6 +55,7 @@ Provide the following list of required arguments when running MutAPK:
 6. ``Output``: relative path of the folder where the test results will be stored;
 
 Languagues can be selected or deselected editing the ``settings.properties`` file. To deselect a language, either comment (#) or delete the corresponding line.
+
 ### Example
 ```
 cd ITDroid
