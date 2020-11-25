@@ -13,6 +13,7 @@ changes in Android apps in a source-codeless fashion (i.e., without having acces
 - _"An Empirical Study of i18n Collateral Changes and Bugs in GUIs of Android apps"_, [Camilo Escobar-Velásquez](https://caev03.github.io), [Michael Osorio-Riaño](https://michaelosorio2017.github.io/), Juan Dominguez-Osorio, Maria Arevalo, and [Mario Linares-Vásquez](https://profesores.virtual.uniandes.edu.co/mlinaresv/en/inicio-en/), in _The 36th IEEE International Conference on Software Maintenance and Evolution ([ICSME'20](https://icsme2020.github.io/))_, Research Track, Adelaide, Australia, September 27th - October 3rd, 2020, to appear 10 pages (24.9% Acceptance Rate) [[DOI](https://doi.org/10.1109/ICSME46990.2020.00061)][[bibtex](/assets/pdfs/escobar2020itdroid.bib)]
   
 # Summary
+ITDROID is an open source tool for automatically detecting i18n bad practices and collateral changes introduced in the GUIs of Android apps. ITDROID is capable of identifying the strings that need to be translated, automatically translate them by using an external service, generate an internationalizaed APK and explore its different versions to detect and locate the changes in the GUI when using English as the default language, and 7 other languages as the target ones.
 <!-- MutAPK is a mutation analysis framework for Android applications over APK Files.
 MutAPK implements 35 mutation operators specifically for Android apps, covering the following categories:
 - Activity/Intents
@@ -42,24 +43,25 @@ The generated runnable jar can be found in: ``ITDroid/target/ITDroid-0.0.1.jar``
 ## Usage
 To run ITDroid use the following command, specifying the required arguments:
 ```
-java -jar ITDroid-0.0.1.jar <APKPath> <AppPackage> <ExtraComponentFolder> <settingsDir> <alpha> <Output>
+java -jar ITDroid-1.0.0.jar <APKPath> <AppPackage> <ExtraLibsFolder> <settingsDir> <amountUnstranslatable> <OutputFolder> <emulatorID>
 ```
 
 ### Arguments
 Provide the following list of required arguments when running ITDroid:
-1. ``APKPath``: relative path of the apk to mutate;
-2. ``AppPackage``: App main package name;
-3. ``ExtraCompFolder``:  relative path of the extra component folder (``ITDroid/extra/``);
-4. ``settingsDir``: relative path to the folder containing the settings.properties.
-5. ``alpha``: Amount of untranslatable strings
-6. ``Output``: relative path of the folder where the test results will be stored;
+1. ``APKPath``: path to the app’s APK;
+2. ``AppPackage``: app package name used to identify the Android app;
+3. ``ExtraCompFolder``:   path to the folder that has the extra libraries used by ITDroid, for instance, this folder contains the executable file of our ripper.;
+4. ``settingsDir``: path to the settings.properties file, that describes the target languages to be used during the execution.;
+5. ``amountUntranslatable``: integer number greater or equal to 0; it defines the accepted difference between the amount of strings internationalized by the developer in the default language and a target language. It is used by ITDroid to decide if the app have enough strings in a target language to be considerate as translated.;
+6. ``OutputFolder``: path to the folder where the results are going to be stored.;
+7. ``emulatorID``: id of the emulator that is going to be used for exploring the app.;
 
 Languagues can be selected or deselected editing the ``settings.properties`` file. To deselect a language, either comment (#) or delete the corresponding line.
 
 ### Example
 ```
 cd ITDroid
-java -jar target/ITDroid-1.0.0.jar foo.apk or.foo.app ./extra/ ./ 2 ./results/
+java -jar target/ITDroid-1.0.0.jar foo.apk or.foo.app ./extra/ ./ 0 ./results/ ANDROID_6_API_27
 ```
 
 ### Output
@@ -69,33 +71,84 @@ The output directory will contain the results from the excuted tests and the int
 
 ![workflow](/assets/imgs/genApproach.jpg)
 
-<!-- ## App Processing
+> ## App Processing
 
-Using the APKTool library, MutAPK decodes the app's APK into a folder with all the resource files and the source files disassembled into SMALI files.
 
-## Dead Code Removal
+### **Decoding**
+The workflow of ITDROID starts with the preprocessing of a given APK under analysis. By using the APKTool library, ITDROID unpackages and decodes the APK into an intermediate representation (IR) called SMALI. Our choice for having implementation rules also in SMALI is because this intermediate representation is one of the most used ones for analyzing APK files [68], and because of the availability of parsers/lexers that are easy to use and configure. Having access to SMALI code extracted directly from the APK makes it easier to repackage the app code in an APK, reducing the compilation/building time from Java source code to DEX.
+### **Hard-Coded Strings Detection**
+By using static analysis over the processed APK, ITDROID locates hard-coded strings. In SMALI, string literals are declared via const-string instructions. Therefore, ITDROID generates the AST of the SMALI IR and by using a visitor pattern, it goes through all nodes looking for instructions that match the desired expression. After HCSs are located, those are reported and grouped by method and class. It is worth noticing that hardcoded strings are not translated yet by the current version of ITDroid.
+### **Non-Internationalized Strings** 
+Regarding the strings defined in the strings.xml files, ITDROID identifies the NISs by comparing the existent language files to the one defined in the default resource folder. For this, ITDROID compares the XML files and computes the amount of strings that are missing in the existing target language files. To this, ITDroid generates a set of tuples of the form: ```<language,stringID>```, where language could be either the default or a target language, and the stringID is the id used in the resource file as identifier. Then, ITDROID compares the language tuples and computes the amount of strings missing in a target language. Using the computed amount, it classifies the language as translated or not, based on a threshold of maximum number of NISs provided by the user when executing ITDROID. Then it stores the identifier of the non-translated languages for further processing.
 
-In order to identify the dead code within the app’ SMALI representation, we build the call graph of the app under analysis and identified the methods that are not called by others.
 
-## Derivation of the Potential Fault Profile (PFP)
+> ## Translation
+ITDROID starts with the automated translation process by going through every language in the non-translated languages list, then it uses an external service (e.g., IBM watson) to translate the missing strings and creates a translated version of the strings.xml file with the NISs. After that, ITDroid builds an internationalized APK. More details in the aforementioned process are presented as follows:
+### **Strategy Design Pattern**
+In order to enhance the extensibility of ITDROID we designed the translation process to follow the Strategy Design pattern for ease the addition of other translation systems. Therefore, if a user wants to add its own translation service, she only has to create a class implementing the requirements of the “TranslatorInterface”. For the current version of ITDroid we used the IBM Watson Translation service, since it has a free and easy to use API.
+### **Request building**
+The translation process starts by preprocessing the NISs to replace the text placeholders (i.e., $s, $d) used for string formatting for a set of placeholder we designed to avoid affecting the translation process. It is worth noticing, that this placeholder replacement is performed while building the request for the API, it does not modify the values stored in the strings.xml files. When the result of the API is received, it is processed to inject the original text holders and to escape the characters that do not belong to UTF-8 encoding. Since we were working with IBM translation service, we had length constraints for the amount of characters in a request, therefore, we divided the NISs into sets of 50 strings, and generated multiple requests to the API to translate the full set of NISs. The amount of strings used for each request was computed based on the behavior of the API while we performed our tests.
 
-To extact the PFP, both XML and SMALI files of an app are statically analyzed searching for instructions that comply with the characteristics defined in the mutation operators. In the case of XML files, MutAPK goes through the content of XML files looking for matches between the file tags and the different  potential fault injection points. For SMALI files the process is based on the AST. The AST is obtained using the lexer and parser created by APKTool.
+### **File Creation**
+After the translation process for a language ends, the translated strings are stored in the corresponding ```strings.xml``` file for each target language, i.e., inside the target language folder (i.e., ```./rsc/values-<targetLanguageID>/```). In case the target language already had some translated strings, the newly translated ones are appended to the existing file.
 
-## Mutant Selection
+### **APK building**
+Finally, after the NISs have been analyzed and translated to the target languages, ITDROID uses the APKTool library to build the internationalized APK containing all the languages files. Note that the new version of the app is ready to be installed and tested using any of the selected languages.
 
-After the PFP derivation is completed, a mapping between the mutation operators and the locations within the code identified as mutable is obtained. Using this map as input, along with the user selected technique, MutAPK generates a subset of the PFP to be used during the mutant generation process. If no selection technique is defined by the user, then, the whole set of mutants is generated.
+> ## Ripping and Replay
 
-## Mutant Generation 
+In order to identify the graphical impact of using a translated version of the app, we rely on systematic exploration to go through the app retrieving information that could be used to generate a model. That model contains the information of all elements in the GUI for the visited states and enables the comparison of location and relation properties from the same element in the different language’s versions.
 
-As result of previous step, a pruned PFP is obtained. This PFP is used to start seeding the mutation in app copies, where they are analyzed to check if are equivalent or duplicated. If a mutant is tagged either as equivalent or duplicate, it is reported in the final csv file and its APK is not generated. In the other case, the mutants is functional and not equivalent or duplicated, its folder is used to generated the resultant mutated APK.
+### **Systematic Exploration and Re-execution of app exploration**
+Having in mind that we wanted to recognize the changes in the GUI, we opted to explore the apps using a systematic exploration approach. To this, we extend the ripper by Li˜n´an et al. [12]. With the ripper, we extracted visual properties of the visited states to build layout graphs and an events log that allowed further re-execution of the same exploration sequence but on an internationalized version of the original APK.
 
-## Mutant Consolidation
+### **Layout Graphs (LGs)**
+Once the original APK has been explored, ITDROID generates a Layout Graph, which represents the existing relations between the elements of the interface. For example, consider the elements presented in the next figure; as it can be seen by the color coding, there are relations based on the alignment of the buttons.
+An aggregation of all the relations between any pair of elements in a GUI, is called Layout Graph (LG). It is worth noticing that during the exploration of the app, ITDROID generates a LG for each visited GUI state, therefore at the end of the execution, a set of LGs identified by the id of the corresponding state is generated for comparison.
 
-At the end of the process, MutAPK generates a folder for each mutant, where in a positive case, contains the APK of the mutant. In the case, the mutant has being tagged as equivalent, duplicate or non-compilable, MutAPK reports the full mutated app folder for further analysis. -->
+> ## Detection
+ITDROID generates a LG (LGdflt) for the default language, and a layout graph LGlang for each target language lang. Each LGlang is compared to LGdflt to detect differences.
 
-# Study on internationalization of Android apps
+### **Comparison of LGs**
+In order to compare the LGs of original and internationalized versions, ITDROID starts by pairing LGs of visited states, afterwards ITDROID pairs the elements of the LGs using their identifiers; this is possible since the elements of the LGs are also the elements of the GUI of the app; in case an element does not have a valid value in the id property, a new id can be computed using the xpath and its properties. Once the elements of the LGs are paired, the comparison is made by identifying the differences between the relations presented in the LGs. For example, consider the screenshots presented in Fig. 3. After translating the app to Russian the “Find devices” button loses the bottom alignment with the other buttons, which is an example of an internationalization collateral change.
 
-## App List
+### **Report Generation**
+ITDROID generates a report listing (i) hard-coded strings, (ii) non-internationalized strings declared in the default language but not traduced in the target languages, and (iii) internationalization collateral changes. To easily handle ICCs, ITDROID reports the changes by identifying: (i) the exploration state id, (ii) the id of the node, (iii) each node for which a relation was modified along with the details of the modified relations, and (iv) screenshots depicting the GUI state for both default and internationalized languages.
+
+
+# Taxonomy of _i18n_ collateral changes and bugs
+
+![taxonomy](./assets/imgs/ITDroidTaxonomyH.jpg)
+
+
+
+## _i18n_ Collateral Bugs
+
+In general, most of the reported ICBs are caused by incorrect definition of constraints on components with text and the lack of tools supporting automated detection and fixing. The bugs induced by internationalized text expansions can also be easily fixed by using the ellipsize attribute of the GUI components. In addition, although, ITDroid is a partial solution that helps developers to detect IBCPs and ICCs, they have to manually go over the ICCs reported by ITDroid to identify ICBs. Therefore, future work could focus on extending the ITDroid approach for automatically detecting the bugs by relying on automated imagebased comparisons or by statically detecting (i) constraints incompatibilities and issues, and (ii) missing configurations and resources for enabling bidirectionality. Other potential impact of the IBCPs and ICBs described here, but not investigated in our study, is related to the behavior of screen readers when IBCPs and ICBs are exhibited in internationalized apps explored by users with visual disabilities. Although it is an aspect not deeply investigated yet, an empirical study by Vendome et al. reports that internationalization of assistive content in Android apps is a concern expressed by some developers at Stack Overflow.
+
+### <ins>Overflowed component due to internationalized text expansion</ins>
+This type of bug is visible in GUIs because it breaks the original design when large texts push the components to be out of their expected dimensions, positions and alignments. For instance, following image shows how in the cgeo.geocaching app, when changing to Portuguese, the horizontal arrangement of the dialog buttons is pushed to be vertical because of internationalized text expansion in the buttons. When looking into the details of the cgeo.geocaching app’s layout we found that the bug is exhibited by an Android AlertDialog. Therefore, developers must be aware that even Android composite widgets are prone to i18n bugs. We also found that using linear layouts instead of constraints layout is a common error in Android apps. Junior developers prefer linear layouts because are easier to use; constraint layouts are more complex to handle when there is no deep knowledge of the available constraints. In addition to being performance friendly, constraint layouts can help developers to avoid issues when dimensions of GUI components are modified dynamically. Therefore, developers should be knowledgeable of the constraint types and be aware that changes in text lengths can break the layout drastically, in particular when changing the default language.
+
+![mirrored layout for right-to-left language](./assets/imgs/lostPosition.jpg)
+### <ins>Lack of mirrored layout for right-to-left languages</ins>
+It is produced when developers do not consider bidirectionality in their layouts. Bidirectionality means that for languages that read from right-to-left (RTL), UIs should be mirrored to ensure understandability. One example of this bug is presented as follows. To avoid this type of bugs, developers should follow bidirectionality guides that describe how to mirror layouts at the design concept and implementation levels. Static tools can be a solution here, by automatically analyzing and implementing the bidirectionality and RTL guidelines.
+
+![mirrored layout for right-to-left language](./assets/imgs/rtlLang.png)
+
+### <ins>Lost Component</ins>
+type relates to cases in which a visible component, is pushed out of the display view because a text component is re-dimensioned, see following image. This does not seem to be a problem at first sight, however, this type of issue could hinder the execution of automated tests that expect certain components to be visible.
+
+![lost content](./assets/imgs/LostContent.png)
+
+### <ins>Overlapped Components</ins>
+It is mainly caused by the lack of proper constraints between two elements. This bug can happen between two aligned elements. 
+
+![overlapped Components](./assets/imgs/intersection.png)
+
+# Replication package
+
+To see the result of our study download our [replication package](./resources/execResults/ITDroidOutput.zip)
+<!-- ## App List -->
 ---
 
 <!-- | App Name | Package Name | MutAPK Output* | 
@@ -113,8 +166,10 @@ At the end of the process, MutAPK generates a folder for each mutant, where in a
 
 *Results contain the complementary files along with a copy of the console output -->
 
-## Study results
+<!-- ## Replication Package -->
 ---
+
+
 
 <!-- | App Name | Dead Code Mutants | Equivalent Mutants | Duplicated Mutants | Generated Mutants | Representative Subset (PerOperator) | Representative Subset (WholePFPSet) |
 |----------|:---:|:-----:|:---:|:---:|---|---|
