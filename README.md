@@ -6,11 +6,16 @@ changes in Android apps in a source-codeless fashion (i.e., without having acces
 # Video
 
 <p align="center">
-<iframe width="500" height="282" src="https://www.youtube.com/embed/ygN5mADVhZo" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></p>
+<iframe width="500" height="282" src="https://www.youtube.com/embed/ygN5mADVhZo" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+<iframe width="500" height="282" src="https://www.youtube.com/embed/bzrPk_L0Ysw" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+<iframe width="500" height="282" src="https://www.youtube.com/embed/KqylCqUZSaM" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+</p>
 
 # Publications
 
 - _"An Empirical Study of i18n Collateral Changes and Bugs in GUIs of Android apps"_, [Camilo Escobar-Velásquez](https://caev03.github.io), [Michael Osorio-Riaño](https://michaelosorio2017.github.io/), Juan Dominguez-Osorio, Maria Arevalo, and [Mario Linares-Vásquez](https://profesores.virtual.uniandes.edu.co/mlinaresv/en/inicio-en/), in _The 36th IEEE International Conference on Software Maintenance and Evolution ([ICSME'20](https://icsme2020.github.io/))_, Research Track, Adelaide, Australia, September 27th - October 3rd, 2020, to appear 10 pages (24.9% Acceptance Rate) [[DOI](https://doi.org/10.1109/ICSME46990.2020.00061)][[bibtex](/assets/pdfs/escobar2020itdroid.bib)]
+- _"ITDroid: A Tool for Automated Detection \\ of i18n Issues on Android Apps"_, [Camilo Escobar-Velásquez](https://caev03.github.io), Andrés Donoso-Diaz, and [Mario Linares-Vásquez](https://profesores.virtual.uniandes.edu.co/mlinaresv/en/inicio-en/), in _The 8th IEEE/ACM International Conference on Mobile Software Engineering and Systems ([MOBILESoft'21](https://conf.researchr.org/home/mobilesoft-2021))_, Tool Demos Track, Madrid, Spain, May 17th - 19th, 2021, to appear 4 pages 
+<!-- [[DOI](https://doi.org/10.1109/ICSME46990.2020.00061)][[bibtex](/assets/pdfs/escobar2020itdroid.bib)] -->
   
 # Summary
 ITDROID is an open source tool for automatically detecting i18n bad practices and collateral changes introduced in the GUIs of Android apps. ITDROID is capable of identifying the strings that need to be translated, automatically translate them by using an external service, generate an internationalizaed APK and explore its different versions to detect and locate the changes in the GUI when using English as the default language, and 7 other languages as the target ones.
