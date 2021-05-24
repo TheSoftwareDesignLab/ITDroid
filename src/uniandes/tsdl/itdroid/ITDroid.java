@@ -1,9 +1,11 @@
 package uniandes.tsdl.itdroid;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -28,6 +30,16 @@ import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
 import uniandes.tsdl.itdroid.translator.Translator;
 
 public class ITDroid {
+	// CONSOLE STYLING
+	public static final String RESET = "\033[0m";
+	public static final String GREEN = "\033[0;32m";
+	public static final String CYAN_BOLD = "\033[1;36m";
+	public static final String RED_BOLD = "\033[1;31m";
+	public static final String PURPLE_BOLD = "\033[1;34m";
+	public static final String CHECK_ICON = "\u2713";
+
+	// REPORT ENVIRONMENT VARIABLE NAME
+	private static final String REACT_APP_OUTPUT_FOLDER = "REACT_APP_OUTPUT_FOLDER";
 
 	static HashMap<String, String> pathsMap = new HashMap<>();
 
@@ -49,14 +61,19 @@ public class ITDroid {
 			e.printStackTrace();
 		} finally {
 			// print report
-			if(outputPath!=null) {
-				try (FileWriter file = new FileWriter(outputPath + File.separator+"report.json")) {
+			if (outputPath != null) {
+				try (FileWriter file = new FileWriter(outputPath + File.separator + "report.json")) {
 
 					file.write(report.toJSONString());
 					file.flush();
-					System.out.println("Internationalization analysis is finished, please check the report.json file for the results");
+					System.out.println(
+							"Internationalization analysis is finished, please check the report.json file for the results");
+
+					createReport(args);
 
 				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			}
@@ -165,7 +182,8 @@ public class ITDroid {
 		report.put("dfltLang", deftLanguage);
 
 		// Explore app using default language
-		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath, appName, deftLanguage);
+		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath, appName,
+				deftLanguage);
 		System.out.println("The app has been inspected");
 		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
 		JSONObject dfltLangJSON = new JSONObject();
@@ -190,7 +208,8 @@ public class ITDroid {
 			JSONObject dfltLangJSONTrans = new JSONObject();
 			try {
 				// call RIP R&R
-				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath, resultFolderPath, appName, lngBundle.getBundle().getString(lang));
+				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,
+						resultFolderPath, appName, lngBundle.getBundle().getString(lang));
 				System.out.println("The app has been inspected");
 
 				// Builds the graph for given language
@@ -204,11 +223,12 @@ public class ITDroid {
 				LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
 						lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath,
 						dfltLangJSONTrans);
-				lgcomparisions.put(lang, lgc);				
+				lgcomparisions.put(lang, lgc);
 
 			} catch (RipException e) {
 				dfltLangJSONTrans.put("error", e.getMessage());
-				System.out.println("This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
+				System.out.println(
+						"This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
 			}
 
 			lngsResults.put(lang, dfltLangJSONTrans);
@@ -224,7 +244,8 @@ public class ITDroid {
 			JSONObject dfltLangJSONTrans = new JSONObject();
 			try {
 				// call RIP R&R
-				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath, resultFolderPath, appName, lngBundle.getBundle().getString(lang));
+				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
+						resultFolderPath, appName, lngBundle.getBundle().getString(lang));
 				System.out.println("The app has been inspected");
 
 				// Builds the graph for given language
@@ -239,14 +260,105 @@ public class ITDroid {
 						lngBundle.getBundle().getString(lang), lang, langGraph, resultFolderPathh, outputPath,
 						dfltLangJSONTrans);
 				lgcomparisions.put(lang, lgc);
-			} catch(RipException e) {
+			} catch (RipException e) {
 				dfltLangJSONTrans.put("error", e.getMessage());
-				System.out.println("This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
+				System.out.println(
+						"This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
 			}
 			lngsResults.put(lang, dfltLangJSONTrans);
 		}
-		
+
 		report.put("langsReport", lngsResults);
+	}
+
+	public static void createReport(String[] args) throws Exception {
+		int resultValue = -1;
+		ProcessBuilder createDirectoryPB = new ProcessBuilder();
+		ProcessBuilder copyResultsPB = new ProcessBuilder();
+		ProcessBuilder installPB = new ProcessBuilder();
+		ProcessBuilder runPB = new ProcessBuilder();
+		Process createDirectoryProcess, copyResultsProcess, installProcess, runProcess;
+		File reportFile = new File("report/");
+		File reportEnvFile = new File("report/.env");
+
+		// Format output folder path
+		outputPath = args[5];
+		String outputFolder = outputPath.replace(".", "");
+		outputFolder = outputFolder.startsWith("/") ? outputFolder.substring(1) : outputFolder;
+		String reportOutputPath = "report/public/" + outputFolder;
+
+		// Create the directory on the report project
+		System.out.println("Creating report results directory...");
+		createDirectoryPB.command("mkdir", reportOutputPath);
+		createDirectoryProcess = createDirectoryPB.start();
+		resultValue = createDirectoryProcess.waitFor();
+		// Check if it could create the directory
+		if (resultValue != 0) {
+			System.out.println(GREEN + "Report results directory created successfully " + CHECK_ICON + RESET);
+			System.out.println("Deleting previous version...");
+			ProcessBuilder removeDirectoryPB = new ProcessBuilder();
+			removeDirectoryPB.command("rm", "-r", reportOutputPath);
+			Process removeDirectoryProcess = removeDirectoryPB.start();
+			resultValue = removeDirectoryProcess.waitFor();
+			if (resultValue != 0) {
+				printErrors(removeDirectoryProcess);
+				return;
+			}
+			System.out.println(GREEN + "Previous version deleted successfully " + CHECK_ICON + RESET);
+			// Try creating directory again
+			System.out.println("Creating new version...");
+			createDirectoryProcess = createDirectoryPB.start();
+			resultValue = createDirectoryProcess.waitFor();
+			if (resultValue != 0) {
+				printErrors(createDirectoryProcess);
+				return;
+			}
+			System.out.println(GREEN + "New version created successfully " + CHECK_ICON + RESET);
+		}
+
+		// Copying results to report project
+		System.out.println("Copying results to directory...");
+		copyResultsPB.command("cp", "-R", outputFolder, reportOutputPath);
+		copyResultsProcess = copyResultsPB.start();
+		resultValue = copyResultsProcess.waitFor();
+		if (resultValue != 0) {
+			printErrors(copyResultsProcess);
+			return;
+		}
+		System.out.println(GREEN + "Results copied to directory successfully " + CHECK_ICON + RESET);
+
+		// Set REACT_APP_OUTPUT_FOLDER environment variable
+		System.out.println("Setting environment variables...");
+		FileWriter fw = new FileWriter(reportEnvFile);
+		BufferedWriter bw = new BufferedWriter(fw);
+		bw.write("REACT_APP_OUTPUT_FOLDER=" + outputFolder.replace("/", ""));
+		bw.flush();
+		bw.close();
+		System.out.println(GREEN + "Environment variables set successfully " + CHECK_ICON + RESET);
+
+		// Run npm install
+		System.out.println("Executing " + CYAN_BOLD + "npm install" + RESET);
+		installPB.command("npm", "install").directory(reportFile);
+		installProcess = installPB.start();
+		printResults(installProcess);
+		resultValue = installProcess.waitFor();
+		if (resultValue == 0) {
+			System.out.println(CYAN_BOLD + "npm install" + GREEN + " executed successfully " + CHECK_ICON + RESET);
+
+			// Run project
+			System.out.println(PURPLE_BOLD + "Running report project..." + RESET);
+			runPB.command("npm", "start").directory(reportFile);
+			runProcess = runPB.start();
+			printResults(runProcess);
+			resultValue = runProcess.waitFor();
+			if (resultValue != 0) {
+				printErrors(runProcess);
+				return;
+			}
+		} else {
+			printErrors(installProcess);
+			return;
+		}
 	}
 
 	private static String[] buildStringPaths(String[] lngs) throws UnsupportedEncodingException {
@@ -265,4 +377,19 @@ public class ITDroid {
 		return paths;
 	}
 
+	public static void printResults(Process process) throws IOException {
+		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+		String line = "";
+		while ((line = reader.readLine()) != null) {
+			System.out.println(line);
+		}
+	}
+
+	public static void printErrors(Process process) throws IOException {
+		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+		String line = "";
+		while ((line = reader.readLine()) != null) {
+			System.out.println(RED_BOLD + line + RESET);
+		}
+	}
 }
