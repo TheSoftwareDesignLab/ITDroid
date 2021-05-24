@@ -11,6 +11,10 @@ buildNumber.properties
 .settings/
 test/
 .env
+results/
 
 # Avoid ignoring Maven wrapper jar file (.jar files are usually ignored)
 !/.mvn/wrapper/maven-wrapper.jar
+
+# APKs
+*.apk
