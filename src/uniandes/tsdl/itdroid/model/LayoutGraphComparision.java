@@ -81,7 +81,9 @@ public class LayoutGraphComparision {
 					if ((relationss[0][tempIPF.getNodePos()][j] != null
 							&& relationss[0][tempIPF.getNodePos()][j].size() > 0)
 							|| (relationss[1][tempIPF.getNodePos()][j] != null
-									&& relationss[1][tempIPF.getNodePos()][j].size() > 0)) {
+									&& relationss[1][tempIPF.getNodePos()][j].size() > 0)
+							|| (relationss[2][tempIPF.getNodePos()][j] != null
+									&& relationss[2][tempIPF.getNodePos()][j].size() > 0)) {
 						JSONObject relationsJ = new JSONObject();
 						relationsJ.put("relNode", j);
 						String added = "";
@@ -96,6 +98,12 @@ public class LayoutGraphComparision {
 							removed += ((GraphEdgeType) iterr.next()).name() + ";";
 						}
 						relationsJ.put("removed", removed);
+						String missing = "";
+						iterr = relationss[2][tempIPF.getNodePos()][j].iterator();
+						while (iterr.hasNext()) {
+							missing += ((GraphEdgeType) iterr.next()).name() + ";";
+						}
+						relationsJ.put("missing", missing);
 						relations.add(relationsJ);
 					}
 				}
@@ -132,7 +140,7 @@ public class LayoutGraphComparision {
 		int[] pairedStateNodes = pairStateNodes(dfltState, langState);
 
 		ArrayList<IPF> ipfss = new ArrayList<IPF>();
-		Set<GraphEdgeType>[][][] resultts = (Set<GraphEdgeType>[][][]) new Set[2][dfltGraph.length][dfltGraph[0].length];
+		Set<GraphEdgeType>[][][] resultts = (Set<GraphEdgeType>[][][]) new Set[3][dfltGraph.length][dfltGraph[0].length];
 
 		int maxI = Math.min(dfltGraph.length, langGraph.length);
 		int maxJ = Math.min(dfltGraph[0].length, langGraph[0].length);
@@ -167,22 +175,17 @@ public class LayoutGraphComparision {
 					addedRelationsBA.removeAll(GraphEdgeType.getAligmentTypes());
 				}
 
-				resultts[0][i][j] = lostRelationsAB;
-				resultts[0][j][i] = lostRelationsBA;
-				resultts[1][i][j] = addedRelationsAB;
-				resultts[1][j][i] = addedRelationsBA;
-
-				// TODO: Add missing relations to resultts?
-
-				System.out.println(i + ", " + j);
-				System.out.println("\tdfltGraph[i][j]");
-				System.out.println("\t" + dfltGraph[i][j]);
-				System.out.println("\tlangGraph[i][j]");
-				System.out.println("\t" + langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
-				System.out.println("\tdfltGraph[j][i]");
-				System.out.println("\t" + dfltGraph[j][i]);
-				System.out.println("\tlangGraph[j][i]");
-				System.out.println("\t" + langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
+				// System.out.println(i + ", " + j);
+				// System.out.println("\tdfltGraph[i][j]");
+				// System.out.println("\t" + dfltGraph[i][j]);
+				// System.out.println("\tlangGraph[i][j]");
+				// System.out.println("\t" +
+				// langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
+				// System.out.println("\tdfltGraph[j][i]");
+				// System.out.println("\t" + dfltGraph[j][i]);
+				// System.out.println("\tlangGraph[j][i]");
+				// System.out.println("\t" +
+				// langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
 
 				Set<GraphEdgeType> rtlChangeExpectedTypes = GraphEdgeType.getRtlChangeExpectedTypes();
 
@@ -191,14 +194,24 @@ public class LayoutGraphComparision {
 
 				// Check if the comparison is between RTL and LTR languages.
 				if ((!dfltIsRTL && destIsRTL) || (dfltIsRTL && !destIsRTL)) {
-					System.out.println("\tRTL & LTR");
+					// System.out.println("\tRTL & LTR");
 					lostRelationsAB.removeAll(rtlChangeExpectedTypes);
 					lostRelationsBA.removeAll(rtlChangeExpectedTypes);
 					addedRelationsAB.removeAll(rtlChangeExpectedTypes);
 					addedRelationsBA.removeAll(rtlChangeExpectedTypes);
 
-					if (!rtlChangeIsCorrect(dfltGraph[i][j], langGraph[pairedStateNodes[i]][pairedStateNodes[j]])) {
-						System.out.println("\tHAS AN IPF");
+					Set<GraphEdgeType> missingRelationsAB = rtlMissingChanges(dfltGraph[i][j],
+							langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
+					if (missingRelationsAB.size() > 0) {
+						// System.out.println("\tHAS AN IPF");
+						// System.out.println("\t\tMissing Relations: " + missingRelationsAB);
+
+						Set<GraphEdgeType> missingRelationsBA = rtlMissingChanges(dfltGraph[j][i],
+								langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
+
+						resultts[2][i][j] = missingRelationsAB;
+						resultts[2][j][i] = missingRelationsBA;
+
 						AndroidNode iLangNode = langState.getStateNodes().get(pairedStateNodes[i]);
 						AndroidNode jLangNode = langState.getStateNodes().get(pairedStateNodes[j]);
 
@@ -206,6 +219,11 @@ public class LayoutGraphComparision {
 						ipfss.add(new IPF(destLanguage, langState, jLangNode, j));
 					}
 				}
+
+				resultts[0][i][j] = lostRelationsAB;
+				resultts[0][j][i] = lostRelationsBA;
+				resultts[1][i][j] = addedRelationsAB;
+				resultts[1][j][i] = addedRelationsBA;
 
 				if ((lostRelationsAB.size() + lostRelationsBA.size() + addedRelationsAB.size()
 						+ addedRelationsBA.size()) > 0) {
@@ -223,29 +241,24 @@ public class LayoutGraphComparision {
 		return ipfss;
 	}
 
-	private boolean rtlChangeIsCorrect(Set<GraphEdgeType> dfltNode, Set<GraphEdgeType> langNode) {
-		boolean dfltNodeContainsLeft = dfltNode.contains(GraphEdgeType.LEFT);
-		boolean dfltNodeContainsRight = dfltNode.contains(GraphEdgeType.RIGHT);
-		boolean langNodeContainsLeft = langNode.contains(GraphEdgeType.LEFT);
-		boolean langNodeContainsRight = langNode.contains(GraphEdgeType.RIGHT);
+	public Set<GraphEdgeType> rtlMissingChanges(Set<GraphEdgeType> dfltNode, Set<GraphEdgeType> langNode) {
+		Set<GraphEdgeType> missingEdgeTypes = new HashSet<>();
+		Set<GraphEdgeType> rtlChangeExpectedTypes = GraphEdgeType.getRtlChangeExpectedTypes();
 
-		boolean dfltNodeContainsLeftAligned = dfltNode.contains(GraphEdgeType.LEFT_ALIGNED);
-		boolean dfltNodeContainsRightAligned = dfltNode.contains(GraphEdgeType.RIGHT_ALIGNED);
-		boolean langNodeContainsLeftAligned = langNode.contains(GraphEdgeType.LEFT_ALIGNED);
-		boolean langNodeContainsRightAligned = langNode.contains(GraphEdgeType.RIGHT_ALIGNED);
+		Iterator<GraphEdgeType> iter = dfltNode.iterator();
+		while (iter.hasNext()) {
+			GraphEdgeType dfltEdgeType = iter.next();
 
-		if (!dfltNodeContainsLeft && !dfltNodeContainsLeftAligned && !dfltNodeContainsRight
-				&& !dfltNodeContainsRightAligned)
-			return true;
+			if (rtlChangeExpectedTypes.contains(dfltEdgeType)) {
+				GraphEdgeType expectedLangEdgeType = GraphEdgeType.getInverseEdgeType(dfltEdgeType);
 
-		System.out.println("\t( " + dfltNodeContainsLeft + " && " + langNodeContainsRight + " ) || ( "
-				+ dfltNodeContainsRight + " && " + langNodeContainsLeft + " ) || ( " + dfltNodeContainsLeftAligned
-				+ " && " + langNodeContainsRightAligned + " ) || ( " + dfltNodeContainsRightAligned + " && "
-				+ langNodeContainsLeftAligned + " )");
+				if (!langNode.contains(expectedLangEdgeType)) {
+					missingEdgeTypes.add(expectedLangEdgeType);
+				}
+			}
+		}
 
-		return (dfltNodeContainsLeft && langNodeContainsRight) || (dfltNodeContainsRight && langNodeContainsLeft)
-				|| (dfltNodeContainsLeftAligned && langNodeContainsRightAligned)
-				|| (dfltNodeContainsRightAligned && langNodeContainsLeftAligned);
+		return missingEdgeTypes;
 	}
 
 	private int[] pairStateNodes(State dfltState, State langState) {

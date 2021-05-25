@@ -33,4 +33,41 @@ public enum GraphEdgeType {
 		set.add(RIGHT_ALIGNED);
 		return set;
 	}
+
+	public static GraphEdgeType getInverseEdgeType(GraphEdgeType graphEdgeType) {
+		switch (graphEdgeType) {
+			case ABOVE:
+				return BELOW;
+
+			case BELOW:
+				return ABOVE;
+
+			case LEFT:
+				return RIGHT;
+
+			case RIGHT:
+				return LEFT;
+
+			case TOP_ALIGNED:
+				return BOTTOM_ALIGNED;
+
+			case BOTTOM_ALIGNED:
+				return TOP_ALIGNED;
+
+			case LEFT_ALIGNED:
+				return RIGHT_ALIGNED;
+
+			case RIGHT_ALIGNED:
+				return LEFT_ALIGNED;
+
+			case CONTAINS:
+				return CONTAINED;
+
+			case CONTAINED:
+				return CONTAINS;
+
+			default:
+				return graphEdgeType;
+		}
+	}
 }
