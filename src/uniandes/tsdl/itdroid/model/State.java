@@ -244,16 +244,21 @@ public class State {
 		AndroidNode androidNode2 = stateNodes.get(node2);
 		String[] node1PathArray = androidNode1.getxPath().split("/");
 		String[] node2PathArray = androidNode2.getxPath().split("/");
-		if (androidNode1.getxPath().contains(":id"))
-			node1PathArray = Arrays.copyOfRange(node1PathArray, 0, node1PathArray.length - 3);
-		if (androidNode2.getxPath().contains(":id"))
-			node2PathArray = Arrays.copyOfRange(node2PathArray, 0, node2PathArray.length - 3);
+		node1PathArray = androidNode1.getxPath().contains(":id")
+				? node1PathArray = Arrays.copyOfRange(node1PathArray, 0, node1PathArray.length - 3)
+				: Arrays.copyOfRange(node1PathArray, 0, node1PathArray.length - 1);
+		node2PathArray = androidNode2.getxPath().contains(":id")
+				? node2PathArray = Arrays.copyOfRange(node2PathArray, 0, node2PathArray.length - 3)
+				: Arrays.copyOfRange(node2PathArray, 0, node2PathArray.length - 1);
 
 		String node1PathComponent = "";
 		String node2PathComponent = "";
 		boolean areSiblings = true;
 
-		for (int i = 0; i < node1PathArray.length && areSiblings; i++) {
+		int largerPath = node1PathArray.length > node2PathArray.length ? node1PathArray.length : node2PathArray.length;
+
+		// Compares if the two nodes have the same path up to the parent node
+		for (int i = 0; i < largerPath && areSiblings; i++) {
 			try {
 				node1PathComponent = node1PathArray[i];
 				node2PathComponent = node2PathArray[i];

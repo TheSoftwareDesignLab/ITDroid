@@ -177,18 +177,6 @@ public class LayoutGraphComparision {
 					addedRelationsBA.removeAll(GraphEdgeType.getAligmentTypes());
 				}
 
-				// System.out.println(i + ", " + j);
-				// System.out.println("\tdfltGraph[i][j]");
-				// System.out.println("\t" + dfltGraph[i][j]);
-				// System.out.println("\tlangGraph[i][j]");
-				// System.out.println("\t" +
-				// langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
-				// System.out.println("\tdfltGraph[j][i]");
-				// System.out.println("\t" + dfltGraph[j][i]);
-				// System.out.println("\tlangGraph[j][i]");
-				// System.out.println("\t" +
-				// langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
-
 				Set<GraphEdgeType> rtlChangeExpectedTypes = GraphEdgeType.getRtlChangeExpectedTypes();
 
 				boolean dfltIsRTL = Helper.getInstance().languageIsRTL(defltLanguage);
@@ -196,7 +184,6 @@ public class LayoutGraphComparision {
 
 				// Check if the comparison is between RTL and LTR languages.
 				if ((!dfltIsRTL && destIsRTL) || (dfltIsRTL && !destIsRTL)) {
-					// System.out.println("\tRTL & LTR");
 					lostRelationsAB.removeAll(rtlChangeExpectedTypes);
 					lostRelationsBA.removeAll(rtlChangeExpectedTypes);
 					addedRelationsAB.removeAll(rtlChangeExpectedTypes);
@@ -205,11 +192,8 @@ public class LayoutGraphComparision {
 					Set<GraphEdgeType> missingRelationsAB = rtlMissingChanges(i, j, dfltState, dfltGraph[i][j],
 							langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
 					if (missingRelationsAB.size() > 0) {
-						// System.out.println("\tHAS AN IPF");
-						// System.out.println("\t\tMissing Relations: " + missingRelationsAB);
-
-						Set<GraphEdgeType> missingRelationsBA = rtlMissingChanges(i, j, dfltState, dfltGraph[j][i],
-								langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
+						Set<GraphEdgeType> missingRelationsBA = rtlMissingChanges(j, i, dfltState, dfltGraph[j][i],
+								langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
 
 						// TODO: Verify if the TextFields' / EditText text are being aligned to the
 						// right/left. Using XML.
@@ -248,7 +232,8 @@ public class LayoutGraphComparision {
 
 	public Set<GraphEdgeType> rtlMissingChanges(int node1, int node2, State dfltState, Set<GraphEdgeType> dfltNode,
 			Set<GraphEdgeType> langNode) {
-		// If relation includes "contains" then it shouldn't be checked
+		// If relation includes "contains" or nodes are not siblings then it shouldn't
+		// be checked
 		if (dfltNode.contains(GraphEdgeType.CONTAINS) || !dfltState.nodesAreSiblings(node1, node2))
 			return new HashSet<>();
 
