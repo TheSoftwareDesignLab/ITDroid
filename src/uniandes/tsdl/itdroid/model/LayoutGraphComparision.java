@@ -202,13 +202,13 @@ public class LayoutGraphComparision {
 					addedRelationsAB.removeAll(rtlChangeExpectedTypes);
 					addedRelationsBA.removeAll(rtlChangeExpectedTypes);
 
-					Set<GraphEdgeType> missingRelationsAB = rtlMissingChanges(dfltGraph[i][j],
+					Set<GraphEdgeType> missingRelationsAB = rtlMissingChanges(i, j, dfltState, dfltGraph[i][j],
 							langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
 					if (missingRelationsAB.size() > 0) {
 						// System.out.println("\tHAS AN IPF");
 						// System.out.println("\t\tMissing Relations: " + missingRelationsAB);
 
-						Set<GraphEdgeType> missingRelationsBA = rtlMissingChanges(dfltGraph[j][i],
+						Set<GraphEdgeType> missingRelationsBA = rtlMissingChanges(i, j, dfltState, dfltGraph[j][i],
 								langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
 
 						// TODO: Verify if the TextFields' / EditText text are being aligned to the
@@ -246,7 +246,12 @@ public class LayoutGraphComparision {
 		return ipfss;
 	}
 
-	public Set<GraphEdgeType> rtlMissingChanges(Set<GraphEdgeType> dfltNode, Set<GraphEdgeType> langNode) {
+	public Set<GraphEdgeType> rtlMissingChanges(int node1, int node2, State dfltState, Set<GraphEdgeType> dfltNode,
+			Set<GraphEdgeType> langNode) {
+		// If relation includes "contains" then it shouldn't be checked
+		if (dfltNode.contains(GraphEdgeType.CONTAINS) || !dfltState.nodesAreSiblings(node1, node2))
+			return new HashSet<>();
+
 		Set<GraphEdgeType> missingEdgeTypes = new HashSet<>();
 		Set<GraphEdgeType> rtlChangeExpectedTypes = GraphEdgeType.getRtlChangeExpectedTypes();
 

@@ -4,6 +4,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -67,15 +68,14 @@ public class State {
 	/**
 	 * Creates a new state
 	 * 
-	 * @param hybrid
-	 *            The application is hybrid
-	 * @param contextualChanges
-	 *            Contextual changes must be invoked
-	 * @throws ParserConfigurationException 
-	 * @throws IOException 
-	 * @throws SAXException 
+	 * @param hybrid            The application is hybrid
+	 * @param contextualChanges Contextual changes must be invoked
+	 * @throws ParserConfigurationException
+	 * @throws IOException
+	 * @throws SAXException
 	 */
-	public State(int id, String activityName, String rawXML, String screenShot) throws ParserConfigurationException, SAXException, IOException {
+	public State(int id, String activityName, String rawXML, String screenShot)
+			throws ParserConfigurationException, SAXException, IOException {
 		stateNodes = new ArrayList<AndroidNode>();
 		outboundTransitions = new ArrayList<Transition>();
 		inboundTransitions = new ArrayList<Transition>();
@@ -105,9 +105,9 @@ public class State {
 	}
 
 	private void processLastNode() {
-		int lastItemIndex = stateNodes.size()-1;
+		int lastItemIndex = stateNodes.size() - 1;
 		AndroidNode lastItem = stateNodes.get(lastItemIndex);
-		for (int i = 0; i < stateNodes.size()-1; i++) {
+		for (int i = 0; i < stateNodes.size() - 1; i++) {
 			AndroidNode tempItem = stateNodes.get(i);
 			graph = compareNodes(lastItem, lastItemIndex, tempItem, i, graph);
 		}
@@ -127,54 +127,52 @@ public class State {
 		tempGraph[secondNodeIndex][firstNodeIndex] = new HashSet<GraphEdgeType>();
 		tempGraph[firstNodeIndex][secondNodeIndex] = new HashSet<GraphEdgeType>();
 
-		if(firstNodeCoor1[yCoord]>=secondNodeCoor2[yCoord]) {
+		if (firstNodeCoor1[yCoord] >= secondNodeCoor2[yCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.ABOVE);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.BELOW);
 		}
-		if(firstNodeCoor2[yCoord]<=secondNodeCoor1[yCoord]) {
+		if (firstNodeCoor2[yCoord] <= secondNodeCoor1[yCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.BELOW);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.ABOVE);
 		}
-		if(firstNodeCoor1[xCoord]>=secondNodeCoor2[xCoord]) {
+		if (firstNodeCoor1[xCoord] >= secondNodeCoor2[xCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.LEFT);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.RIGHT);
 		}
-		if(firstNodeCoor2[xCoord]<=secondNodeCoor1[xCoord]) {
+		if (firstNodeCoor2[xCoord] <= secondNodeCoor1[xCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.RIGHT);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.LEFT);
 		}
-		if(firstNodeCoor2[xCoord]==secondNodeCoor2[xCoord]) {
+		if (firstNodeCoor2[xCoord] == secondNodeCoor2[xCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.RIGHT_ALIGNED);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.RIGHT_ALIGNED);
 		}
-		if(firstNodeCoor1[xCoord]==secondNodeCoor1[xCoord]) {
+		if (firstNodeCoor1[xCoord] == secondNodeCoor1[xCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.LEFT_ALIGNED);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.LEFT_ALIGNED);
 		}
-		if(firstNodeCoor1[yCoord]==secondNodeCoor1[yCoord]) {
+		if (firstNodeCoor1[yCoord] == secondNodeCoor1[yCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.TOP_ALIGNED);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.TOP_ALIGNED);
 		}
-		if(firstNodeCoor2[yCoord]==secondNodeCoor2[yCoord]) {
+		if (firstNodeCoor2[yCoord] == secondNodeCoor2[yCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.BOTTOM_ALIGNED);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.BOTTOM_ALIGNED);
 		}
-		if(firstNodeCoor1[xCoord]<=secondNodeCoor1[xCoord]
-				&& firstNodeCoor1[yCoord]<=secondNodeCoor1[yCoord]
-						&& firstNodeCoor2[xCoord]>=secondNodeCoor2[xCoord]
-								&& firstNodeCoor2[yCoord]>=secondNodeCoor2[yCoord]) {
+		if (firstNodeCoor1[xCoord] <= secondNodeCoor1[xCoord] && firstNodeCoor1[yCoord] <= secondNodeCoor1[yCoord]
+				&& firstNodeCoor2[xCoord] >= secondNodeCoor2[xCoord]
+				&& firstNodeCoor2[yCoord] >= secondNodeCoor2[yCoord]) {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINS);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINED);
 		}
-		if(firstNodeCoor1[xCoord]>=secondNodeCoor1[xCoord]
-				&& firstNodeCoor1[yCoord]>=secondNodeCoor1[yCoord]
-						&& firstNodeCoor2[xCoord]<=secondNodeCoor2[xCoord]
-								&& firstNodeCoor2[yCoord]<=secondNodeCoor2[yCoord]) {
+		if (firstNodeCoor1[xCoord] >= secondNodeCoor1[xCoord] && firstNodeCoor1[yCoord] >= secondNodeCoor1[yCoord]
+				&& firstNodeCoor2[xCoord] <= secondNodeCoor2[xCoord]
+				&& firstNodeCoor2[yCoord] <= secondNodeCoor2[yCoord]) {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINED);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINS);
 		}
-		if(tempGraph[firstNodeIndex][secondNodeIndex].size()==0 
-				&& tempGraph[secondNodeIndex][firstNodeIndex].size()==0) {
+		if (tempGraph[firstNodeIndex][secondNodeIndex].size() == 0
+				&& tempGraph[secondNodeIndex][firstNodeIndex].size() == 0) {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.INTERSECTS);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.INTERSECTS);
 		}
@@ -235,6 +233,40 @@ public class State {
 	}
 
 	/**
+	 * Checks if two nodes are siblings.
+	 * 
+	 * @param node1 First node.
+	 * @param node2 Second node.
+	 * @return True if they're siblings, false otherwise.
+	 */
+	public boolean nodesAreSiblings(int node1, int node2) {
+		AndroidNode androidNode1 = stateNodes.get(node1);
+		AndroidNode androidNode2 = stateNodes.get(node2);
+		String[] node1PathArray = androidNode1.getxPath().split("/");
+		String[] node2PathArray = androidNode2.getxPath().split("/");
+		if (androidNode1.getxPath().contains(":id"))
+			node1PathArray = Arrays.copyOfRange(node1PathArray, 0, node1PathArray.length - 3);
+		if (androidNode2.getxPath().contains(":id"))
+			node2PathArray = Arrays.copyOfRange(node2PathArray, 0, node2PathArray.length - 3);
+
+		String node1PathComponent = "";
+		String node2PathComponent = "";
+		boolean areSiblings = true;
+
+		for (int i = 0; i < node1PathArray.length && areSiblings; i++) {
+			try {
+				node1PathComponent = node1PathArray[i];
+				node2PathComponent = node2PathArray[i];
+				areSiblings = node1PathComponent.equals(node2PathComponent);
+			} catch (IndexOutOfBoundsException e) {
+				areSiblings = false;
+			}
+		}
+
+		return areSiblings;
+	}
+
+	/**
 	 * Evaluates the XML view of the file and generate the possible transitions for
 	 * the state
 	 */
@@ -250,7 +282,8 @@ public class State {
 			newAndroidNode = new AndroidNode(this, currentNode);
 			stateNodes.add(newAndroidNode);
 			if (newAndroidNode.isAButton() || newAndroidNode.isClickable() || (newAndroidNode.isEnabled())) {
-//				possibleTransitions.push(new Transition(this, TransitionType.GUI_CLICK_BUTTON, newAndroidNode));
+				// possibleTransitions.push(new Transition(this,
+				// TransitionType.GUI_CLICK_BUTTON, newAndroidNode));
 			}
 
 		}
@@ -272,7 +305,8 @@ public class State {
 
 		for (int i = 0; i < stateNodes.size(); i++) {
 			AndroidNode temp = stateNodes.get(i);
-			if(temp.getxPath().equals(xpath)&&temp.getResourceID().equals(resourceID)&&temp.getText().equals(text)) {
+			if (temp.getxPath().equals(xpath) && temp.getResourceID().equals(resourceID)
+					&& temp.getText().equals(text)) {
 				return temp;
 			}
 		}
@@ -282,19 +316,19 @@ public class State {
 
 	@Override
 	public String toString() {
-		String result = id+" - "+activityName+"\n";
+		String result = id + " - " + activityName + "\n";
 		for (int j = 0; j < outboundTransitions.size(); j++) {
-			result += outboundTransitions.get(j).toString()+"\n";
+			result += outboundTransitions.get(j).toString() + "\n";
 		}
 		for (int j = 0; j < stateNodes.size(); j++) {
-			result += stateNodes.get(j).toString()+"\n";
+			result += stateNodes.get(j).toString() + "\n";
 		}
 		for (int i = 0; i < graph.length; i++) {
 			for (int j = 0; j < graph[0].length; j++) {
-				result += i+" -> "+j+" := ";
+				result += i + " -> " + j + " := ";
 				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
-				while(iter.hasNext()) {
-					result += iter.next()+";";
+				while (iter.hasNext()) {
+					result += iter.next() + ";";
 				}
 				result += "\n";
 			}
@@ -303,27 +337,27 @@ public class State {
 	}
 
 	public void writeFile(BufferedWriter bw) throws IOException {
-		bw.write("State: "+id+" - "+activityName);
+		bw.write("State: " + id + " - " + activityName);
 		bw.write("Transitions:");
 		bw.newLine();
 		for (int j = 0; j < outboundTransitions.size(); j++) {
-			bw.write("\t"+outboundTransitions.get(j).toString());
+			bw.write("\t" + outboundTransitions.get(j).toString());
 			bw.newLine();
 		}
 		bw.write("Android Nodes:");
 		bw.newLine();
 		for (int j = 0; j < stateNodes.size(); j++) {
-			bw.write("\t"+stateNodes.get(j).toString());
+			bw.write("\t" + stateNodes.get(j).toString());
 			bw.newLine();
 		}
 		bw.write("Graph Edges:");
 		bw.newLine();
 		for (int i = 0; i < graph.length; i++) {
 			for (int j = 0; j < graph[0].length; j++) {
-				bw.write("\t"+i+" -> "+j+" := ");
+				bw.write("\t" + i + " -> " + j + " := ");
 				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
-				while(iter.hasNext()) {
-					bw.write(iter.next()+";");
+				while (iter.hasNext()) {
+					bw.write(iter.next() + ";");
 				}
 				bw.newLine();
 			}
@@ -331,15 +365,15 @@ public class State {
 	}
 
 	@SuppressWarnings("unchecked")
-	public JSONObject getStateInfo(){
+	public JSONObject getStateInfo() {
 		JSONObject state = new JSONObject();
 		state.put("id", id);
 		state.put("activityName", activityName);
 		JSONObject transitions = new JSONObject();
 		JSONObject transition;
 		Transition t;
-		//Get transitions information
-		for(int i = 0; i< outboundTransitions.size(); i++){
+		// Get transitions information
+		for (int i = 0; i < outboundTransitions.size(); i++) {
 			transition = new JSONObject();
 			t = outboundTransitions.get(i);
 			transition.put("origin", t.getOrigin().getId());
@@ -348,12 +382,12 @@ public class State {
 			transitions.put(i, transition);
 		}
 		state.put("transitions", transitions);
-		//Get nodes information
+		// Get nodes information
 		JSONObject nodes = new JSONObject();
 		JSONObject point1;
 		JSONObject point2;
 		JSONObject node;
-		for(int i = 0; i < stateNodes.size(); i++ ){
+		for (int i = 0; i < stateNodes.size(); i++) {
 			node = new JSONObject();
 			node.put("index", stateNodes.get(i).getIndex());
 			node.put("xPath", stateNodes.get(i).getxPath());
@@ -366,10 +400,10 @@ public class State {
 			node.put("point1", point1);
 			node.put("point2", point2);
 
-			nodes.put(i,node);
+			nodes.put(i, node);
 		}
 		state.put("nodes", nodes);
-		//Get edges information
+		// Get edges information
 		JSONObject edges = new JSONObject();
 		JSONObject edge;
 		JSONObject relations;
@@ -378,18 +412,18 @@ public class State {
 			for (int j = 0; j < graph[0].length; j++) {
 				edge = new JSONObject();
 				relations = new JSONObject();
-				edge.put("origin",i);
+				edge.put("origin", i);
 				edge.put("destination", j);
 				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
 				int index = 0;
-				while(iter.hasNext()) {
+				while (iter.hasNext()) {
 					relations.put(index, iter.next().toString());
-					index ++;
+					index++;
 				}
 				edge.put("relations", relations);
 
-				edges.put(totalEdges,edge);
-				totalEdges ++;
+				edges.put(totalEdges, edge);
+				totalEdges++;
 			}
 		}
 		state.put("edges", edges);
@@ -398,24 +432,27 @@ public class State {
 
 	public boolean compareTo(State langTempState) {
 
-		if(!activityName.equals(langTempState.getActivityName())) {
+		if (!activityName.equals(langTempState.getActivityName())) {
 			System.out.println(activityName);
 			System.out.println(langTempState.getActivityName());
 			return false;
 		}
-		int amntNodesDiff = Math.abs(stateNodes.size()-langTempState.getStateNodes().size());
-		//		System.out.println("compareStates :: AmountNodesDiff "+id+" "+langTempState.getId()+" "+amntNodesDiff);
-		if(amntNodesDiff>1) {
+		int amntNodesDiff = Math.abs(stateNodes.size() - langTempState.getStateNodes().size());
+		// System.out.println("compareStates :: AmountNodesDiff "+id+"
+		// "+langTempState.getId()+" "+amntNodesDiff);
+		if (amntNodesDiff > 1) {
 			System.out.println(amntNodesDiff);
 			return false;
 		}
 		// false, if the levenshtein distance is greater than 10% of rawXML length
 		int acceptancePercentage = 10;
-		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
-		//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
-		if(lvnshtnDist>=((rawXML.length()*acceptancePercentage)/100)) {
+		int lvnshtnDist = Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
+		// System.out.println("compareStates :: LevenshteinDist "+id+"
+		// "+langTempState.getId()+" "+lvnshtnDist+"
+		// "+((lvnshtnDist*100)/rawXML.length()));
+		if (lvnshtnDist >= ((rawXML.length() * acceptancePercentage) / 100)) {
 			System.out.println(lvnshtnDist);
-			System.out.println(((rawXML.length()*acceptancePercentage)/100));
+			System.out.println(((rawXML.length() * acceptancePercentage) / 100));
 			return false;
 		}
 		return true;
