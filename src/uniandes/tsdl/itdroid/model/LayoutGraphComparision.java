@@ -99,9 +99,11 @@ public class LayoutGraphComparision {
 						}
 						relationsJ.put("removed", removed);
 						String missing = "";
-						iterr = relationss[2][tempIPF.getNodePos()][j].iterator();
-						while (iterr.hasNext()) {
-							missing += ((GraphEdgeType) iterr.next()).name() + ";";
+						if (relationss[2][tempIPF.getNodePos()][j] != null) {
+							iterr = relationss[2][tempIPF.getNodePos()][j].iterator();
+							while (iterr.hasNext()) {
+								missing += ((GraphEdgeType) iterr.next()).name() + ";";
+							}
 						}
 						relationsJ.put("missing", missing);
 						relations.add(relationsJ);
@@ -208,6 +210,9 @@ public class LayoutGraphComparision {
 
 						Set<GraphEdgeType> missingRelationsBA = rtlMissingChanges(dfltGraph[j][i],
 								langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
+
+						// TODO: Verify if the TextFields' / EditText text are being aligned to the
+						// right/left. Using XML.
 
 						resultts[2][i][j] = missingRelationsAB;
 						resultts[2][j][i] = missingRelationsBA;
