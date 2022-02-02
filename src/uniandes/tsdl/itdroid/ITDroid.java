@@ -50,12 +50,12 @@ public class ITDroid {
 
 	public static void main(String[] args) {
 		try {
-			// long initialTime = System.currentTimeMillis();
-			// System.out.println(initialTime);
+//			 long initialTime = System.currentTimeMillis();
+//			 System.out.println(initialTime);
 			runITDroid(args);
-			// long finalTime = System.currentTimeMillis();
-			// System.out.println(finalTime);
-			// System.out.println(finalTime-initialTime);
+//			 long finalTime = System.currentTimeMillis();
+//			 System.out.println(finalTime);
+//			 System.out.println(finalTime-initialTime);
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -289,7 +289,7 @@ public class ITDroid {
 
 		// Create the directory on the report project
 		System.out.println("Creating report results directory...");
-		createDirectoryPB.command("mkdir", reportOutputPath);
+		createDirectoryPB.command("mkdir","-p", reportOutputPath);
 		createDirectoryProcess = createDirectoryPB.start();
 		resultValue = createDirectoryProcess.waitFor();
 		// Check if it could create the directory

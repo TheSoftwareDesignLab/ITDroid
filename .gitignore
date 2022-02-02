@@ -20,4 +20,4 @@ results/
 *.apk
 
 # Report Results
-report/public/results
+report/public/results/*

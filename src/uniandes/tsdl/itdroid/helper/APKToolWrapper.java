@@ -17,8 +17,11 @@ public class APKToolWrapper {
 		}
 		tempFolder.mkdirs();
 		Process ps = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(decodedPath,extraPath,"apktool.jar").toAbsolutePath().toString(),"d",Paths.get(decodedPath,path).toAbsolutePath().toString(),"-o",Paths.get(decodedPath,"temp").toAbsolutePath().toString(),"-f"});
+		
 		System.out.println("Processing your APK...");
+		
 		ps.waitFor();
+		
 		System.out.println("Wow... that was an amazing APK to proccess!!! :D");
 		return Paths.get(decodedPath,"temp").toAbsolutePath().toString();
 		// InputStream es = ps.getErrorStream();
