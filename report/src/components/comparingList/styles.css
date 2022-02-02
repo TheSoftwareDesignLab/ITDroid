@@ -1,0 +1,30 @@
+.legend-container {
+    border-radius: 10px;
+}
+
+.legend-item {
+    margin-left: auto;
+    margin-right: auto;
+    height: 10px;
+    width: 30px;
+}
+
+#relation-node-legend {
+    background-color: #ffbf00;
+}
+
+#principal-node-legend {
+    background-color: #00851d;
+}
+
+#difference-legend {
+    background-color: #ff00f2;
+}
+
+#calculated-position-legend {
+    background-color: #7d26bf;
+}
+
+.sticky-top {
+    top: 15px !important;
+}
