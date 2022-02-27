@@ -278,14 +278,14 @@ public class ITDroid {
 		ProcessBuilder installPB = new ProcessBuilder();
 		ProcessBuilder runPB = new ProcessBuilder();
 		Process createDirectoryProcess, copyResultsProcess, installProcess, runProcess;
-		File reportFile = new File("report/");
-		File reportEnvFile = new File("report/.env");
+		File reportFile = new File("report"+File.separator);
+		File reportEnvFile = new File("report"+File.separator+".env");
 
 		// Format output folder path
 		outputPath = args[5];
 		String outputFolder = outputPath.replace(".", "");
-		outputFolder = outputFolder.startsWith("/") ? outputFolder.substring(1) : outputFolder;
-		String reportOutputPath = "report/public/" + outputFolder;
+		outputFolder = outputFolder.startsWith(File.separator) ? outputFolder.substring(1) : outputFolder;
+		String reportOutputPath = "report"+File.separator+"public"+File.separator + outputFolder;
 
 		// Create the directory on the report project
 		System.out.println("Creating report results directory...");
@@ -331,7 +331,7 @@ public class ITDroid {
 		System.out.println("Setting environment variables...");
 		FileWriter fw = new FileWriter(reportEnvFile);
 		BufferedWriter bw = new BufferedWriter(fw);
-		bw.write("REACT_APP_OUTPUT_FOLDER=" + outputFolder.replace("/", ""));
+		bw.write("REACT_APP_OUTPUT_FOLDER=" + outputFolder.replace(File.separator, ""));
 		bw.flush();
 		bw.close();
 		System.out.println(GREEN + "Environment variables set successfully " + CHECK_ICON + RESET);
