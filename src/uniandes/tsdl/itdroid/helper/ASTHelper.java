@@ -121,13 +121,18 @@ public class ASTHelper {
 			
 			CommonTree brother = ASTHelper.getFirstBrotherNamedOfType(smaliParser.I_STATEMENT_FORMAT35c_METHOD, "invoke-virtual", t);
 			
-			if(brother != null && brother.getChildIndex()-t.getChildIndex()>2) {
-				return false;
+			if(brother != null) {
+				for (int i = t.getChildIndex()+1; i < brother.getChildIndex(); i++) {
+					CommonTree tempChild = (CommonTree) t.getParent().getChild(i);
+					if (tempChild.getType()==smaliParser.I_STATEMENT_FORMAT21c_STRING) {
+						if(tempChild.getChildren().get(1)==t.getChildren().get(1)) {
+							return false;
+						}
+					}
+				}
+				return true;
 			}
-			
-			return true;
-		}
-				
+		}	
 		
 		return false;
 	}
