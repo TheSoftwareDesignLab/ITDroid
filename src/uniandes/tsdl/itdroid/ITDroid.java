@@ -5,6 +5,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
+import io.github.cdimascio.dotenv.Dotenv;
 import uniandes.tsdl.itdroid.IBM.IBMTranslator;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.ASTHelper;
@@ -119,6 +121,58 @@ public class ITDroid {
 		Helper.getInstance();
 		Helper.setPackageName(appName);
 
+		//Sign the original APK in case it is not
+		Process pss = Runtime.getRuntime().exec(new String[]{"java","-jar",Paths.get(extraPath,"uber-apk-signer.jar").toAbsolutePath().toString(),"-a",Paths.get(".\\",appName+".apk").toAbsolutePath().toString(),"-o",Paths.get(File.separator).toAbsolutePath().toString()});
+		pss.waitFor();
+		
+		LanguageBundle lngBundle = new LanguageBundle(langsDir);
+		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
+
+		// Explore app using default language
+		File signedAPK = new File(Paths.get(".\\", appName+"-aligned-debugSigned.apk").toAbsolutePath().toString());
+		String pathAPK = Paths.get(appName+".apk").toAbsolutePath().toString(); 
+		if(signedAPK.exists()) {
+			pathAPK = Paths.get(appName+"-aligned-debugSigned.apk").toAbsolutePath().toString();
+		}
+		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, pathAPK, appName,
+				"English");
+		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
+		JSONObject dfltLangJSON = new JSONObject();
+		dfltLangJSON.put("lang", "English");
+		dfltLangJSON.put("dflt", true);
+		dfltLangJSON.put("amStates", defltGraph.getStates().size());
+		dfltLangJSON.put("amTrans", defltGraph.getTransitions().size());
+		//Check if the layout mirroring of RTL languages can be done
+		Boolean hasValidTarget = ASTHelper.checkTargetSDK(appName);
+
+		//call RIP R&R for the unmodified app in arabic, to later compare it with the modified version.
+		//Only do it if the target SDK allows support for RTL languages
+		if(hasValidTarget){
+			try{
+				RIPHelper.runRIPRRi18n("ar-original", outputPath, false, extraPath, pathAPK,
+				resultFolderPath, appName, "Arabic");
+					System.out.println("The app has been inspected in the original Arabic version");		
+				}catch (RipException e) {
+					System.out.println(
+							"This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
+			}
+		}
+		//Write the JSON file with information about the repairment of RTL mirroring and its status
+		JSONObject infoRTL = new JSONObject();
+		infoRTL.put("states", defltGraph.getStates().size());
+		String arabOriFolder = "ar-original";
+		String arabFolder = "ar";
+		JSONObject langsRTL = new JSONObject();
+		langsRTL.put("arabicOriginal", arabOriFolder);
+		langsRTL.put("arabic", arabFolder);
+		langsRTL.put("default", deftLanguage);
+		infoRTL.put("languages", langsRTL);
+		infoRTL.put("repairedRTL", hasValidTarget);
+		FileWriter file = new FileWriter(outputPath + File.separator + "infoRTL.json");
+		file.write(infoRTL.toJSONString());
+		file.flush();
+		file.close();
+
 		// Decode the APK
 		String decodedFolderPath = APKToolWrapper.openAPK(apkPath, extraPath);
 		JSONParser a = new JSONParser();
@@ -128,12 +182,15 @@ public class ITDroid {
 		report.put("alpha", alpha);
 		report.put("outputFolder", outputPath);
 		report.put("emulatorName", emulatorName);
-
 		int possibleIPFS = ASTHelper.findHardCodedStrings(decodedFolderPath, extraPath, appName, outputPath);
 		report.put("hardcoded", possibleIPFS);
 
+		//If targetSDK >=17 then the repairment is made.
+		if(hasValidTarget){
+			ASTHelper.supportRTL(appName, decodedFolderPath);
+		}
+
 		// Read selected operators
-		LanguageBundle lngBundle = new LanguageBundle(langsDir);
 		System.out.println(lngBundle.printSelectedLanguages());
 
 		// Identify translated and notTranslated languages
@@ -168,29 +225,18 @@ public class ITDroid {
 			Translator t = new Translator(stringFiles[0], defLang, tLang);
 			t.translate(new IBMTranslator(langsDir));
 		}
+		//After the translation is done, put back the \n chars that were escaped before sending it to translate
+		ASTHelper.setOriginalStrings(decodedFolderPath);
 
 		// Builds the APK with all the languages
 		String newApkPath = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
-
 		if (newApkPath.equals("")) {
 			return;
 		}
 
+		//Finalize the process of exploring the app in the default language
 		JSONObject lngsResults = new JSONObject();
-
-		String deftLanguage = lngBundle.getBundle().getObject("defaultLng").toString();
-		report.put("dfltLang", deftLanguage);
-
-		// Explore app using default language
-		String resultFolderPath = RIPHelper.runRIPI18N(deftLanguage, outputPath, true, extraPath, newApkPath, appName,
-				deftLanguage);
-		System.out.println("The app has been inspected");
-		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
-		JSONObject dfltLangJSON = new JSONObject();
-		dfltLangJSON.put("lang", "English");
-		dfltLangJSON.put("dflt", true);
-		dfltLangJSON.put("amStates", defltGraph.getStates().size());
-		dfltLangJSON.put("amTrans", defltGraph.getTransitions().size());
+		report.put("dfltLang", deftLanguage);	
 		lngsResults.put(deftLanguage, dfltLangJSON);
 		graphs.put(deftLanguage, defltGraph);
 
@@ -206,6 +252,7 @@ public class ITDroid {
 			String lang = pathsMap.get(translatedFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
 			JSONObject dfltLangJSONTrans = new JSONObject();
+
 			try {
 				// call RIP R&R
 				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, true, extraPath, newApkPath,
@@ -242,6 +289,7 @@ public class ITDroid {
 			String lang = pathsMap.get(notTrnsltdFiles.get(i));
 			System.out.println("Processing " + lang + " app version");
 			JSONObject dfltLangJSONTrans = new JSONObject();
+
 			try {
 				// call RIP R&R
 				String resultFolderPathh = RIPHelper.runRIPRRi18n(lang, outputPath, false, extraPath, newApkPath,
@@ -272,20 +320,21 @@ public class ITDroid {
 	}
 
 	public static void createReport(String[] args) throws Exception {
+		Dotenv dotenv = Dotenv.load();
 		int resultValue = -1;
 		ProcessBuilder createDirectoryPB = new ProcessBuilder();
 		ProcessBuilder copyResultsPB = new ProcessBuilder();
 		ProcessBuilder installPB = new ProcessBuilder();
 		ProcessBuilder runPB = new ProcessBuilder();
 		Process createDirectoryProcess, copyResultsProcess, installProcess, runProcess;
-		File reportFile = new File("report"+File.separator);
-		File reportEnvFile = new File("report"+File.separator+".env");
+		File reportFile = new File(dotenv.get("REPORT_PATH")+File.separator);
+		File reportEnvFile = new File(dotenv.get("REPORT_PATH")+File.separator+".env");
 
 		// Format output folder path
 		outputPath = args[5];
 		String outputFolder = outputPath.replace(".", "");
 		outputFolder = outputFolder.startsWith(File.separator) ? outputFolder.substring(1) : outputFolder;
-		String reportOutputPath = "report"+File.separator+"public"+File.separator + outputFolder;
+		String reportOutputPath = dotenv.get("REPORT_PATH")+File.separator+"public"+File.separator + outputFolder;
 
 		// Create the directory on the report project
 		System.out.println("Creating report results directory...");

@@ -8,7 +8,6 @@ const Summary = ({ report }) => {
   return (
     <Container className="mb-5">
       <h2>Test Summary</h2>
-
       <BasicInformationPanel
         appName={report.appName}
         emulatorName={report.emulatorName}

@@ -67,7 +67,7 @@ const ComparingList = ({ report }) => {
       }
 
       fetch(
-        `${process.env.REACT_APP_OUTPUT_FOLDER}/trnsResults/${key}/graph.json`
+        `./results/trnsResults/${key}/graph.json`
       )
         .then((res) => res.json())
         .then((res) => {
@@ -75,14 +75,14 @@ const ComparingList = ({ report }) => {
             ...prevPaths,
             {
               language: key,
-              path: `${process.env.REACT_APP_OUTPUT_FOLDER}/trnsResults/${key}/`,
+              path: `./results/trnsResults/${key}/`,
             },
           ])
           setGraphs((prevGraphs) => [...prevGraphs, res])
         })
         .catch((err) => {
           fetch(
-            `${process.env.REACT_APP_OUTPUT_FOLDER}/noTrnsResults/${key}/graph.json`
+            `./results/noTrnsResults/${key}/graph.json`
           )
             .then((res) => res.json())
             .then((res) => {
@@ -90,7 +90,7 @@ const ComparingList = ({ report }) => {
                 ...prevPaths,
                 {
                   language: key,
-                  path: `${process.env.REACT_APP_OUTPUT_FOLDER}/noTrnsResults/${key}/`,
+                  path: `./results/noTrnsResults/${key}/`,
                 },
               ])
               setGraphs((prevGraphs) => [...prevGraphs, res])

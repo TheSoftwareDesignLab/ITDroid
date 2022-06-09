@@ -14,7 +14,6 @@ const TestInformationPanel = ({ langsReport }) => {
   const amountIPFDataPoints = []
   const amountStatesDataPoints = []
   const amountTransitionsDataPoints = []
-
   for (const [key, value] of Object.entries(langsReport)) {
     if (!value.dflt) {
       const langName = languageName[key]
@@ -104,7 +103,6 @@ const TestInformationPanel = ({ langsReport }) => {
 
   return (
     <Container fluid className="summary-card pt-2 pb-2 shadow">
-      <h4>Test Information</h4>
 
       <Row>
         <Col sm={6} className="mb-4">

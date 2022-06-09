@@ -99,6 +99,7 @@ public class IBMTranslator implements TranslationInterface {
                 text = replaceInjectedStrings1(text);
                 text = replaceInjectedDigits1(text);
                 text = replaceInjectedStrings3(text);
+                text = replaceRTLChar(text);
                 values.add(text);
                 names.add(attributeValue);
                 formatted.add(attributeFormatted);
@@ -131,6 +132,7 @@ public class IBMTranslator implements TranslationInterface {
             List<Translation> translations = result.getTranslations();
 
             for(int i = 0; i < translations.size(); i++){
+                //Validar
                 fullTranslations.add(translations.get(i).getTranslationOutput());
             }
 
@@ -153,6 +155,8 @@ public class IBMTranslator implements TranslationInterface {
             text2 = replaceInjectedStrings2(text2);
             text2 = replaceInjectedDigits2(text2);
             text2 = replaceInjectedStrings4(text2);
+            System.out.println(text2);
+            text2 = replaceNewLineCharBack(text2);
             newString.setText(text2);
             outputRoot.addContent(newString);
         }
@@ -274,6 +278,41 @@ public class IBMTranslator implements TranslationInterface {
         Matcher matcher = pattern.matcher(repleaceable);
         if(matcher.find()) {
             repleaceable = matcher.replaceAll("%s");
+        }
+
+        return repleaceable;
+
+    }
+
+    
+    public static String replaceNewLineChar(String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("\n");
+        Matcher matcher = pattern.matcher(repleaceable);
+        if(matcher.find()) {
+            repleaceable = matcher.replaceAll("xld");
+        }
+
+        return repleaceable;
+
+    }
+
+    public static String replaceNewLineCharBack(String input) {
+        String repleaceable = input;
+
+        if(repleaceable.contains("\\pd ")) {
+           repleaceable = repleaceable.replace("\\pd ", "\\n");
+        }
+        return repleaceable;
+
+    }
+
+    public static String replaceRTLChar(String input) {
+        String repleaceable = input;
+        Pattern pattern = Pattern.compile("[U+200F]");
+        Matcher matcher = pattern.matcher(repleaceable);
+        if(matcher.find()) {
+            repleaceable = matcher.replaceAll("&#8207;");
         }
 
         return repleaceable;
