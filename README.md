@@ -19,21 +19,6 @@ changes in Android apps in a source-codeless fashion (i.e., without having acces
   
 # Summary
 ITDROID is an open source tool for automatically detecting i18n bad practices and collateral changes introduced in the GUIs of Android apps. ITDROID is capable of identifying the strings that need to be translated, automatically translate them by using an external service, generate an internationalizaed APK and explore its different versions to detect and locate the changes in the GUI when using English as the default language, and 7 other languages as the target ones.
-<!-- MutAPK is a mutation analysis framework for Android applications over APK Files.
-MutAPK implements 35 mutation operators specifically for Android apps, covering the following categories:
-- Activity/Intents
-- Android Programming
-- Back-End Services
-- Connectivity
-- Data
-- Database
-- General Programming
-- GUI
-- I/O
-- Non-Functional Requirements
-
-The complete list of mutation operators and their specification is available at the [Mutant Operators Section](http://thesoftwaredesignlab.github.io/MutAPK/#mutation-operators).
-Given an Android App APK, MutAPK first extracts the Potential Fault Profile (PFP) and then automatically seeds mutants generating mutated copies of the App. -->
 
 ## Compile
 Download and compile MutAPK with the following commands:
