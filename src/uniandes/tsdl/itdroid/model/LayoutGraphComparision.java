@@ -68,7 +68,9 @@ public class LayoutGraphComparision {
 				tempIPFJSON.put("stateID", tempIPF.getStateId());
 				tempIPFJSON.put("nodeID", tempIPF.getNodePos());
 				JSONArray relations = new JSONArray();
-				Set<GraphEdgeType>[][][] relationss = results.get(tempIPF.getStateId()-1);
+				// Read using the same key the write side stores under (the state id) so relations are
+				// not silently empty when a state's JSON id != its list index + 1.
+				Set<GraphEdgeType>[][][] relationss = results.get(tempIPF.getStateId());
 				for (int j = 0; relationss!= null && relationss[0][tempIPF.getNodePos()] != null && j < relationss[0][tempIPF.getNodePos()].length; j++) {
 					if((relationss[0][tempIPF.getNodePos()][j]!= null && relationss[0][tempIPF.getNodePos()][j].size()>0) ||(relationss[1][tempIPF.getNodePos()][j] != null && relationss[1][tempIPF.getNodePos()][j].size()>0)) {
 						JSONObject relationsJ = new JSONObject();
@@ -94,15 +96,16 @@ public class LayoutGraphComparision {
 			dfltLangJSONTrans.put("ipfs", ipfs);
 
 			System.out.println("There are "+uniqueIPFsList.size()+" Internationalization Presentation Failures for "+destLanguage+" app version.");
-			BufferedWriter bw = new BufferedWriter(new FileWriter(outputFolder+File.separator+"ipfs.csv", true));
-			//			bw.write("state;nodePos;ipfScore");
-			//			bw.newLine();
-			for (int i = 0; i < uniqueIPFsList.size(); i++) {
-				IPF tempIPF = uniqueIPFsList.get(i);
-				bw.write(destLanguage+";"+tempIPF.getStateId()+";"+tempIPF.getNodePos()+";"+result.get(tempIPF.getID()));
-				bw.newLine();
+			// try-with-resources so the writer is always closed even if a write throws.
+			try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputFolder+File.separator+"ipfs.csv", true))) {
+				//			bw.write("state;nodePos;ipfScore");
+				//			bw.newLine();
+				for (int i = 0; i < uniqueIPFsList.size(); i++) {
+					IPF tempIPF = uniqueIPFsList.get(i);
+					bw.write(destLanguage+";"+tempIPF.getStateId()+";"+tempIPF.getNodePos()+";"+result.get(tempIPF.getID()));
+					bw.newLine();
+				}
 			}
-			bw.close();
 
 		} else {
 			System.out.println("There are not Internationalization Presentation Failures for "+destLanguage+" app version.");
@@ -115,9 +118,15 @@ public class LayoutGraphComparision {
 
 		Set<GraphEdgeType>[][] dfltGraph = dfltState.getGraph();
 		Set<GraphEdgeType>[][] langGraph = langState.getGraph();
-		
+
+		// A paired state can have zero <node> elements, giving a new Set[0][0] graph; the [0]
+		// dereferences below (and Math.min on [0].length) would throw. Nothing to compare here.
+		if (dfltGraph.length == 0 || langGraph.length == 0) {
+			return new ArrayList<IPF>();
+		}
+
 		int[] pairedStateNodes = pairStateNodes(dfltState, langState);
-				
+
 		ArrayList<IPF> ipfss = new ArrayList<IPF>();
 		Set<GraphEdgeType>[][][] resultts = (Set<GraphEdgeType>[][][]) new Set[2][dfltGraph.length][dfltGraph[0].length];
 
@@ -127,7 +136,9 @@ public class LayoutGraphComparision {
 			for (int j = i; j < maxJ; j++) {
 
 				Set<GraphEdgeType> lostRelationsAB = new HashSet<GraphEdgeType>(dfltGraph[i][j]);
-				lostRelationsAB.removeAll(langGraph[i][pairedStateNodes[j]]);
+				// Use pairedStateNodes[i] for the lang row so both endpoints are remapped consistently,
+				// matching the addedRelationsAB read below (langGraph[pairedStateNodes[i]][pairedStateNodes[j]]).
+				lostRelationsAB.removeAll(langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
 
 				Set<GraphEdgeType> lostRelationsBA = new HashSet<GraphEdgeType>(dfltGraph[j][i]);
 				lostRelationsBA.removeAll(langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
@@ -140,9 +151,13 @@ public class LayoutGraphComparision {
 				addedRelationsBA.removeAll(dfltGraph[j][i]);
 				//				addedRelationsBA.addAll(addedRelationsAB);
 
-				if((dfltState.getStateNodes().get(i).getpClass().contains("TextView") && !langState.getStateNodes().get(pairedStateNodes[j]).getpClass().contains("TextView"))
-						|| (!dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(pairedStateNodes[j]).getpClass().contains("TextView"))
-						|| (dfltState.getStateNodes().get(i).getpClass().contains("TextView") && langState.getStateNodes().get(pairedStateNodes[j]).getpClass().contains("TextView"))) {
+				// Compare the SAME endpoint on both sides (dflt node i vs its pair langNode pairedStateNodes[i]),
+				// and null-guard getpClass() so a <node> without a class attribute can't NPE here.
+				boolean dfltIIsTextView = isTextView(dfltState.getStateNodes().get(i));
+				boolean langIIsTextView = isTextView(langState.getStateNodes().get(pairedStateNodes[i]));
+				if((dfltIIsTextView && !langIIsTextView)
+						|| (!dfltIIsTextView && langIIsTextView)
+						|| (dfltIIsTextView && langIIsTextView)) {
 					lostRelationsAB.removeAll(GraphEdgeType.getAligmentTypes());
 					lostRelationsBA.removeAll(GraphEdgeType.getAligmentTypes());
 					addedRelationsAB.removeAll(GraphEdgeType.getAligmentTypes());
@@ -164,14 +179,26 @@ public class LayoutGraphComparision {
 			}
 		}
 
-		results.put(defltState, resultts);
+		// Key results by the state id (the same value the read side uses via IPF.getStateId()) so the
+		// emitted relations aren't looked up under a mismatched key.
+		results.put(langState.getId(), resultts);
 
 		return ipfss;
+	}
+
+	/** Null-safe TextView test: a &lt;node&gt; may have no class attribute (getpClass()==""), and the
+	 *  node reference itself may be absent. */
+	private static boolean isTextView(AndroidNode node) {
+		return node != null && node.getpClass() != null && node.getpClass().contains("TextView");
 	}
 
 	private int[] pairStateNodes(State dfltState, State langState) {
 		
 		List<AndroidNode> dfltStateNodes = dfltState.getStateNodes();
+		// INTENTIONAL: both lists are the DEFAULT state's nodes, which makes the pairing the identity
+		// [0,1,2,...] so the default and translated graphs are compared POSITIONALLY. Pairing against
+		// langState by Levenshtein text similarity was tried and reverted — translated text differs
+		// across languages and paired the wrong nodes. Do NOT change this to langState.getStateNodes().
 		List<AndroidNode> langStateNodes = dfltState.getStateNodes();
 		int[] result = new int[Math.min(dfltStateNodes.size(), langStateNodes.size())];
 		

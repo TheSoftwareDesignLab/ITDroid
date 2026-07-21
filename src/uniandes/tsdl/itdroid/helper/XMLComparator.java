@@ -17,8 +17,6 @@ public class XMLComparator {
 	
 	ArrayList<String> useful = new ArrayList<>();
 	ArrayList<String> useless = new ArrayList<>();
-	private int numLinesUseless = 29;
-	private int numLineasFont = 12;
 	/*
 	 * Constructor Method
 	 * @params
@@ -29,7 +27,7 @@ public class XMLComparator {
 		
 		File inputFile = null;
 		try {
-			if(xmls != null) {
+			if(xmls != null && xmls.length > 0) {
 				inputFile = new File(xmls[0]);
 				NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(directory);
 				//Read the default strings.xml file
@@ -72,9 +70,10 @@ public class XMLComparator {
 							}
 						}
 
-						Set <String> difference = new HashSet(originalStrings);
+						Set <String> difference = new HashSet<>(originalStrings);
 						difference.removeAll(translatedStrings);
-						if(difference.size() > alpha){
+						// Guard against a null alpha (auto-unboxing would NPE); treat null as 0 tolerance.
+						if(difference.size() > (alpha != null ? alpha.intValue() : 0)){
 							useless.add(xmls[i]);
 						}
 						else{
@@ -87,15 +86,20 @@ public class XMLComparator {
 			}
 			
 		} catch (ParserConfigurationException e) {
-			e.printStackTrace();
+			System.err.println("XMLComparator :: XML parser configuration error");
+			throw new RuntimeException(e);
 		} catch (SAXException e) {
-			e.printStackTrace();
+			System.err.println("XMLComparator :: malformed strings.xml");
+			throw new RuntimeException(e);
 		} catch (IOException e) {
-			e.printStackTrace();
+			System.err.println("XMLComparator :: I/O error reading strings.xml");
+			throw new RuntimeException(e);
 		} catch (XPathExpressionException e) {
-			e.printStackTrace();
+			System.err.println("XMLComparator :: XPath evaluation error");
+			throw new RuntimeException(e);
 		} catch (Exception e) {
-			e.printStackTrace();
+			System.err.println("XMLComparator :: unexpected error comparing strings.xml files");
+			throw new RuntimeException(e);
 		}
 
 

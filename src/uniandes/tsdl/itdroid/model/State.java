@@ -15,7 +15,6 @@ import javax.xml.parsers.ParserConfigurationException;
 
 import org.json.simple.JSONObject;
 import org.w3c.dom.Document;
-import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
@@ -197,15 +196,6 @@ public class State {
 		this.activityName = activityName;
 	}
 
-	public Document getParsedXML() {
-		return parsedXML;
-	}
-
-	public void setParsedXML(Document parsedXML) {
-		this.parsedXML = parsedXML;
-		generatePossibleTransition();
-	}
-
 	public String getRawXML() {
 		return rawXML;
 	}
@@ -232,28 +222,6 @@ public class State {
 
 	public void setOutboundTransitions(List<Transition> outboundTransitions) {
 		this.outboundTransitions = outboundTransitions;
-	}
-
-	/**
-	 * Evaluates the XML view of the file and generate the possible transitions for
-	 * the state
-	 */
-	public void generatePossibleTransition() {
-
-		// GUI interactions
-		NodeList allNodes = parsedXML.getElementsByTagName("node");
-		Node currentNode;
-		AndroidNode newAndroidNode;
-		NamedNodeMap attributes;
-		for (int i = 0; i < allNodes.getLength(); i++) {
-			currentNode = allNodes.item(i);
-			newAndroidNode = new AndroidNode(this, currentNode);
-			stateNodes.add(newAndroidNode);
-			if (newAndroidNode.isAButton() || newAndroidNode.isClickable() || (newAndroidNode.isEnabled())) {
-//				possibleTransitions.push(new Transition(this, TransitionType.GUI_CLICK_BUTTON, newAndroidNode));
-			}
-
-		}
 	}
 
 	public void setScreenShot(String screenShot) {
@@ -396,26 +364,27 @@ public class State {
 		return state;
 	}
 
+	/** True when {@code langTempState} is considered the same screen as this one (same activity,
+	 *  near-equal node count, and raw XML within a 10% Levenshtein threshold). */
 	public boolean compareTo(State langTempState) {
-
 		if(!activityName.equals(langTempState.getActivityName())) {
-			System.out.println(activityName);
-			System.out.println(langTempState.getActivityName());
 			return false;
 		}
 		int amntNodesDiff = Math.abs(stateNodes.size()-langTempState.getStateNodes().size());
-		//		System.out.println("compareStates :: AmountNodesDiff "+id+" "+langTempState.getId()+" "+amntNodesDiff);
 		if(amntNodesDiff>1) {
-			System.out.println(amntNodesDiff);
 			return false;
 		}
-		// false, if the levenshtein distance is greater than 10% of rawXML length
+		// false, if the levenshtein distance is greater than 10% of rawXML length.
+		// Use long arithmetic so very large XML doesn't overflow int, and enforce a minimum
+		// threshold of 1 so that XML shorter than 10 chars (whose 10% truncates to 0) can still
+		// pair when the two raw strings are identical.
 		int acceptancePercentage = 10;
 		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
-		//		System.out.println("compareStates :: LevenshteinDist "+id+" "+langTempState.getId()+" "+lvnshtnDist+" "+((lvnshtnDist*100)/rawXML.length()));
-		if(lvnshtnDist>=((rawXML.length()*acceptancePercentage)/100)) {
-			System.out.println(lvnshtnDist);
-			System.out.println(((rawXML.length()*acceptancePercentage)/100));
+		long threshold = ((long) rawXML.length() * acceptancePercentage) / 100;
+		if(threshold < 1) {
+			threshold = 1;
+		}
+		if(lvnshtnDist>=threshold) {
 			return false;
 		}
 		return true;

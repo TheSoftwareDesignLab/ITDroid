@@ -21,7 +21,6 @@ import org.xml.sax.SAXException;
 public class LayoutGraph {
 
 
-	public static Object AMOUNT_TRANSITIONS = "amountTransitions";
 	public static String STATES = "states";
 	public static String TRANSITIONS = "transitions";
 	public static String AMOUNT_STATES = "amountStates";
@@ -46,15 +45,31 @@ public class LayoutGraph {
 			//Read JSON file
 			JSONObject obj = (JSONObject) jsonParser.parse(reader);
 
-			int amountStates = Math.toIntExact((long) obj.get(AMOUNT_STATES));
-			int amountTransitions = Math.toIntExact((long) obj.get(AMOUNT_TRANSITIONS));
-
 			JSONObject statess = (JSONObject) obj.get(STATES);
+			if (statess == null) {
+				statess = new JSONObject();
+			}
+
+			// Guard the amountStates cast: fall back to the number of state entries actually present
+			// when the key is absent/null instead of NPEing on the unboxing.
+			Object amountStatesObj = obj.get(AMOUNT_STATES);
+			int amountStates = amountStatesObj != null ? Math.toIntExact((long) amountStatesObj) : statess.size();
 
 			for (int i = 0; i < amountStates; i++) {
 				JSONObject currentState = (JSONObject) statess.get((i+1)+"");
+				// amountStates may exceed the number of entries (or keys may not be exactly 1..N):
+				// skip a missing state instead of NPEing on currentState.get(...).
+				if (currentState == null) {
+					System.err.println("LayoutGraph :: state "+(i+1)+" missing in "+scriptPath+", skipping");
+					continue;
+				}
+				Object idObj = currentState.get("id");
+				if (idObj == null) {
+					System.err.println("LayoutGraph :: state "+(i+1)+" has no id in "+scriptPath+", skipping");
+					continue;
+				}
 				State tempState = new State(
-						Math.toIntExact((long) currentState.get("id")),
+						Math.toIntExact((long) idObj),
 						(String) currentState.get("activityName"),
 						(String) currentState.get("rawXML"),
 						(String) currentState.get("screenShot"));
@@ -63,11 +78,37 @@ public class LayoutGraph {
 
 			JSONObject transitionss = (JSONObject) obj.get(TRANSITIONS);
 
-			for (int i = 1; i < amountTransitions; i++) {
-				JSONObject currentTransition = (JSONObject) transitionss.get(i+"");
-				int originState = Math.toIntExact((long) currentTransition.get("stState"));
-				TransitionType tType = TransitionType.valueOf((String)currentTransition.get("tranType"));
-				int destState = Math.toIntExact((long) currentTransition.get("dsState"));
+			// Iterate over the keys actually present so no transition is dropped, regardless
+			// of whether the explorer output keys them 0- or 1-based (the previous loop started at
+			// index 1 and stopped before the last key, losing one transition).
+			for (Object transitionKey : transitionss.keySet()) {
+				JSONObject currentTransition = (JSONObject) transitionss.get(transitionKey);
+				if (currentTransition == null) {
+					continue;
+				}
+				Object stStateObj = currentTransition.get("stState");
+				Object dsStateObj = currentTransition.get("dsState");
+				if (stStateObj == null || dsStateObj == null) {
+					System.err.println("LayoutGraph :: transition "+transitionKey+" missing stState/dsState, skipping");
+					continue;
+				}
+				int originState = Math.toIntExact((long) stStateObj);
+				int destState = Math.toIntExact((long) dsStateObj);
+				// originState/destState are 1-based ids used directly as list indices; skip the
+				// transition when they fall outside [1, states.size()] instead of throwing.
+				if (originState-1 < 0 || originState-1 >= states.size()
+						|| destState-1 < 0 || destState-1 >= states.size()) {
+					System.err.println("LayoutGraph :: transition "+transitionKey+" references out-of-range state (origin="+originState+", dest="+destState+", states="+states.size()+"), skipping");
+					continue;
+				}
+				// An unknown or null transition type must not abort the whole graph load: warn and skip.
+				TransitionType tType;
+				try {
+					tType = TransitionType.valueOf((String)currentTransition.get("tranType"));
+				} catch (IllegalArgumentException | NullPointerException e) {
+					System.err.println("LayoutGraph :: transition "+transitionKey+" has unknown/missing type '"+currentTransition.get("tranType")+"', skipping");
+					continue;
+				}
 				Transition tempTransition = new Transition(states.get(originState-1), tType);
 				tempTransition.setDestination(states.get(destState-1));
 				if(currentTransition.containsKey("androidNode")) {
@@ -81,37 +122,45 @@ public class LayoutGraph {
 				states.get(destState-1).addInboundTransition(tempTransition);
 				transitions.add(tempTransition);
 			}
-			BufferedWriter bw = new BufferedWriter(new FileWriter(resultFolderPath+File.separator+"graph.txt"));
-			bw.write("-------------------------");
-			bw.newLine();
-			bw.write("Language Result for: "+language);
-			bw.newLine();
-			bw.write("-------------------------");
-			bw.newLine();
-			bw.write("States: ");
-			bw.newLine();
-			for (int i = 0; i < states.size(); i++) {
-				states.get(i).writeFile(bw);
+			// try-with-resources so the writer is always closed, even if writing throws part-way.
+			try (BufferedWriter bw = new BufferedWriter(new FileWriter(resultFolderPath+File.separator+"graph.txt"))) {
+				bw.write("-------------------------");
+				bw.newLine();
+				bw.write("Language Result for: "+language);
+				bw.newLine();
+				bw.write("-------------------------");
+				bw.newLine();
+				bw.write("States: ");
+				bw.newLine();
+				for (int i = 0; i < states.size(); i++) {
+					states.get(i).writeFile(bw);
+				}
+				JSONObject langReport = new JSONObject();
+				langReport.put("language", language);
+				JSONObject jsonStates = new JSONObject();
+				for(int i = 0; i < states.size(); i++){
+					jsonStates.put(i, states.get(i).getStateInfo());
+				}
+				langReport.put("states", jsonStates);
+				Files.write(Paths.get(resultFolderPath+File.separator+"graph.json"), langReport.toJSONString().getBytes());
 			}
-			JSONObject langReport = new JSONObject();
-			langReport.put("language", language);
-			JSONObject jsonStates = new JSONObject();
-			for(int i = 0; i < states.size(); i++){
-				jsonStates.put(i, states.get(i).getStateInfo());
-			}
-			langReport.put("states", jsonStates);
-			Files.write(Paths.get(resultFolderPath+File.separator+"graph.json"), langReport.toJSONString().getBytes());
-			bw.close();
 		} catch (FileNotFoundException e) {
-			e.printStackTrace();
+			// Fail fast on a genuine load failure rather than leaving a truncated graph that would
+			// silently corrupt the downstream comparison.
+			System.err.println("LayoutGraph :: result.json not found at "+scriptPath);
+			throw new RuntimeException(e);
 		} catch (IOException e) {
-			e.printStackTrace();
+			System.err.println("LayoutGraph :: I/O error loading graph from "+scriptPath);
+			throw new RuntimeException(e);
 		} catch (ParseException e) {
-			e.printStackTrace();
+			System.err.println("LayoutGraph :: malformed JSON in "+scriptPath);
+			throw new RuntimeException(e);
 		} catch (ParserConfigurationException e) {
-			e.printStackTrace();
+			System.err.println("LayoutGraph :: XML parser configuration error while building a state");
+			throw new RuntimeException(e);
 		} catch (SAXException e) {
-			e.printStackTrace();
+			System.err.println("LayoutGraph :: malformed state XML in "+scriptPath);
+			throw new RuntimeException(e);
 		}
 
 	}

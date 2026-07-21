@@ -11,12 +11,10 @@ public class AndroidNode {
 	public static String FALSE = "false";
 
 	private State state;
-	private boolean interacted;
 	private boolean clickable;
-	private int[] centralPoint;
-	private int[] point1;
-	private int[] point2;
-	private String pClass;
+	private int[] point1 = {0,0};
+	private int[] point2 = {0,0};
+	private String pClass = "";
 	private boolean enabled;
 	private String resourceID="";
 	private String text="";
@@ -39,12 +37,21 @@ public class AndroidNode {
 		this.state = state;
 		loadAttributesFromDom(domNode);
 		String[] classes = pClass.split("\\.");
-		xPath = domNode.getAttributes().getNamedItem("index").getNodeValue()+"_"+(!pClass.equals("")?classes[classes.length-1]:"")+(!resourceID.equals("")?"/"+resourceID:"");
+		NamedNodeMap domAttrs = domNode.getAttributes();
+		Node ownIndex = domAttrs != null ? domAttrs.getNamedItem("index") : null;
+		String ownIndexValue = ownIndex != null ? ownIndex.getNodeValue() : "";
+		xPath = ownIndexValue+"_"+(!pClass.equals("")?classes[classes.length-1]:"")+(!resourceID.equals("")?"/"+resourceID:"");
 		Node temp = domNode.getParentNode();
-		while(!temp.getNodeName().equals("hierarchy")) {
+		while(temp != null && !temp.getNodeName().equals("hierarchy")) {
 			NamedNodeMap teemp = temp.getAttributes();
-			String [] classess = teemp.getNamedItem("class").getNodeValue().split("\\.");
-			String indexx = teemp.getNamedItem("index").getNodeValue();
+			if(teemp == null) {
+				temp = temp.getParentNode();
+				continue;
+			}
+			Node classItem = teemp.getNamedItem("class");
+			Node indexItem = teemp.getNamedItem("index");
+			String [] classess = classItem != null ? classItem.getNodeValue().split("\\.") : new String[]{""};
+			String indexx = indexItem != null ? indexItem.getNodeValue() : "";
 			xPath=indexx+"_"+classess[classess.length-1]+"/"+xPath;
 			temp = temp.getParentNode();
 		}
@@ -53,7 +60,6 @@ public class AndroidNode {
 	public void loadAttributesFromDom(Node domNode) {
 		NamedNodeMap attributes = domNode.getAttributes();
 		name = domNode.getNodeName();
-		String bounds;
 		String attributeValue;
 		AndroidNodeProperty androidNodeProperty;
 		for (int j = 0; j < attributes.getLength(); j++) {
@@ -72,7 +78,7 @@ public class AndroidNode {
 					pClass = attributeValue;
 					break;
 				case ENABLED:
-					enabled = true;
+					enabled = attributeValue.equals(TRUE);
 					break;
 				case RESOURCE_ID:
 					resourceID = attributeValue;
@@ -87,9 +93,8 @@ public class AndroidNode {
 					break;
 				}
 			}
-			else {
-				System.out.println("IMPORTANT: Property "+ attribute.getNodeName() + " is not included in RIP");
-			}
+			// Attributes not in AndroidNodeProperty (e.g. NAF, password, scrollable) are simply
+			// not part of the UI model and are ignored.
 		}
 	}
 	
@@ -122,49 +127,46 @@ public class AndroidNode {
 	}
 
 	/**
-	 * Calculates the bounds and central point of a node
+	 * Calculates the bounding box of a node.
 	 * @param text Raw input
-	 * Initializes point1, point2 and centralPoint
+	 * Initializes point1 and point2
 	 */
 	public void loadBounds(String text) {
-		String bounds = text.replace("][", "/").replace("[", "").replace("]", "");
-		bounds += "/0";
-		String[] coords = bounds.split("/");
-		String coord1 = coords[0];
-		String coord2 = coords[1];
-		String[] points1 = coord1.split(",");
-		String[] points2 = coord2.split(",");
-		int x1 = Integer.parseInt(points1[0]);
-		int x2 = Integer.parseInt(points2[0]);
-		int y1 = Integer.parseInt(points1[1]);
-		int y2 = Integer.parseInt(points2[1]);
-		point1 = new int[] {x1,y1};
-		point2 = new int[] {x2,y2};
-		centralPoint = new int[] {(int)((x1+x2)/2), (int)((y1+y2)/2)};
+		if (text == null) {
+			// keep the default {0,0} points
+			return;
+		}
+		try {
+			String bounds = text.replace("][", "/").replace("[", "").replace("]", "");
+			bounds += "/0";
+			String[] coords = bounds.split("/");
+			if (coords.length < 2) {
+				System.err.println("AndroidNode.loadBounds :: malformed bounds '"+text+"', using default {0,0}");
+				return;
+			}
+			String[] points1 = coords[0].split(",");
+			String[] points2 = coords[1].split(",");
+			if (points1.length < 2 || points2.length < 2) {
+				System.err.println("AndroidNode.loadBounds :: malformed bounds '"+text+"', using default {0,0}");
+				return;
+			}
+			int x1 = Integer.parseInt(points1[0]);
+			int x2 = Integer.parseInt(points2[0]);
+			int y1 = Integer.parseInt(points1[1]);
+			int y2 = Integer.parseInt(points2[1]);
+			point1 = new int[] {x1,y1};
+			point2 = new int[] {x2,y2};
+		} catch (NumberFormatException e) {
+			System.err.println("AndroidNode.loadBounds :: non-numeric bounds '"+text+"', using default {0,0}");
+			point1 = new int[] {0,0};
+			point2 = new int[] {0,0};
+		}
 	}
 
 	public boolean isClickable() {
 		return clickable;
 	}
-	
-	public boolean isAButton() {
-		
-		switch(pClass) {
-		case "android.widget.Button":
-			return true;
-		}
-		
-		return pClass.toLowerCase().contains("button");
-	}
 
-	public int getCentralX() {
-		return centralPoint[0];
-	}
-
-	public int getCentralY() {
-		return centralPoint[1];
-	}
-	
 	public String getpClass() {
 		return pClass;
 	}
@@ -174,7 +176,13 @@ public class AndroidNode {
 	}
 
 	public double compare(AndroidNode langNode) {
-		return (Helper.levenshteinDistance(toString(), langNode.toString()))/(double)toString().length();
+		String self = toString();
+		// Guard against division by zero when this node has no name/xPath/resourceID: an empty
+		// signature is identical (0.0) to another empty one and maximally different (1.0) otherwise.
+		if (self.isEmpty()) {
+			return langNode.toString().isEmpty() ? 0.0 : 1.0;
+		}
+		return Helper.levenshteinDistance(self, langNode.toString()) / (double) self.length();
 	}
 
 }

@@ -26,15 +26,6 @@ public enum GraphEdgeType {
 		set.add(RIGHT_ALIGNED);
 		return set;
 	}
-	
-	public static Set<GraphEdgeType> getDirectionTypes() {
-		Set<GraphEdgeType> set = new HashSet<GraphEdgeType>();
-		set.add(ABOVE);
-		set.add(BELOW);
-		set.add(LEFT);
-		set.add(RIGHT);
-		return set;
-	}
-	
+
 }
 

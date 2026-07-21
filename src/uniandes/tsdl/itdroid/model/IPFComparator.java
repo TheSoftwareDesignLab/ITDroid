@@ -14,7 +14,12 @@ public class IPFComparator implements Comparator<IPF>{
 
 	@Override
 	public int compare(IPF o1, IPF o2) {
-		return (int) (orderCriteria.get(o2.getID()) - orderCriteria.get(o1.getID()));
+		// Sort by descending occurrence count. getOrDefault avoids NPEs when an ID is
+		// missing from the map, and Long.compare avoids the overflow of casting a long
+		// difference to int (which would break the comparator contract).
+		long c1 = orderCriteria.getOrDefault(o1.getID(), 0L);
+		long c2 = orderCriteria.getOrDefault(o2.getID(), 0L);
+		return Long.compare(c2, c1);
 	}
 
 }

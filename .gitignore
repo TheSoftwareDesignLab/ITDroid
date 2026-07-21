@@ -7,10 +7,24 @@ release.properties
 dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
+# IDE / editor metadata (user-specific, should not be versioned)
 .vscode/
 .settings/
+.idea/
+.classpath
+.project
 test/
 .env
+
+# Personal run config (may hold a translation token / local paths). Commit only the .example.
+itdroid.config.properties
+
+# apktool decode/build output and run artifacts (regenerated on every run)
+temp/
+output/
+
+# External binaries: not source — download into extra/ per the README
+extra/*.jar
 
 # Avoid ignoring Maven wrapper jar file (.jar files are usually ignored)
 !/.mvn/wrapper/maven-wrapper.jar

@@ -51,7 +51,9 @@ public class LanguageBundle {
 		try {
 			url = file.toURI().toURL();
 		} catch (MalformedURLException e) {
-			e.printStackTrace();
+			// Fail fast: leaving url null here only defers the failure to a confusing NPE /
+			// MissingResourceException when the bundle is later loaded.
+			throw new RuntimeException("Could not resolve the settings directory to a URL: " + propertyDir, e);
 		}
 
 		URL[] urls = {url};
@@ -63,15 +65,23 @@ public class LanguageBundle {
 	public String[] getSelectedLanguagesAsArray() {
 		
 		Set<String> ids = bundle.keySet();
-		String[] response = new String[ids.size()-1];
+		// Size by the actual number of non-"defaultLng" keys; the "defaultLng" key is optional, so
+		// assuming ids.size()-1 would write past the end (AIOOBE) when it is absent.
+		int count = 0;
+		for (String id : ids) {
+			if(!id.equals("defaultLng")) {
+				count++;
+			}
+		}
+		String[] response = new String[count];
 		int i =0;
 		for (String id : ids) {
 			if(!id.equals("defaultLng")) {
-				response[i] = id;				
+				response[i] = id;
 				i++;
 			}
 		}
-		
+
 		return response;
 		
 	}
