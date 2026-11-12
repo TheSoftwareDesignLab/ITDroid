@@ -64,7 +64,10 @@ public class RunConfig {
     public String getAppPackage()  { return required("appPackage"); }
     public String getExtraFolder() { return optional("extraFolder", "extra"); }
     public String getSettingsDir() { return optional("settingsDir", "."); }
-    public String getOutput()      { return optional("output", "output"); }
+    /** Explicit output folder; empty means "{@code <resultsDir>/<appPackage>}" (the folder the web report lists). */
+    public String getOutput()      { return optional("output", ""); }
+    /** Root of all evaluations (default {@code results}); {@code --report} serves it. */
+    public String getResultsDir()  { return optional("resultsDir", "results"); }
     public String getEmulator()    { return required("emulator"); }
 
     public int getAlpha() {
@@ -101,6 +104,12 @@ public class RunConfig {
         setIfPresent("ITDROID_LLM_API_KEY", optional("translation.apiKey", ""));
         setIfPresent("ITDROID_LLM_TIMEOUT", optional("translation.timeoutSeconds", ""));
         setIfPresent("ITDROID_LLM_TEMPERATURE", optional("translation.temperature", ""));
+        // auto (by model name) | json (batched, general chat models) | translategemma | template (one text per request)
+        setIfPresent("ITDROID_LLM_STYLE", optional("translation.style", ""));
+        // Prompt for style=template, with {source}, {target} and {text}; \n escapes are newlines.
+        setIfPresent("ITDROID_LLM_PROMPT_TEMPLATE", optional("translation.promptTemplate", ""));
+        // true|false: mask %1$s / {name} / tags with <phN> tokens around each single-text request.
+        setIfPresent("ITDROID_LLM_MASK_PLACEHOLDERS", optional("translation.maskPlaceholders", ""));
     }
 
     private static void setIfPresent(String key, String value) {
@@ -115,5 +124,55 @@ public class RunConfig {
      */
     public String getAutoStart() {
         return optional("translation.autoStart", "");
+    }
+
+    /** Reuse the translations of a previous {@code strings_inventory.json} in the output folder (default true). */
+    public boolean isReuseInventory() {
+        return boolOptional("translation.reuseInventory", true);
+    }
+
+    /** Run the launch test of the original app before processing it (default true). */
+    public boolean isLaunchTest() {
+        return boolOptional("preflight.launchTest", true);
+    }
+
+    /** UI states captured per app version (default 5). */
+    public int getMaxStates() {
+        return intOptional("exploration.maxStates", 5);
+    }
+
+    /** Clickables tapped per state (default 8). */
+    public int getMaxClickables() {
+        return intOptional("exploration.maxClickables", 8);
+    }
+
+    /** Seconds to wait after each launch before the first capture, on top of the stability check (default 3). */
+    public int getSettleSeconds() {
+        return intOptional("exploration.settleSeconds", 3);
+    }
+
+    /** Ask the LLM for values and type them into text fields during exploration (default false). */
+    public boolean isFillForms() {
+        return boolOptional("exploration.fillForms", false);
+    }
+
+    private int intOptional(String key, int defaultValue) {
+        String raw = optional(key, "");
+        if (raw.isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Config key '" + key + "' must be an integer, got '" + raw + "'.");
+        }
+    }
+
+    private boolean boolOptional(String key, boolean defaultValue) {
+        String raw = optional(key, "").toLowerCase();
+        if (raw.isEmpty()) {
+            return defaultValue;
+        }
+        return raw.equals("true") || raw.equals("yes") || raw.equals("1") || raw.equals("on");
     }
 }
