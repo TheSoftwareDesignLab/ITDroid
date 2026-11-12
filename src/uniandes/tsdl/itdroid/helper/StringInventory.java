@@ -28,7 +28,8 @@ import uniandes.tsdl.itdroid.translator.LLMTranslator;
 
 /**
  * Every user-visible string of the app in one place, each with the file (and smali line) it came
- * from, whether it will be translated and why not, and the translation obtained per language.
+ * from, whether it will be translated and why not, and the translation obtained per language. A
+ * hardcoded string also says what the code does with it and lists every place it appears in.
  * Written to {@code <output>/strings_inventory.json} so a human can review or correct it. It is
  * also the translation memory: identical texts are translated once, and a previous inventory in
  * the same output folder seeds the next run so unchanged texts are not sent to the LLM again.
@@ -38,9 +39,19 @@ public class StringInventory {
     public static final String KIND_STRING = "string";
     public static final String KIND_PLURALS = "plurals";
     public static final String KIND_ARRAY = "string-array";
+    /** A literal of the code (smali). */
     public static final String KIND_HARDCODED = "hardcoded";
+    /** A literal written in a layout, a menu, a preference screen or the manifest. */
+    public static final String KIND_HARDCODED_XML = "hardcoded-xml";
 
-    /** One string of the app: a resource value, one item of a container, or a smali literal. */
+    /** Use recorded for the literals of the XML, next to the uses the code scan finds (ui, log...). */
+    public static final String CONSUMER_XML = "xml";
+    /** Why a literal of the XML is listed but not translated. */
+    static final String XML_NOT_EXTRACTED = "XML literal (not extracted to a resource)";
+    /** Places written per literal in the JSON file; {@code occurrences} always has the real count. */
+    private static final int MAX_PLACES_SAVED = 50;
+
+    /** One string of the app: a resource value, one item of a container, or a hardcoded literal. */
     public static class Entry {
         public final String id;
         public final String kind;
@@ -52,6 +63,12 @@ public class StringInventory {
         public final String formatted;   // the <string formatted="..."> attribute, or null
         public final boolean translatable;
         public final String skipReason;  // why it is kept verbatim (null when translatable)
+        /** Hardcoded only: what the app does with it (ui, log, exception, data..., or xml); else null. */
+        public String consumer;
+        /** Hardcoded only: the places of the code that hold this text. */
+        public List<SmaliScan.Occurrence> codePlaces = List.of();
+        /** Hardcoded only: the XML attributes that hold this text. */
+        public List<XmlLiteralFinder.Literal> xmlPlaces = List.of();
 
         Entry(String id, String kind, String name, String quantity, int index, String text, String origin,
               String formatted, String skipReason) {
@@ -68,7 +85,12 @@ public class StringInventory {
         }
 
         public boolean isResource() {
-            return !KIND_HARDCODED.equals(kind);
+            return !KIND_HARDCODED.equals(kind) && !KIND_HARDCODED_XML.equals(kind);
+        }
+
+        /** How many places hold this text (0 for a resource). */
+        public int occurrences() {
+            return codePlaces.size() + xmlPlaces.size();
         }
 
         /** Entries of the same resource (all the items of one plurals/array) share this key. */
@@ -95,9 +117,21 @@ public class StringInventory {
     private String sourceLanguage = "";
     private int nextId = 0;
 
-    /** Scans {@code res/values/*.xml} and the app's smali under the decoded folder. */
+    /**
+     * Scans {@code res/values/*.xml}, the app's smali and its XML under the decoded folder. With an
+     * empty package name only the resources are read.
+     */
     public static StringInventory collect(String decodedPath, String packageName,
             NotTranslatableStringsDictionary dictionary) throws IOException {
+        boolean code = packageName != null && !packageName.isEmpty();
+        return collect(decodedPath, packageName, dictionary,
+                code ? HardcodedStringFinder.hits(SmaliScan.scan(decodedPath, packageName)) : List.of(),
+                code ? XmlLiteralFinder.find(decodedPath) : List.of());
+    }
+
+    /** The same, from a scan already made: the resources plus the given hardcoded literals. */
+    public static StringInventory collect(String decodedPath, String packageName, NotTranslatableStringsDictionary dictionary,
+            List<HardcodedStringFinder.Hit> hits, List<XmlLiteralFinder.Literal> xmlLiterals) throws IOException {
         StringInventory inv = new StringInventory();
         inv.packageName = packageName == null ? "" : packageName;
 
@@ -117,26 +151,61 @@ public class StringInventory {
                 inv.collectResourceFile(f, "res/values/" + f.getName(), dictionary);
             }
         }
-        if (!inv.packageName.isEmpty()) {
-            List<HardcodedStringFinder.Hit> hits = HardcodedStringFinder.collectUiStringsWithOrigin(decodedPath, packageName);
-            Set<String> sqlIdentifiers = sqlIdentifiers(hits);
-            int n = 0;
-            for (HardcodedStringFinder.Hit h : hits) {
-                n++;
-                // Same text rules as the resources, plus the data shapes only code has: intent actions
-                // ("org.x.app.STOP_ALARM"), SQL, table names, constants, hashes, regular expressions,
-                // runtime messages. They are listed (they are in the smali) but never sent to the LLM:
-                // a translation model rewrites anything it is given, and a translated table name or
-                // query crashes the app at startup.
-                String skip = textSkipReason(h.text);
-                if (skip == null) {
-                    skip = hardcodedSkipReason(h.text, sqlIdentifiers);
-                }
-                inv.entries.add(new Entry("h" + n, KIND_HARDCODED, "", null, -1, h.text,
-                        h.origin + (h.occurrences > 1 ? " (+" + (h.occurrences - 1) + " more)" : ""), null, skip));
-            }
+        Set<String> sqlIdentifiers = sqlIdentifiers(hits);
+        int n = 0;
+        for (HardcodedStringFinder.Hit h : hits) {
+            n++;
+            Entry e = new Entry("h" + n, KIND_HARDCODED, "", null, -1, h.text,
+                    h.origin() + more(h.occurrences()), null, codeSkipReason(h, sqlIdentifiers));
+            e.consumer = h.consumer().label;
+            e.codePlaces = h.places;
+            inv.entries.add(e);
+        }
+        n = 0;
+        for (Map.Entry<String, List<XmlLiteralFinder.Literal>> x : HardcodedStringFinder.byText(xmlLiterals).entrySet()) {
+            n++;
+            // Listed so the report shows them; they are translated once they are resources.
+            String skip = textSkipReason(x.getKey());
+            Entry e = new Entry("x" + n, KIND_HARDCODED_XML, "", null, -1, x.getKey(),
+                    x.getValue().get(0).origin() + more(x.getValue().size()), null, skip != null ? skip : XML_NOT_EXTRACTED);
+            e.consumer = CONSUMER_XML;
+            e.xmlPlaces = x.getValue();
+            inv.entries.add(e);
         }
         return inv;
+    }
+
+    private static String more(int occurrences) {
+        return occurrences > 1 ? " (+" + (occurrences - 1) + " more)" : "";
+    }
+
+    /**
+     * Shapes that are data when nothing is known about the literal, but ordinary labels when the
+     * code shows it: an all-caps button ("CANCEL"), a word that is also the name of a table.
+     */
+    private static final Set<String> REASONS_UI_OVERRIDES = Set.of("constant", "SQL identifier");
+
+    /**
+     * Why a literal of the code is kept verbatim, or null when it is translated. Three checks, in
+     * order: the text rules every string passes; the shapes only code has (intent actions, SQL,
+     * table names, hashes, regular expressions: a translated table name or query crashes the app
+     * at startup); and what the code does with it. A literal whose every use is a log, an
+     * exception, data or compiler plumbing never reaches the screen, so it is listed but never
+     * sent to the LLM. One that is shown, or whose use is not known, is translated.
+     */
+    static String codeSkipReason(HardcodedStringFinder.Hit h, Set<String> sqlIdentifiers) {
+        String skip = textSkipReason(h.text);
+        if (skip != null) {
+            return skip;
+        }
+        String shape = hardcodedSkipReason(h.text, sqlIdentifiers);
+        if (h.shown()) {
+            return shape == null || REASONS_UI_OVERRIDES.contains(shape) ? null : shape;
+        }
+        if (shape != null) {
+            return shape;
+        }
+        return h.neverShown() ? h.consumer().description : null;
     }
 
     /**
@@ -178,6 +247,9 @@ public class StringInventory {
         }
         if (t.matches("^<[^<>]*>$")) {
             return "code token";
+        }
+        if (t.matches("^\\.[A-Za-z0-9]{1,10}$")) {
+            return "file extension";                 // .png, .json, .mmt
         }
         if (t.matches("^\\S*_\\S*$")) {
             return "identifier";                     // __db, cover_, song_allsongs_, is_sort_ascending_, room_fts_content_sync_
@@ -332,11 +404,11 @@ public class StringInventory {
         return out;
     }
 
-    /** Unique translatable hardcoded literals, in discovery order. */
+    /** Unique translatable literals of the code, in discovery order: what is patched into the smali. */
     public List<String> hardcodedTexts() {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         for (Entry e : entries) {
-            if (!e.isResource() && e.translatable) {
+            if (KIND_HARDCODED.equals(e.kind) && e.translatable) {
                 out.add(e.text);
             }
         }
@@ -356,10 +428,17 @@ public class StringInventory {
         this.sourceLanguage = sourceLanguage == null ? "" : sourceLanguage;
     }
 
-    /** Counts for the report. */
+    /**
+     * Counts for the report. The hardcoded strings have one breakdown, the one every output shows:
+     * {@code hardcoded} distinct literals ({@code hardcodedCode} in the code plus
+     * {@code hardcodedXml} in the XML), found in {@code hardcodedOccurrences} places, split by what
+     * the app does with them in {@code hardcodedByConsumer}; {@code hardcodedTranslatable} of them
+     * are translated.
+     */
     @SuppressWarnings("unchecked")
     public JSONObject summary() {
-        long resources = 0, resourcesTranslatable = 0, hardcoded = 0, hardcodedTranslatable = 0;
+        long resources = 0, resourcesTranslatable = 0, hardcodedCode = 0, hardcodedXml = 0, hardcodedTranslatable = 0, places = 0;
+        Map<String, Long> byConsumer = new TreeMap<>();
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         for (Entry e : entries) {
             if (e.isResource()) {
@@ -368,7 +447,13 @@ public class StringInventory {
                     resourcesTranslatable++;
                 }
             } else {
-                hardcoded++;
+                if (KIND_HARDCODED_XML.equals(e.kind)) {
+                    hardcodedXml++;
+                } else {
+                    hardcodedCode++;
+                }
+                places += e.occurrences();
+                byConsumer.merge(e.consumer == null ? "unknown" : e.consumer, 1L, Long::sum);
                 if (e.translatable) {
                     hardcodedTranslatable++;
                 }
@@ -380,8 +465,14 @@ public class StringInventory {
         JSONObject o = new JSONObject();
         o.put("resources", resources);
         o.put("resourcesTranslatable", resourcesTranslatable);
-        o.put("hardcoded", hardcoded);
+        o.put("hardcoded", hardcodedCode + hardcodedXml);
+        o.put("hardcodedCode", hardcodedCode);
+        o.put("hardcodedXml", hardcodedXml);
+        o.put("hardcodedOccurrences", places);
         o.put("hardcodedTranslatable", hardcodedTranslatable);
+        JSONObject consumers = new JSONObject();
+        consumers.putAll(byConsumer);
+        o.put("hardcodedByConsumer", consumers);
         o.put("uniqueTranslatableTexts", (long) unique.size());
         JSONObject perLang = new JSONObject();
         for (Map.Entry<String, Map<String, String>> l : translations.entrySet()) {
@@ -453,6 +544,39 @@ public class StringInventory {
             o.put("translatable", e.translatable);
             if (e.skipReason != null) {
                 o.put("skipReason", e.skipReason);
+            }
+            if (!e.isResource()) {
+                o.put("consumer", e.consumer);
+                o.put("occurrences", (long) e.occurrences());
+                JSONArray places = new JSONArray();
+                for (SmaliScan.Occurrence p : e.codePlaces) {
+                    if (places.size() >= MAX_PLACES_SAVED) {
+                        break;
+                    }
+                    JSONObject place = new JSONObject();
+                    place.put("origin", p.origin());
+                    place.put("class", p.className);
+                    place.put("method", p.method);
+                    place.put("consumer", p.consumer.label);
+                    if (!p.via.isEmpty()) {
+                        place.put("via", p.via);
+                    }
+                    places.add(place);
+                }
+                for (XmlLiteralFinder.Literal p : e.xmlPlaces) {
+                    if (places.size() >= MAX_PLACES_SAVED) {
+                        break;
+                    }
+                    JSONObject place = new JSONObject();
+                    place.put("origin", p.origin());
+                    place.put("element", p.element);
+                    if (!p.id.isEmpty()) {
+                        place.put("id", p.id);
+                    }
+                    place.put("attribute", p.attribute);
+                    places.add(place);
+                }
+                o.put("places", places);
             }
             JSONObject tr = new JSONObject();
             for (String lang : translations.keySet()) {

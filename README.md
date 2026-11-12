@@ -3,8 +3,8 @@
 ITDroid is a testing framework for Android apps oriented to internationalization (i18n).
 Given an APK in one language, ITDroid:
 
-1. Checks that the app can be processed at all (preflight): device on Android 13+, compatible ABIs, launchable activity, not a Trusted Web Activity, `strings.xml` present, and the original app actually starts on the device.
-2. Decodes it with apktool and builds an inventory of every string (resources, plurals, arrays and hardcoded literals in the smali) with the file and line each one came from: `strings_inventory.json`.
+1. Checks that the app can be processed at all (preflight): device on Android 13+, compatible ABIs, launchable activity, not a Trusted Web Activity, and the original app actually starts on the device.
+2. Decodes it with apktool and analyses it statically: the hardcoded strings of the code and of the XML, with what the code does with each one (`hcs.txt`); an inventory of every string (resources, plurals, arrays and hardcoded literals) with the file and line it came from (`strings_inventory.json`); and the strings each language lacks. This step needs no device and can be run alone with `--static`.
 3. Rebuilds the untouched app and explores it on the device in its source language, recording every tap as a script.
 4. For each target language, with the app removed from the device: translates the inventory with a local LLM (in global batches, reusing earlier translations), patches the hardcoded strings, rebuilds and signs a per-language APK.
 5. Installs each translated APK, replays the recorded script so it visits the same screens, uninstalls it, and compares the layouts state by state to detect Internationalization Presentation Failures (IPF): text that overflows, overlaps or shifts the layout when translated.
@@ -104,6 +104,7 @@ Values set here take precedence over `.env` and environment variables. The real 
 Optional keys, all with sensible defaults:
 
 - `preflight.launchTest` (true): install and launch the original app once before processing it; set false to skip.
+- `hardcoded.codePackages` (empty): extra package roots of the app's own code, comma separated. ITDroid finds the code from the manifest and the `BuildConfig` class, so this is only needed for an app split in modules that neither mentions.
 - `translation.reuseInventory` (true): reuse the translations of a previous `strings_inventory.json` found in the output folder, so a re-run only asks the LLM for new texts.
 - `translation.style` (auto): how texts are sent to the model. `json` batches 25 texts in a JSON object (general chat models); `translategemma` and `template` send one text per request in the model's own prompt (Google's TranslateGemma prompt, or `translation.promptTemplate` with `{source}`, `{target}` and `{text}`, by default Tencent Hy-MT2's prompt). `auto` picks by model name.
 - `translation.maskPlaceholders` (true for the one-text styles): replace `%1$s`, `{name}`, tags and entities with `<phN>` tokens around each request and restore them afterwards, so translation-only models cannot alter them.
@@ -171,11 +172,12 @@ The input app may have any `minSdk`; only the test device must be Android 13+ fo
 
 The output directory contains the results and intermediate steps:
 
-- `report.json`: preflight results, inventory counts, and per language the states, the pairing with the source graph, the replay summary and the IPFs. Rewritten after each language.
-- `strings_inventory.json`: every string of the app with its origin (`res/values/strings.xml`, `smali_classes2/.../Foo.smali:123`), whether it is translated and why not, and its translations. Review or correct it by hand; the next run reuses it.
+- `report.json`: preflight results, inventory counts, and per language the states, the pairing with the source graph, the replay summary and the IPFs. Rewritten after each language. `hardcoded` is the number of distinct hardcoded strings and `inventory` breaks it down (in code, in XML, places, by use, translatable); `nonInternationalized` says, per language, whether the app ships it and which default strings it lacks; `codePackages` lists the packages taken as the app's own code.
+- `strings_inventory.json`: every string of the app with its origin (`res/values/strings.xml`, `smali_classes2/.../Foo.smali:123`, `res/layout/main.xml:12`), whether it is translated and why not, and its translations. A hardcoded string also has its use (`consumer`: `ui`, `log`, `exception`, `data`...) and every place it appears in, with class, method and the call that receives it. Review or correct it by hand; the next run reuses it.
 - `trnsResults/<lang>/` and `noTrnsResults/<lang>/`: `result.json`, screenshots (plus the large `graph.txt` and `graph.json` debug dumps when `debug.graphDumps=true`); the source language also has `exploration_script.json` (the recorded path) and each translated language `replay_report.json` (what could be reproduced and where it diverged).
 - `<package>-<lang>-aligned-debugSigned.apk`: the APK built for each language; `hardcoded_<lang>.csv` lists how each hardcoded string was translated.
-- `ipfs.csv` and `hcs.txt`: the IPFs and the hardcoded strings as flat lists.
+- `ipfs.csv`: the IPFs as a flat list.
+- `hcs.txt`: the hardcoded strings grouped as in the original tool, a line with the class, a tab and the method, two tabs and each literal of that method, followed by its use in brackets. The literals of the XML come after the code: file, element, literal with its attribute.
 
 ITDroid exits with code 1 when it rejects or aborts an app; the reason is in the `error` field of `report.json`. Besides the findings, `report.json` records the run itself: `itdroid` (version, start/end, status), `environment` (host, device model and API, translation model and style, configuration) and `performance` (seconds per phase, translation requests, ITDroid's CPU time and heap, the host's CPU load and memory in use).
 
@@ -190,6 +192,27 @@ java -jar target/ITDroid-1.0.0.jar --report --port 9000 --no-browser
 ```
 
 The page (`webreport/`) lists the evaluated apps and shows, for the selected one: the IPFs of each language with the source and translated screens side by side and the affected nodes outlined, the hardcoded strings and how they were translated, the time of every phase and the machine usage, the static facts of the run (APK, version, device, Android API, translation model, configuration) and links to every artifact. A local server is needed because browsers do not let a page opened from disk read other files; the server only listens on 127.0.0.1 and only serves `webreport/` and the results folder.
+
+# Static analysis without a device
+
+`--static` decodes the APK and stops after the static analysis. It needs no device and no LLM, and takes the same arguments as a run (the emulator name is not needed):
+
+```
+java -jar target/ITDroid-1.0.0.jar --static itdroid.config.properties
+java -jar target/ITDroid-1.0.0.jar --static app.apk com.example.app extra settings results/com.example.app
+```
+
+It writes `hcs.txt`, `strings_inventory.json` and a `report.json` with the hardcoded strings, the inventory counts and the strings each language lacks. A normal run does the same analysis before it needs the device: if the device or the LLM is not available, the run says so at once, finishes the static analysis and then stops. An app without a default `strings.xml` is analysed and evaluated like any other; only its hardcoded strings can be translated.
+
+A string counts as hardcoded when it is a literal of the app's own code that reads like text, or text written directly in an attribute of a layout, a menu, a preference screen, a navigation graph or the manifest (`android:text="Save"` instead of `@string/save`). For each literal of the code ITDroid follows its register to the instruction that consumes it and classifies the consumer: shown to the user (`ui`), `log`, `exception`, `data` (keys, SQL, patterns, comparisons), `compiler`, or one of the cases it cannot decide (`app-call`, `library-call`, `field`, `return`, `array`, `concatenation`, `unused`). A text appended to a `StringBuilder` takes the use of the whole sentence. Only a literal that is shown, or whose use is not known, is translated; logs, exception messages and data are listed but kept verbatim.
+
+The table that says what each API does with a string is `hardcoded-consumers.txt` (packaged in the jar, one regular expression per line). To teach ITDroid an API of your app without rebuilding, put a file with that name in the settings folder; its rules are tried first:
+
+```
+# the charting library of this app draws the labels it is given
+ui   ^Lorg/thirdparty/Chart;->axis\(
+log  ^Lcom/example/app/util/Tracer;->
+```
 
 # Re-analysis without a device
 

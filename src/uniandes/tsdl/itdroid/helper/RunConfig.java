@@ -157,6 +157,14 @@ public class RunConfig {
     }
 
     /**
+     * Extra package roots of the app's own code, comma separated (key hardcoded.codePackages). Only
+     * needed when the code is split in modules the manifest does not mention; blank otherwise.
+     */
+    public String getCodePackages() {
+        return optional("hardcoded.codePackages", "");
+    }
+
+    /**
      * Also write {@code graph.txt} and {@code graph.json} next to each {@code result.json} (default
      * false). They list every relation of every pair of nodes: useful to debug the comparison by
      * hand, large, and not read by anything else.

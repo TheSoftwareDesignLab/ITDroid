@@ -17,11 +17,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
+import uniandes.tsdl.itdroid.helper.AppCode;
+import uniandes.tsdl.itdroid.helper.ConsumerRules;
 import uniandes.tsdl.itdroid.helper.ExplorationException;
 import uniandes.tsdl.itdroid.helper.ExplorationHelper;
 import uniandes.tsdl.itdroid.helper.HardcodedStringFinder;
@@ -36,8 +39,10 @@ import uniandes.tsdl.itdroid.helper.ReportServer;
 import uniandes.tsdl.itdroid.helper.RunConfig;
 import uniandes.tsdl.itdroid.helper.RunMetrics;
 import uniandes.tsdl.itdroid.helper.SmaliPatcher;
+import uniandes.tsdl.itdroid.helper.SmaliScan;
 import uniandes.tsdl.itdroid.helper.StringInventory;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
+import uniandes.tsdl.itdroid.helper.XmlLiteralFinder;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
 import uniandes.tsdl.itdroid.translator.LLMTranslator;
@@ -46,10 +51,13 @@ import uniandes.tsdl.itdroid.translator.Translator;
 /**
  * Orchestrator. The pipeline, in order:
  * <ol>
- *   <li>Preflight: device (API 33+, ABIs), APK native code, LLM server, decode, manifest (launcher,
- *       not a TWA, minSdk), strings.xml, and a launch test of the ORIGINAL app.</li>
- *   <li>Inventory: every string of the app (resources and smali literals) with its origin, written
- *       to {@code strings_inventory.json}.</li>
+ *   <li>Preflight: device (API 33+, ABIs), APK native code, LLM server. A failure is reported at once
+ *       but only stops the run after the next step, which needs neither.</li>
+ *   <li>Decode and static analysis: the hardcoded strings ({@code hcs.txt}), every string of the app
+ *       with its origin ({@code strings_inventory.json}) and the strings each language lacks. With
+ *       {@code --static} the run ends here.</li>
+ *   <li>Preflight of the app: manifest (launcher, not a TWA, minSdk) and a launch test of the
+ *       ORIGINAL app.</li>
  *   <li>Source build + exploration (recorded): the pristine app, explored with the DFS; the path is
  *       saved as a script.</li>
  *   <li>Per target language, with the app OFF the device: translate (resources + hardcoded labels)
@@ -75,6 +83,8 @@ public class ITDroid {
 	static boolean reuseInventory = true;
 	/** Write graph.txt / graph.json next to each result.json (config key debug.graphDumps). */
 	static boolean graphDumps = false;
+	/** --static: decode and analyse only (hardcoded strings, inventory); no device, no LLM. */
+	static boolean staticOnly = false;
 
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
@@ -99,6 +109,12 @@ public class ITDroid {
 			}
 			return;
 		}
+		if (args.length >= 1 && args[0].equals("--static")) {
+			// java -jar ITDroid.jar --static <same arguments as a run>: decodes the APK and writes hcs.txt,
+			// strings_inventory.json and the static sections of report.json. No device, no LLM.
+			staticOnly = true;
+			args = Arrays.copyOfRange(args, 1, args.length);
+		}
 		try {
 			runITDroid(args);
 			finishedOk = true;
@@ -112,7 +128,9 @@ public class ITDroid {
 			if (outputPath != null && report != null) {
 				finishReport();
 				writeReport();
-				if (finishedOk) {
+				if (finishedOk && staticOnly) {
+					System.out.println("Static analysis is finished: see hcs.txt, strings_inventory.json and report.json in " + outputPath);
+				} else if (finishedOk) {
 					System.out.println("Internationalization analysis is finished, please check the report.json file for the results");
 				} else {
 					System.out.println("ITDroid stopped early; the partial results are in report.json");
@@ -174,7 +192,7 @@ public class ITDroid {
 			alpha = cfg.getAlpha();
 			// Default: results/<package>, the folder the web report lists (java -jar ITDroid.jar --report).
 			outputPath = cfg.getOutput().isEmpty() ? Paths.get(cfg.getResultsDir(), appName).toString() : cfg.getOutput();
-			emulatorName = cfg.getEmulator();
+			emulatorName = staticOnly ? "" : cfg.getEmulator();
 			// Push the chosen translation engine/model/token into ITDROID_LLM_* (top precedence).
 			cfg.applyTranslationSystemProperties();
 			String autoStart = cfg.getAutoStart();
@@ -186,6 +204,17 @@ public class ITDroid {
 			launchTest = cfg.isLaunchTest();
 			reuseInventory = cfg.isReuseInventory();
 			graphDumps = cfg.isGraphDumps();
+			AppCode.setExtraRoots(cfg.getCodePackages());
+		} else if (staticOnly && args.length == 5) {
+			// --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>
+			apkPath = args[0];
+			appName = args[1];
+			extraPath = args[2];
+			langsDir = args[3];
+			alpha = 0;
+			outputPath = args[4];
+			emulatorName = "";
+			llmLaunchCommand = null;
 		} else if (args.length == 7 || args.length == 8) {
 			// Positional mode (kept for backward compatibility).
 			apkPath = args[0];
@@ -246,60 +275,67 @@ public class ITDroid {
 		JSONObject lngsResults = new JSONObject();
 		report.put("langsReport", lngsResults);
 
-		// ------------------------------------------------------------------ phase 0: preflight
-		// Cheap checks first, so an app that cannot be processed is rejected in seconds with the
-		// concrete reason, instead of failing after minutes of translation.
-		metrics.begin("preflight");
-		String serial = AdbExplorer.resolveSerial();
-		JSONObject preflight = new JSONObject();
-		report.put("preflight", preflight);
-		JSONObject device = Preflight.checkDevice(serial);
-		preflight.put("device", device);
-		int deviceSdk = ((Number) device.get("sdk")).intValue();
-		List<String> deviceAbis = new ArrayList<>();
-		for (Object a : (List<?>) device.get("abis")) {
-			deviceAbis.add(String.valueOf(a));
-		}
 		String originalApkAbs = new File(apkPath).getAbsolutePath();
 		if (!new File(originalApkAbs).isFile()) {
 			throw new ITDroidException("APK not found: " + originalApkAbs);
 		}
-		List<String> apkAbis = Preflight.apkAbis(originalApkAbs);
-		preflight.put("apkAbis", String.join(",", apkAbis));
-		Preflight.checkAbis(apkAbis, deviceAbis);
+		JSONObject preflight = new JSONObject();
+		report.put("preflight", preflight);
 
-		// Boot the local LLM server (or verify it is up) before any translation. Fails fast with a
-		// clear message instead of throwing a mid-run ConnectException. Started early so the model
-		// loads while the APK is being decoded.
-		LLMServerManager llmServer = new LLMServerManager(langsDir);
-		llmServer.ensureRunning(llmLaunchCommand, outputPath);
+		// ------------------------------------------------------------------ preflight: device and LLM
+		// Cheap checks first, so a run that cannot go on says why within seconds. A failure here does not
+		// stop the static analysis below, which needs neither the device nor the LLM: the failure is
+		// kept and thrown once hcs.txt, the inventory and their sections of report.json are written.
+		Exception notReady = null;
+		String serial = null;
+		JSONObject device = null;
+		int deviceSdk = -1;
+		if (!staticOnly) {
+			metrics.begin("preflight");
+			try {
+				serial = AdbExplorer.resolveSerial();
+				device = Preflight.checkDevice(serial);
+				preflight.put("device", device);
+				deviceSdk = ((Number) device.get("sdk")).intValue();
+				List<String> deviceAbis = new ArrayList<>();
+				for (Object a : (List<?>) device.get("abis")) {
+					deviceAbis.add(String.valueOf(a));
+				}
+				List<String> apkAbis = Preflight.apkAbis(originalApkAbs);
+				preflight.put("apkAbis", String.join(",", apkAbis));
+				Preflight.checkAbis(apkAbis, deviceAbis);
 
-		// Decode the APK
-		metrics.end("preflight");
+				// Boot the local LLM server (or verify it is up) before any translation. Started early so
+				// the model loads while the APK is being decoded.
+				new LLMServerManager(langsDir).ensureRunning(llmLaunchCommand, outputPath);
+			} catch (Exception e) {
+				notReady = e;
+				System.out.println("ERROR: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+				System.out.println("The evaluation cannot run. Finishing the static analysis (hardcoded strings and inventory, "
+						+ "no device or LLM needed) before stopping.");
+			}
+			metrics.end("preflight");
+		}
+
+		// ------------------------------------------------------------------ decode + static analysis
 		metrics.begin("decode");
 		String decodedFolderPath = APKToolWrapper.openAPK(apkPath, extraPath);
 		metrics.end("decode");
-		metrics.begin("preflight");
-		JSONObject appInfo = Preflight.checkDecodedApp(decodedFolderPath, deviceSdk);
+		JSONObject appInfo = Preflight.describeDecodedApp(decodedFolderPath);
 		readVersionInfo(decodedFolderPath, appInfo);
 		preflight.put("app", appInfo);
 
-		// The original app must run on this device before anything else is attempted. Separates
-		// "the app does not work here" (hardware, crash, TWA) from "ITDroid's rebuild broke it".
-		if (launchTest) {
-			String reason = AdbExplorer.checkLaunch(serial, appName, originalApkAbs);
-			preflight.put("launchTest", reason == null ? "ok" : reason);
-			if (reason != null) {
-				throw new ITDroidException("PREFLIGHT: " + reason);
-			}
-		}
-		metrics.end("preflight");
-		writeReport();
-
-		// ------------------------------------------------------------------ inventory
+		// Hardcoded strings: one scan of the app's smali plus its XML, shared by hcs.txt, the inventory
+		// and the patcher.
 		metrics.begin("inventory");
-		int possibleIPFS = HardcodedStringFinder.findHardCodedStrings(decodedFolderPath, appName, outputPath);
-		report.put("hardcoded", possibleIPFS);
+		SmaliScan scan = SmaliScan.scan(decodedFolderPath, appName, ConsumerRules.load(langsDir));
+		List<XmlLiteralFinder.Literal> xmlLiterals = XmlLiteralFinder.find(decodedFolderPath);
+		List<HardcodedStringFinder.Hit> hits = HardcodedStringFinder.hits(scan);
+		report.put("hardcoded", (long) HardcodedStringFinder.writeHcs(Paths.get(outputPath, "hcs.txt"), hits, xmlLiterals));
+		JSONArray codePackages = new JSONArray();
+		codePackages.addAll(scan.packageRoots());
+		report.put("codePackages", codePackages);
+		System.out.println("App code found under " + scan.packageRoots() + " (" + scan.files().size() + " smali files)");
 
 		// Read selected languages
 		LanguageBundle lngBundle = new LanguageBundle(langsDir);
@@ -321,23 +357,28 @@ public class ITDroid {
 			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
 
-		// Source language: trust the configured defaultLng (reliable). LLM auto-detection is used
-		// only as a fallback when defaultLng is missing.
+		// Non-internationalized strings: per language, whether the app ships it and which of the
+		// default strings it lacks.
+		JSONObject nis = new JSONObject();
+		nis.put("defaultStringsFile", xmlc.hasDefault());
+		nis.put("defaultStrings", (long) xmlc.defaultStrings());
+		nis.put("alpha", (long) alpha);
+		JSONObject nisLanguages = new JSONObject();
+		for (int i = 1; i < stringFiles.length; i++) {
+			nisLanguages.put(lngs[i - 1], xmlc.status(stringFiles[i]).toJson());
+		}
+		nis.put("languages", nisLanguages);
+		report.put("nonInternationalized", nis);
+
+		// Source language: the configured defaultLng (reliable). LLM auto-detection is only a fallback
+		// when defaultLng is missing, and waits until the LLM is known to be up.
 		String sourceLang = lngBundle.getBundle().containsKey("defaultLng")
 				? lngBundle.getBundle().getString("defaultLng") : null;
-		if (sourceLang == null || sourceLang.isEmpty()) {
-			String detected = new LLMTranslator(langsDir).detectSourceLanguage(stringFiles[0]);
-			if (detected != null && !detected.isEmpty()) {
-				sourceLang = detected;
-			}
-		}
-		System.out.println("Source language: " + sourceLang);
-		report.put("dfltLang", sourceLang);
 
 		// Every string of the app, with where it came from. Translations are recorded into it as
 		// they happen; a previous inventory in the same output folder seeds the memory.
 		NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(langsDir);
-		StringInventory inventory = StringInventory.collect(decodedFolderPath, appName, dictionary);
+		StringInventory inventory = StringInventory.collect(decodedFolderPath, appName, dictionary, hits, xmlLiterals);
 		inventory.setSourceLanguage(sourceLang);
 		Path inventoryFile = Paths.get(outputPath, "strings_inventory.json");
 		if (reuseInventory) {
@@ -348,13 +389,54 @@ public class ITDroid {
 		}
 		inventory.save(inventoryFile);
 		report.put("inventory", inventory.summary());
+		if (sourceLang != null && !sourceLang.isEmpty()) {
+			report.put("dfltLang", sourceLang);
+		}
 		System.out.println("String inventory written to " + inventoryFile + ": " + inventory.summary().toJSONString());
 		metrics.end("inventory");
+		writeReport();
+
+		if (staticOnly) {
+			itdroidInfo.put("mode", "static");
+			return;
+		}
+		if (notReady != null) {
+			throw notReady;
+		}
+
+		// ------------------------------------------------------------------ preflight: the app on the device
+		metrics.begin("preflight");
+		Preflight.checkDecodedApp(appInfo, deviceSdk);
+
+		// The original app must run on this device before anything else is attempted. Separates
+		// "the app does not work here" (hardware, crash, TWA) from "ITDroid's rebuild broke it".
+		if (launchTest) {
+			String reason = AdbExplorer.checkLaunch(serial, appName, originalApkAbs);
+			preflight.put("launchTest", reason == null ? "ok" : reason);
+			if (reason != null) {
+				throw new ITDroidException("PREFLIGHT: " + reason);
+			}
+		}
+		metrics.end("preflight");
+
+		if (sourceLang == null || sourceLang.isEmpty()) {
+			String detected = xmlc.hasDefault() ? new LLMTranslator(langsDir).detectSourceLanguage(stringFiles[0]) : null;
+			if (detected == null || detected.isEmpty()) {
+				detected = "en";
+				System.out.println("WARNING: no defaultLng in settings.properties and the source language could not be detected; assuming en.");
+			}
+			sourceLang = detected;
+			inventory.setSourceLanguage(sourceLang);
+			inventory.save(inventoryFile);
+		}
+		System.out.println("Source language: " + sourceLang);
+		report.put("dfltLang", sourceLang);
+		writeReport();
 
 		LLMTranslator llm = new LLMTranslator(langsDir, inventory);
 		explorerOptions.llm = llm;
 		explorerOptions.language = sourceLang;
-		SmaliPatcher patcher = new SmaliPatcher(decodedFolderPath, appName);
+		SmaliPatcher patcher = new SmaliPatcher(scan);
 
 		// Static facts of this run for the report: host, device, translation engine, configuration.
 		JSONObject config = new JSONObject();
@@ -465,13 +547,17 @@ public class ITDroid {
 		System.out.println("Processing " + lang + " app version");
 		JSONObject langJson = new JSONObject();
 		langJson.put("lang", lngBundle.isLanguageSelected(lang) ? lngBundle.getBundle().getString(lang) : lang);
+		langJson.put("shippedByApp", translated);
+		langJson.put("resultsFolder", translated ? "trnsResults" : "noTrnsResults");
 		lngsResults.put(lang, langJson);
 		int patched = 0;
 		RunMetrics metrics = RunMetrics.get();
 		try {
 			metrics.begin("translate:" + lang);
 			// 1. Resources: only when the developer did not ship this language.
-			if (!translated) {
+			if (!translated && !new File(defaultStringsXml).isFile()) {
+				System.out.println("The app has no default strings.xml: there are no resources to translate, only hardcoded strings.");
+			} else if (!translated) {
 				System.out.println("We are going to translate your strings...");
 				new Translator(defaultStringsXml, sourceLang, lang).translate(llm);
 			} else {
@@ -598,6 +684,8 @@ public class ITDroid {
 		System.out.println("   If omitted, the LLM server must already be running.");
 		System.out.println();
 		System.out.println("Other modes (no device, no LLM):");
+		System.out.println("  java -jar ITDroid.jar --static <config file>                              decode and analyse only: hardcoded strings and inventory");
+		System.out.println("  java -jar ITDroid.jar --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>");
 		System.out.println("  java -jar ITDroid.jar --report [resultsFolder] [--port N] [--no-browser]   web report");
 		System.out.println("  java -jar ITDroid.jar --reanalyze <folder> [--out <folder>]              recompute the comparison of stored evaluations");
 	}

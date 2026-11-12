@@ -252,7 +252,7 @@
 
     const totals = el('div', { class: 'row' });
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('IPFs (all languages)', num(total), total > 0 ? 'text-danger' : 'text-success')));
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded strings', num(r.hardcoded), isNum(inv.hardcodedTranslatable) ? inv.hardcodedTranslatable + ' look like UI text' : '')));
+    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded strings', num(r.hardcoded), hardcodedBreakdown(inv))));
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Screens explored (' + (dflt || 'source') + ')', num(lr[dflt] ? lr[dflt].amStates : null), lr[dflt] ? num(lr[dflt].amTrans) + ' transitions' : '')));
     root.appendChild(totals);
 
@@ -267,9 +267,26 @@
     if (inv.uniqueTranslatableTexts != null) {
       root.appendChild(card('String inventory', kvTable([
         ['Resource strings', num(inv.resources) + ' (' + num(inv.resourcesTranslatable) + ' translatable)'],
-        ['Hardcoded literals', num(inv.hardcoded) + ' (' + num(inv.hardcodedTranslatable) + ' translatable)'],
+        ['Hardcoded strings', num(inv.hardcoded) + ' (' + num(inv.hardcodedTranslatable) + ' translatable)'],
+        ['Hardcoded strings by use', hardcodedByUse(inv)],
         ['Unique texts sent to the translator', num(inv.uniqueTranslatableTexts)]])));
     }
+  }
+
+  // One breakdown of the hardcoded strings, shared by the overview and the hardcoded tab. Reports made
+  // before the breakdown existed only have the totals.
+  function hardcodedBreakdown(inv) {
+    if (!inv) return '';
+    if (isNum(inv.hardcodedCode)) {
+      return inv.hardcodedCode + ' in code, ' + inv.hardcodedXml + ' in XML, in ' + inv.hardcodedOccurrences + ' places · ' + inv.hardcodedTranslatable + ' translated';
+    }
+    return isNum(inv.hardcodedTranslatable) ? inv.hardcodedTranslatable + ' look like UI text' : '';
+  }
+
+  function hardcodedByUse(inv) {
+    const by = inv && inv.hardcodedByConsumer;
+    if (!by) return null;
+    return Object.keys(by).sort((a, b) => by[b] - by[a]).map(k => k + ' ' + by[k]).join(' · ');
   }
 
   function stat(label, value, sub) {
@@ -453,25 +470,29 @@
     const inv = state.inventory;
     const r = state.report;
     root.appendChild(el('p', { class: 'text-muted small' },
-      'String literals found in the app code (const-string in the smali) that look like user-facing text. ITDroid translates the ones marked as translatable ' +
-      'and patches them into each language build; the rest are data (identifiers, SQL, URLs, formats) and are kept verbatim.'));
+      'Text written in the app instead of in its string resources: literals of the code (const-string in the smali) and of the XML (layouts, menus, preferences, manifest). ' +
+      'The "Use" column says what the code does with each one. ITDroid translates the ones marked as translatable and patches them into each language build; ' +
+      'logs, exception messages and data (keys, SQL, identifiers, formats) are kept verbatim.'));
     if (!inv || !Array.isArray(inv.entries)) {
       root.appendChild(el('p', null, 'Hardcoded strings detected: ' + num(r.hardcoded) + '. The inventory file (strings_inventory.json) is not available, see hcs.txt in the artifacts.'));
       return;
     }
-    const hc = inv.entries.filter(e => e.kind === 'hardcoded');
+    const hc = inv.entries.filter(e => e.kind === 'hardcoded' || e.kind === 'hardcoded-xml');
+    const inXml = hc.filter(e => e.kind === 'hardcoded-xml').length;
+    const withUse = hc.some(e => e.consumer);
     const { targets } = languages();
     const langsWith = targets.filter(c => hc.some(e => e.translations && e.translations[c] != null));
     const translatable = hc.filter(e => e.translatable);
     const totals = el('div', { class: 'row' });
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded literals', num(hc.length), '')));
+    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded strings', num(hc.length), (hc.length - inXml) + ' in code, ' + inXml + ' in XML')));
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Translated into the language builds', num(translatable.length), '')));
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Kept verbatim (data)', num(hc.length - translatable.length), '')));
+    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Kept verbatim', num(hc.length - translatable.length), hardcodedByUse(inv.counts) || '')));
     root.appendChild(totals);
-    const headers = ['Text', 'Where', 'Translated'].concat(langsWith);
-    const rows = hc.map(e => [el('span', { class: 'node-text', title: e.text }, e.text), el('span', { class: 'small text-muted' }, e.origin || ''),
-      e.translatable ? badge('yes', 'success') : el('span', { class: 'small' }, badge('no', 'secondary'), e.skipReason || '')]
-      .concat(langsWith.map(c => (e.translations && e.translations[c] != null) ? e.translations[c] : '')));
+    const headers = ['Text', 'Where'].concat(withUse ? ['Use'] : [], ['Translated'], langsWith);
+    const rows = hc.map(e => [el('span', { class: 'node-text', title: e.text }, e.text), el('span', { class: 'small text-muted' }, e.origin || '')]
+      .concat(withUse ? [el('span', { class: 'small' }, e.consumer || '')] : [],
+        [e.translatable ? badge('yes', 'success') : el('span', { class: 'small' }, badge('no', 'secondary'), e.skipReason || '')],
+        langsWith.map(c => (e.translations && e.translations[c] != null) ? e.translations[c] : '')));
     root.appendChild(card('Literals', table(headers, rows)));
   }
 
@@ -557,7 +578,7 @@
     ul.appendChild(link('report.json', 'report.json (everything shown here)'));
     ul.appendChild(link('strings_inventory.json', 'strings_inventory.json (every string with its origin and translations)'));
     ul.appendChild(link('ipfs.csv', 'ipfs.csv (one row per IPF)'));
-    ul.appendChild(link('hcs.txt', 'hcs.txt (hardcoded strings by class)'));
+    ul.appendChild(link('hcs.txt', 'hcs.txt (hardcoded strings by class and method)'));
     for (const c of targets) ul.appendChild(link('hardcoded_' + c + '.csv', 'hardcoded_' + c + '.csv (how each hardcoded string was translated)'));
     root.appendChild(card('Reports', ul));
     const apks = el('ul', { class: 'mb-0' });

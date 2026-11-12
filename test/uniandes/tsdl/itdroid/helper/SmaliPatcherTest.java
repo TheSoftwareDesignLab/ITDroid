@@ -129,15 +129,22 @@ class SmaliPatcherTest {
         assertTrue(hasLine(cartRepository, "const-string v0, \"De pago\""));
     }
 
-    /**
-     * KNOWN GAP (TODO 1.1): like the detector, the patcher only knows the folder of the applicationId,
-     * so the launcher activity cannot be patched. Expected after 1.1: the label is replaced.
-     */
+    /** The launcher activity is in {@code com.example.shop.ui}, outside the folder of the applicationId. */
     @Test
-    void knownGap_codeOutsideTheApplicationIdFolderCannotBePatched() throws IOException {
+    void patchesTheCodeOutsideTheApplicationIdFolder() throws IOException {
         SmaliPatcher patcher = new SmaliPatcher(app.toString(), APPLICATION_ID);
 
-        assertEquals(0, patcher.patch(Map.of("Add to cart", "A\u00f1adir al carrito")));
-        assertTrue(hasLine(mainActivity, "const-string v0, \"Add to cart\""));
+        assertEquals(1, patcher.patch(Map.of("Add to cart", "A\u00f1adir al carrito")));
+        assertTrue(hasLine(mainActivity, "const-string v0, \"A\\u00f1adir al carrito\""));
+    }
+
+    @Test
+    void aPatcherBuiltFromAScanSeesTheSameFiles() throws IOException {
+        SmaliPatcher patcher = new SmaliPatcher(SmaliScan.scan(app.toString(), APPLICATION_ID));
+
+        assertEquals(2, patcher.patch(Map.of("Shop", "Tienda", "Your cart is empty", "Tu carrito est\u00e1 vac\u00edo")));
+        assertTrue(hasLine(mainActivity, "const-string v0, \"Tienda\""));
+        assertTrue(hasLine(app.resolve("smali_classes2/com/example/shop/free/CartScreenKt.smali"),
+                "const-string v1, \"Tu carrito est\\u00e1 vac\\u00edo\""));
     }
 }

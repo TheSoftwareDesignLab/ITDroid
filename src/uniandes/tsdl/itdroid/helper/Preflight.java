@@ -86,42 +86,49 @@ public class Preflight {
     }
 
     /**
-     * Checks on the decoded app: minSdk vs the device, a launchable activity, not a Trusted Web
-     * Activity (its screens belong to the browser), and the strings.xml the pipeline needs.
+     * Facts of the decoded app, read without a device: minSdk and targetSdk, whether it has a
+     * launchable activity, whether it is a Trusted Web Activity, whether it has a default
+     * strings.xml. Rejects nothing: the static analysis runs on any app that decodes.
      */
     @SuppressWarnings("unchecked")
-    public static JSONObject checkDecodedApp(String decodedPath, int deviceSdk) throws Exception {
+    public static JSONObject describeDecodedApp(String decodedPath) throws Exception {
         JSONObject o = new JSONObject();
-
-        int minSdk = readSdkFromApktoolYml(decodedPath, "minSdkVersion");
-        int targetSdk = readSdkFromApktoolYml(decodedPath, "targetSdkVersion");
-        o.put("minSdk", (long) minSdk);
-        o.put("targetSdk", (long) targetSdk);
-        if (minSdk > 0 && deviceSdk > 0 && minSdk > deviceSdk) {
-            throw new ITDroidException("PREFLIGHT: the app requires API " + minSdk + " but the device runs API " + deviceSdk + ".");
-        }
+        o.put("minSdk", (long) readSdkFromApktoolYml(decodedPath, "minSdkVersion"));
+        o.put("targetSdk", (long) readSdkFromApktoolYml(decodedPath, "targetSdkVersion"));
 
         File manifest = new File(decodedPath, "AndroidManifest.xml");
         String manifestText = manifest.isFile() ? Files.readString(manifest.toPath(), StandardCharsets.UTF_8) : "";
-        if (manifestText.contains("android.support.customtabs.trusted") || manifestText.contains("com.google.androidbrowserhelper")) {
-            throw new ITDroidException("PREFLIGHT: this app is a Trusted Web Activity (a packaged web site). Its screens are "
-                    + "rendered by the browser, so there is nothing of the app itself to internationalize: out of scope.");
-        }
-        boolean launchable = hasLauncher(manifestText);
-        o.put("launchable", launchable);
-        if (!launchable) {
-            throw new ITDroidException("PREFLIGHT: the manifest declares no launchable activity (MAIN + LAUNCHER); "
-                    + "the app cannot be started for exploration.");
-        }
+        o.put("trustedWebActivity", manifestText.contains("android.support.customtabs.trusted")
+                || manifestText.contains("com.google.androidbrowserhelper"));
+        o.put("launchable", hasLauncher(manifestText));
 
         File strings = new File(decodedPath, "res" + File.separator + "values" + File.separator + "strings.xml");
         o.put("hasStrings", strings.isFile());
-        if (!strings.isFile()) {
-            // Same wording the old versions printed: external tooling keys on it.
-            throw new ITDroidException("Your application do not have a strings.xml file.");
-        }
-        System.out.println("PREFLIGHT: app minSdk " + minSdk + ", targetSdk " + targetSdk + ", launchable activity found, strings.xml present");
         return o;
+    }
+
+    /**
+     * Checks that the app described by {@link #describeDecodedApp} can be explored on the device:
+     * minSdk within the device's API level, a launchable activity, and not a Trusted Web Activity
+     * (its screens belong to the browser). An app without a default strings.xml is accepted: its
+     * hardcoded strings are still detected and translated.
+     */
+    public static void checkDecodedApp(JSONObject app, int deviceSdk) throws Exception {
+        long minSdk = ((Number) app.get("minSdk")).longValue();
+        if (minSdk > 0 && deviceSdk > 0 && minSdk > deviceSdk) {
+            throw new ITDroidException("PREFLIGHT: the app requires API " + minSdk + " but the device runs API " + deviceSdk + ".");
+        }
+        if (Boolean.TRUE.equals(app.get("trustedWebActivity"))) {
+            throw new ITDroidException("PREFLIGHT: this app is a Trusted Web Activity (a packaged web site). Its screens are "
+                    + "rendered by the browser, so there is nothing of the app itself to internationalize: out of scope.");
+        }
+        if (!Boolean.TRUE.equals(app.get("launchable"))) {
+            throw new ITDroidException("PREFLIGHT: the manifest declares no launchable activity (MAIN + LAUNCHER); "
+                    + "the app cannot be started for exploration.");
+        }
+        System.out.println("PREFLIGHT: app minSdk " + minSdk + ", targetSdk " + app.get("targetSdk") + ", launchable activity found, "
+                + (Boolean.TRUE.equals(app.get("hasStrings")) ? "strings.xml present"
+                        : "no default strings.xml (only its hardcoded strings can be translated)"));
     }
 
     /** Reads minSdkVersion/targetSdkVersion from apktool.yml (written by apktool when decoding). */

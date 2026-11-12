@@ -1,0 +1,144 @@
+# What a hardcoded literal is used for.
+#
+# ITDroid follows every string literal of the app's smali to the first instruction that consumes
+# it, and classifies that consumer with the rules below. Only text that reaches the user is worth
+# translating; a log message, an exception message, an SQL fragment or a preference key must stay
+# as written, or the app changes its behaviour.
+#
+# One rule per line:   <category>   <regular expression>
+# The expression is searched in the callee as smali writes it, for example
+#     Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+# Rules are tried from top to bottom and the first match wins, so put the specific ones first.
+#
+# Categories
+#   ui           the text is shown (or spoken) to the user
+#   log          the text goes to a log
+#   exception    the text is the message of an exception
+#   data         the text is a key, a query, a pattern, a path, a comparison operand...
+#   compiler     plumbing emitted by the compiler (null checks, Compose source information)
+#   builder      the text is appended to the object in the first argument (StringBuilder);
+#                the object is followed to its toString() and beyond
+#   passthrough  the call returns a text derived from this one (String.format, trim...);
+#                the result is followed
+#
+# To add or override rules without rebuilding, put a file named hardcoded-consumers.txt in the
+# settings folder: its rules are tried before these.
+
+# ---------------------------------------------------------------- compiler plumbing
+data        ^Lkotlin/jvm/internal/Intrinsics;->areEqual\(
+passthrough ^Lkotlin/jvm/internal/Intrinsics;->stringPlus\(
+compiler    ^Lkotlin/jvm/internal/Intrinsics;->
+compiler    ^Landroidx/compose/runtime/ComposerKt;->(sourceInformation|sourceInformationMarkerStart|traceEventStart)\(
+compiler    ^Landroidx/compose/runtime/Composer;->(startReplaceableGroup|startRestartGroup|startMovableGroup)\(
+compiler    ^Lkotlin/jvm/internal/Reflection;->
+compiler    ^Lkotlin/jvm/internal/(PropertyReference|MutablePropertyReference|FunctionReference|Lambda)\w*;-><init>\(
+
+# ---------------------------------------------------------------- logs
+log         ^Landroid/util/Log;->
+log         ^Ltimber/log/Timber
+log         ^Ljava/io/PrintStream;->(print|println|printf)\(
+log         ^Ljava/util/logging/
+log         ^Lorg/slf4j/
+log         ^Lio/github/aakira/napier/
+log         ^Lco/touchlab/kermit/
+log         ^Lcom/orhanobut/logger/
+log         ^Lmu/K?Logger
+log         ^Lorg/apache/commons/logging/
+log         ^Landroid/os/Trace;->
+log         ^Landroidx/tracing/
+# a logger of the app or of a library the table does not name: a class called ...Log..., or a method called like a log level
+log         ^L[\w/$]*(Log|Logger|Logging)(?![a-z])[\w$]*;->(d|e|i|v|w|wtf|log|debug|info|warn|warning|error|verbose|trace|severe|fine)\(
+log         ;->(?i:logd|loge|logi|logw|logv|log|debug|trace|verbose)\(Ljava/lang/String;
+
+# ---------------------------------------------------------------- exception messages
+exception   ^L[\w/$]*(Exception|Error|Throwable);-><init>\(
+exception   ^Lkotlin/NotImplementedError;-><init>\(
+exception   ^Lkotlin/KotlinNothingValueException;-><init>\(
+
+# ---------------------------------------------------------------- text that flows on
+builder     ^Ljava/lang/(StringBuilder|StringBuffer);->(append|insert|<init>)\(
+builder     ^Landroid/text/SpannableStringBuilder;->(append|insert|<init>)\(
+builder     ^Landroid/text/SpannableString;-><init>\(
+passthrough ^Ljava/lang/String;->(format|valueOf|concat|trim|strip|intern|toString|toUpperCase|toLowerCase|substring|repeat)\(
+passthrough ^Ljava/lang/(StringBuilder|StringBuffer);->toString\(
+# concatenations that R8 moved out of the method into a synthetic helper that returns the joined text
+passthrough ^Lcom/android/tools/r8/[\w/$]+;->[\w$]+\(.*\)Ljava/lang/String;$
+passthrough \$\$ExternalSyntheticOutline\d+;->[\w$]+\(.*\)Ljava/lang/String;$
+passthrough ^Landroid/text/Html;->fromHtml\(
+passthrough ^Landroidx/core/text/HtmlCompat;->fromHtml\(
+passthrough ^Landroid/text/TextUtils;->(concat|expandTemplate)\(
+passthrough ^Lkotlin/text/StringsKt;->(trim|trimIndent|trimMargin|capitalize|replaceFirstChar|padStart|padEnd)
+
+# ---------------------------------------------------------------- data: keys, queries, patterns, comparisons
+data        ^Ljava/lang/String;->(equals|equalsIgnoreCase|startsWith|endsWith|contains|split|replace|replaceAll|replaceFirst|indexOf|lastIndexOf|matches|compareTo|compareToIgnoreCase|getBytes|contentEquals|regionMatches)\(
+data        ^Lkotlin/text/(StringsKt|Regex)
+data        ^Ljava/util/regex/
+data        ^Landroid/content/SharedPreferences
+data        ^Landroidx/datastore/
+data        ^Landroidx/preference/Preference\w*;->(findPreference|setKey|getKey)\(
+ui          ^Landroid/content/Intent;->createChooser\(
+data        ^Landroid/content/Intent;->(<init>|setAction|setType|setDataAndType|addCategory|setPackage|setClassName|hasExtra|removeExtra|get\w*Extra\w*)\(
+data        ^Landroid/content/Intent;->putExtra\(Ljava/lang/String;(?!Ljava/lang/(String|CharSequence);)
+data        ^Landroid/content/IntentFilter;->
+data        ^Landroid/os/(Bundle|BaseBundle|PersistableBundle);->(get\w*|containsKey|remove)\(
+data        ^Landroid/os/(Bundle|BaseBundle|PersistableBundle);->put\w*\(Ljava/lang/String;(?!Ljava/lang/(String|CharSequence);)
+data        ^Landroid/database/
+data        ^Landroidx/sqlite/
+data        ^Landroidx/room/
+data        ^Landroid/content/(ContentValues|ContentResolver|UriMatcher|ContentUris|ComponentName);->
+data        ^Landroid/net/Uri
+data        ^Lorg/json/
+data        ^Lcom/google/gson/
+data        ^Lkotlinx/serialization/
+data        ^Lcom/squareup/moshi/
+data        ^Ljava/util/(Map|HashMap|LinkedHashMap|TreeMap|AbstractMap|concurrent/ConcurrentHashMap);->(get|getOrDefault|containsKey|remove)\(
+data        ^Ljava/util/(Properties|Locale|TimeZone|Currency|UUID|Base64|Scanner|StringTokenizer|ResourceBundle)[;$]
+data        ^Ljava/text/(SimpleDateFormat|DecimalFormat|NumberFormat|DateFormat)
+data        ^Ljava/time/
+data        ^Ljava/io/
+data        ^Ljava/nio/
+data        ^Ljava/net/
+data        ^Lokhttp3/
+data        ^Lretrofit2/
+data        ^Lio/ktor/
+data        ^Ljava/lang/(Class|ClassLoader|System|Runtime|ProcessBuilder|Enum|Integer|Long|Double|Float|Boolean|Thread)[;$]
+data        ^Ljava/security/
+data        ^Ljavax/crypto/
+data        ^Landroid/content/Context;->(getSystemService|getSharedPreferences|getDatabasePath|openFileOutput|openFileInput|getDir|getFileStreamPath|checkSelfPermission|openOrCreateDatabase|deleteDatabase|deleteFile|getExternalFilesDir)\(
+data        ^Landroid/content/pm/
+data        ^Landroid/content/res/(Resources|AssetManager);->(getIdentifier|open|openFd|list)\(
+data        ^Landroidx/core/(content|app)/(ContextCompat|ActivityCompat|PermissionChecker);->
+data        ^Landroid/view/View;->(setTag|findViewWithTag|setTransitionName)\(
+data        ^Landroidx/compose/ui/platform/TestTagKt
+data        ^Landroidx/compose/ui/layout/LayoutIdKt
+data        ^Landroidx/compose/animation/
+data        ^Landroidx/compose/runtime/
+data        ^Landroidx/lifecycle/
+data        ^Landroidx/hilt/
+data        ^Landroidx/navigation/
+data        ^Landroid/webkit/
+data        ^Landroid/graphics/(Color|Typeface);->(parseColor|create)\(
+data        ^Landroid/os/(Environment|SystemProperties|Build);->
+data        ^Landroid/provider/
+data        ^Landroid/accounts/
+data        ^Landroidx/work/
+data        ^Land(roid|roidx/core)/app/Notification(Compat)?\$Builder;-><init>\(
+data        ^Ldagger/
+data        ^Ljavax/inject/
+
+# ---------------------------------------------------------------- shown to the user
+ui          ^Landroid/widget/Toast;->makeText\(
+ui          ^Lcom/google/android/material/snackbar/Snackbar;->(make|setAction|setText)\(
+ui          ^Landroid/speech/tts/TextToSpeech;->speak\(
+ui          ^Landroid/view/View;->announceForAccessibility\(
+ui          ^Landroid/view/(Menu|SubMenu|ContextMenu);->add(SubMenu)?\(
+ui          ^Landroid/widget/TextView;->append\(
+ui          ^Landroid/widget/ArrayAdapter;->(add|insert)\(
+ui          ^Landroid/app/ProgressDialog;->show\(
+ui          ^Landroid/text/(SpannableString|SpannedString|AnnotatedString)
+ui          ^Landroidx/compose/ui/text/AnnotatedString
+ui          ^Landroidx/compose/(material3?|foundation/text|ui/semantics)/
+ui          ;->set(Text|Hint|Error|Title|Subtitle|Message|Summary|SummaryOn|SummaryOff|ContentDescription|TooltipText|Label|PositiveButton|NegativeButton|NeutralButton|ContentTitle|ContentText|ContentInfo|Ticker|SubText|BigContentTitle|SummaryText|QueryHint|TextOn|TextOff|HelperText|PlaceholderText|PrefixText|SuffixText|DialogTitle|DialogMessage|PositiveButtonText|NegativeButtonText|Description|Header|Footer|EmptyText|StateDescription|PaneTitle|AccessibilityPaneTitle|ShortLabel|LongLabel|DisabledMessage)\(
+ui          ;->(bigText|setBigContentTitle|addAction|addLine|showText|showMessage|showToast|showSnackbar|showError|showDialog|toast|snackbar)\(
+# a composable function that receives the text: it draws it or passes it down to one that does
+ui          \([^)]*Landroidx/compose/runtime/Composer;[^)]*\)
