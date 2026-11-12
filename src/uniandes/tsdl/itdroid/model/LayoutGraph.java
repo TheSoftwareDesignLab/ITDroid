@@ -9,7 +9,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.xml.parsers.ParserConfigurationException;
 
@@ -29,7 +32,7 @@ public class LayoutGraph {
 	private ArrayList<State> states;
 	private ArrayList<Transition> transitions;
 	private String language;
-	
+
 	public LayoutGraph(String language, String resultFolderPath) {
 
 		scriptPath = resultFolderPath+File.separator+"result.json";
@@ -50,33 +53,43 @@ public class LayoutGraph {
 				statess = new JSONObject();
 			}
 
-			// Guard the amountStates cast: fall back to the number of state entries actually present
-			// when the key is absent/null instead of NPEing on the unboxing.
-			Object amountStatesObj = obj.get(AMOUNT_STATES);
-			int amountStates = amountStatesObj != null ? Math.toIntExact((long) amountStatesObj) : statess.size();
-
-			for (int i = 0; i < amountStates; i++) {
-				JSONObject currentState = (JSONObject) statess.get((i+1)+"");
-				// amountStates may exceed the number of entries (or keys may not be exactly 1..N):
-				// skip a missing state instead of NPEing on currentState.get(...).
+			// States are keyed by their id. Iterate the keys actually present (in numeric order)
+			// instead of assuming a contiguous 1..amountStates range: a replayed exploration keeps
+			// the SOURCE ids, so a state the translated build never reached simply leaves a gap.
+			List<Integer> ids = new ArrayList<>();
+			for (Object key : statess.keySet()) {
+				try {
+					ids.add(Integer.parseInt(String.valueOf(key)));
+				} catch (NumberFormatException e) {
+					System.err.println("LayoutGraph :: non-numeric state key '"+key+"' in "+scriptPath+", skipping");
+				}
+			}
+			Collections.sort(ids);
+			Map<Integer, State> byId = new HashMap<>();
+			for (int key : ids) {
+				JSONObject currentState = (JSONObject) statess.get(String.valueOf(key));
 				if (currentState == null) {
-					System.err.println("LayoutGraph :: state "+(i+1)+" missing in "+scriptPath+", skipping");
 					continue;
 				}
 				Object idObj = currentState.get("id");
-				if (idObj == null) {
-					System.err.println("LayoutGraph :: state "+(i+1)+" has no id in "+scriptPath+", skipping");
-					continue;
-				}
+				int id = idObj != null ? Math.toIntExact((long) idObj) : key;
 				State tempState = new State(
-						Math.toIntExact((long) idObj),
+						id,
 						(String) currentState.get("activityName"),
 						(String) currentState.get("rawXML"),
 						(String) currentState.get("screenShot"));
+				Object sourceId = currentState.get("sourceStateId");
+				if (sourceId != null) {
+					tempState.setSourceStateId(Math.toIntExact((long) sourceId));
+				}
 				states.add(tempState);
+				byId.put(id, tempState);
 			}
 
 			JSONObject transitionss = (JSONObject) obj.get(TRANSITIONS);
+			if (transitionss == null) {
+				transitionss = new JSONObject();
+			}
 
 			// Iterate over the keys actually present so no transition is dropped, regardless
 			// of whether the explorer output keys them 0- or 1-based (the previous loop started at
@@ -94,11 +107,12 @@ public class LayoutGraph {
 				}
 				int originState = Math.toIntExact((long) stStateObj);
 				int destState = Math.toIntExact((long) dsStateObj);
-				// originState/destState are 1-based ids used directly as list indices; skip the
-				// transition when they fall outside [1, states.size()] instead of throwing.
-				if (originState-1 < 0 || originState-1 >= states.size()
-						|| destState-1 < 0 || destState-1 >= states.size()) {
-					System.err.println("LayoutGraph :: transition "+transitionKey+" references out-of-range state (origin="+originState+", dest="+destState+", states="+states.size()+"), skipping");
+				// States are looked up by id (not list position): skip a transition whose endpoints
+				// are not in this graph instead of throwing.
+				State origin = byId.get(originState);
+				State dest = byId.get(destState);
+				if (origin == null || dest == null) {
+					System.err.println("LayoutGraph :: transition "+transitionKey+" references an unknown state (origin="+originState+", dest="+destState+"), skipping");
 					continue;
 				}
 				// An unknown or null transition type must not abort the whole graph load: warn and skip.
@@ -109,17 +123,17 @@ public class LayoutGraph {
 					System.err.println("LayoutGraph :: transition "+transitionKey+" has unknown/missing type '"+currentTransition.get("tranType")+"', skipping");
 					continue;
 				}
-				Transition tempTransition = new Transition(states.get(originState-1), tType);
-				tempTransition.setDestination(states.get(destState-1));
+				Transition tempTransition = new Transition(origin, tType);
+				tempTransition.setDestination(dest);
 				if(currentTransition.containsKey("androidNode")) {
 					JSONObject androidNode = (JSONObject) currentTransition.get("androidNode");
 					String resourceID = (String) androidNode.get("resourceID");
 					String xpath = (String) androidNode.get("xpath");
 					String text = (String) androidNode.get("text");
-					tempTransition.setOriginElement(states.get(originState-1).getAndroidNode(resourceID, xpath, text));
+					tempTransition.setOriginElement(origin.getAndroidNode(resourceID, xpath, text));
 				}
-				states.get(originState-1).addOutboundTransition(tempTransition);
-				states.get(destState-1).addInboundTransition(tempTransition);
+				origin.addOutboundTransition(tempTransition);
+				dest.addInboundTransition(tempTransition);
 				transitions.add(tempTransition);
 			}
 			// try-with-resources so the writer is always closed, even if writing throws part-way.
@@ -188,7 +202,8 @@ public class LayoutGraph {
 	public ArrayList<State> getStates() {
 		return states;
 	}
-	
+
+	/** The state at list position i (states are ordered by id). */
 	public State getState(int i) {
 		return states.get(i);
 	}
@@ -212,6 +227,6 @@ public class LayoutGraph {
 	public void setLanguage(String language) {
 		this.language = language;
 	}
-	
-	
+
+
 }

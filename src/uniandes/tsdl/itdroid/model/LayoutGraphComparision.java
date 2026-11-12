@@ -16,20 +16,20 @@ import java.util.stream.Collectors;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-import uniandes.tsdl.itdroid.helper.Helper;
-
 public class LayoutGraphComparision {
 
 	public String defltLanguage;
 	public LayoutGraph defltLayoutGraph;
 	public String destLanguage;
 	public LayoutGraph destLangLayoutGraph;
+	/** default-graph list index -> language-graph list index of the states compared with each other. */
 	public HashMap<Integer, Integer> statePairing = new HashMap<Integer, Integer>();
 	public ArrayList<IPF> ipfs = new ArrayList<IPF>();
 	public Set<Integer> defltStatesNotProcessed = new HashSet<Integer>();
 	public Set<Integer> langStatesNotProcessed = new HashSet<Integer>();
 	public HashMap<Integer,Set<GraphEdgeType>[][][]> results = new HashMap<Integer,Set<GraphEdgeType>[][][]>();
 
+	@SuppressWarnings("unchecked")
 	public LayoutGraphComparision(String deftLanguage, LayoutGraph defltGraph, String lang, String rawLang, LayoutGraph langGraph, String resultFolderPath, String outputFolder, JSONObject dfltLangJSONTrans) throws IOException {
 
 		defltLanguage = deftLanguage;
@@ -41,11 +41,11 @@ public class LayoutGraphComparision {
 		pairStates(dfltLangJSONTrans);
 
 		//Compare the states looking for IPFs
-		Set<Integer> foundStates = statePairing.keySet();
-		Iterator<Integer> fSI = foundStates.iterator();
-		while(fSI.hasNext()) {
-			int defltState = fSI.next(); 
-			ArrayList<IPF> stateIPFs = compareStates(defltState, defltLayoutGraph.getState(defltState), destLangLayoutGraph.getState(defltState));
+		List<Integer> dfltIndexes = new ArrayList<>(statePairing.keySet());
+		java.util.Collections.sort(dfltIndexes);
+		for (int defltState : dfltIndexes) {
+			int langState = statePairing.get(defltState);
+			ArrayList<IPF> stateIPFs = compareStates(defltState, defltLayoutGraph.getState(defltState), destLangLayoutGraph.getState(langState));
 			ipfs.addAll(stateIPFs);
 		}
 
@@ -53,9 +53,9 @@ public class LayoutGraphComparision {
 
 			Map<String, Long> result = ipfs.stream().collect(Collectors.groupingBy(w -> w.getID(), Collectors.counting() ));
 			Set<IPF> uniqueIPFs = new HashSet<IPF>();
-			Iterator iter = result.keySet().iterator();
+			Iterator<String> iter = result.keySet().iterator();
 			while(iter.hasNext()) {
-				uniqueIPFs.add(new IPF((String) iter.next()));
+				uniqueIPFs.add(new IPF(iter.next()));
 			}
 			dfltLangJSONTrans.put("amIPFs", uniqueIPFs.size());
 			ArrayList<IPF> uniqueIPFsList = new ArrayList<IPF>(uniqueIPFs);
@@ -76,15 +76,15 @@ public class LayoutGraphComparision {
 						JSONObject relationsJ = new JSONObject();
 						relationsJ.put("relNode", j);
 						String added = "";
-						Iterator iterr = relationss[1][tempIPF.getNodePos()][j].iterator();
+						Iterator<GraphEdgeType> iterr = relationss[1][tempIPF.getNodePos()][j].iterator();
 						while(iterr.hasNext()) {
-							added += ((GraphEdgeType)iterr.next()).name()+";";
+							added += iterr.next().name()+";";
 						}
 						relationsJ.put("added", added);
 						String removed = "";
 						iterr = relationss[0][tempIPF.getNodePos()][j].iterator();
 						while(iterr.hasNext()) {
-							removed += ((GraphEdgeType)iterr.next()).name()+";";
+							removed += iterr.next().name()+";";
 						}
 						relationsJ.put("removed", removed);
 						relations.add(relationsJ);
@@ -98,8 +98,6 @@ public class LayoutGraphComparision {
 			System.out.println("There are "+uniqueIPFsList.size()+" Internationalization Presentation Failures for "+destLanguage+" app version.");
 			// try-with-resources so the writer is always closed even if a write throws.
 			try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputFolder+File.separator+"ipfs.csv", true))) {
-				//			bw.write("state;nodePos;ipfScore");
-				//			bw.newLine();
 				for (int i = 0; i < uniqueIPFsList.size(); i++) {
 					IPF tempIPF = uniqueIPFsList.get(i);
 					bw.write(destLanguage+";"+tempIPF.getStateId()+";"+tempIPF.getNodePos()+";"+result.get(tempIPF.getID()));
@@ -108,12 +106,14 @@ public class LayoutGraphComparision {
 			}
 
 		} else {
+			dfltLangJSONTrans.put("amIPFs", 0);
 			System.out.println("There are not Internationalization Presentation Failures for "+destLanguage+" app version.");
 		}
 
 
 	}
 
+	@SuppressWarnings("unchecked")
 	private ArrayList<IPF> compareStates(int defltState, State dfltState, State langState) {
 
 		Set<GraphEdgeType>[][] dfltGraph = dfltState.getGraph();
@@ -142,14 +142,12 @@ public class LayoutGraphComparision {
 
 				Set<GraphEdgeType> lostRelationsBA = new HashSet<GraphEdgeType>(dfltGraph[j][i]);
 				lostRelationsBA.removeAll(langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
-				//				lostRelationsBA.addAll(lostRelationsAB);
 
 				Set<GraphEdgeType> addedRelationsAB = new HashSet<GraphEdgeType>(langGraph[pairedStateNodes[i]][pairedStateNodes[j]]);
 				addedRelationsAB.removeAll(dfltGraph[i][j]);
 
 				Set<GraphEdgeType> addedRelationsBA = new HashSet<GraphEdgeType>(langGraph[pairedStateNodes[j]][pairedStateNodes[i]]);
 				addedRelationsBA.removeAll(dfltGraph[j][i]);
-				//				addedRelationsBA.addAll(addedRelationsAB);
 
 				// Compare the SAME endpoint on both sides (dflt node i vs its pair langNode pairedStateNodes[i]),
 				// and null-guard getpClass() so a <node> without a class attribute can't NPE here.
@@ -172,8 +170,8 @@ public class LayoutGraphComparision {
 				if((lostRelationsAB.size()+lostRelationsBA.size()+addedRelationsAB.size()+addedRelationsBA.size())>0) {
 					AndroidNode iLangNode = langState.getStateNodes().get(pairedStateNodes[i]);
 					AndroidNode jLangNode = langState.getStateNodes().get(pairedStateNodes[j]);
-					ipfss.add(new IPF(destLanguage, langState, iLangNode, i));						
-					ipfss.add(new IPF(destLanguage, langState, jLangNode, j));						
+					ipfss.add(new IPF(destLanguage, langState, iLangNode, i));
+					ipfss.add(new IPF(destLanguage, langState, jLangNode, j));
 
 				}
 			}
@@ -193,22 +191,22 @@ public class LayoutGraphComparision {
 	}
 
 	private int[] pairStateNodes(State dfltState, State langState) {
-		
+
 		List<AndroidNode> dfltStateNodes = dfltState.getStateNodes();
 		// INTENTIONAL: both lists are the DEFAULT state's nodes, which makes the pairing the identity
 		// [0,1,2,...] so the default and translated graphs are compared POSITIONALLY. Pairing against
-		// langState by Levenshtein text similarity was tried and reverted — translated text differs
+		// langState by Levenshtein text similarity was tried and reverted: translated text differs
 		// across languages and paired the wrong nodes. Do NOT change this to langState.getStateNodes().
 		List<AndroidNode> langStateNodes = dfltState.getStateNodes();
 		int[] result = new int[Math.min(dfltStateNodes.size(), langStateNodes.size())];
-		
+
 		for (int i = 0; i < result.length; i++) {
-			
+
 			AndroidNode dfltNode = dfltStateNodes.get(i);
-			
+
 			int minIndex = i;
 			double minValue = Integer.MAX_VALUE;
-			
+
 			for (int j = 0; j < langStateNodes.size(); j++) {
 				AndroidNode langNode = langStateNodes.get(j);
 				if(dfltNode.compare(langNode)<minValue) {
@@ -221,36 +219,76 @@ public class LayoutGraphComparision {
 		return result;
 	}
 
+	/**
+	 * Pairs the states of both graphs. When the language graph was produced by REPLAYING the source
+	 * exploration, every state carries the source state id it reproduces, so the pairing is by id
+	 * (same screen reached through the same taps), checked only loosely (same activity, similar
+	 * node count). Otherwise falls back to the historical positional pairing with the raw-XML
+	 * similarity test, which stops at the first mismatch.
+	 */
+	@SuppressWarnings("unchecked")
 	private void pairStates(JSONObject dfltLangJSONTrans) {
 
-		//Pair states from graphs
-
-		boolean sameStates = true;
 		ArrayList<State> defltStates = defltLayoutGraph.getStates();
 		ArrayList<State> langStates = destLangLayoutGraph.getStates();
-		int index = 0;
-		while(sameStates && index<defltStates.size() && index<langStates.size()) {
-			State dfltTempState = defltStates.get(index);
-			State langTempState = langStates.get(index);
-			sameStates = dfltTempState.compareTo(langTempState);
-			if(sameStates) {
-				statePairing.put(index, index);
-				index++;
+
+		boolean replay = false;
+		for (State s : langStates) {
+			if (s.getSourceStateId() > 0) {
+				replay = true;
+				break;
 			}
 		}
-		dfltLangJSONTrans.put("missingDfltStates", (defltStates.size()-index) );
-		System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || There was "+(defltStates.size()-index)+" states in "+defltLanguage+" Graph that were not paired");
-		//Add notProcessed states from defltGraph to set
-		for (int i = index; i < defltStates.size(); i++) {
-			State dfltTempState = defltStates.get(i);
-			defltStatesNotProcessed.add(dfltTempState.getId());
+
+		if (replay) {
+			Map<Integer, Integer> dfltIndexById = new HashMap<>();
+			for (int i = 0; i < defltStates.size(); i++) {
+				dfltIndexById.put(defltStates.get(i).getId(), i);
+			}
+			for (int li = 0; li < langStates.size(); li++) {
+				State langState = langStates.get(li);
+				Integer di = dfltIndexById.get(langState.getSourceStateId());
+				if (di == null || statePairing.containsKey(di)) {
+					continue;
+				}
+				if (defltStates.get(di).matchesReplayed(langState)) {
+					statePairing.put(di, li);
+				} else {
+					System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || state "+langState.getSourceStateId()
+							+" was reached in "+destLanguage+" but shows a different screen ("+langState.getActivityName()+", "
+							+langState.getStateNodes().size()+" nodes vs "+defltStates.get(di).getStateNodes().size()+"): not paired");
+				}
+			}
+		} else {
+			boolean sameStates = true;
+			int index = 0;
+			while(sameStates && index<defltStates.size() && index<langStates.size()) {
+				State dfltTempState = defltStates.get(index);
+				State langTempState = langStates.get(index);
+				sameStates = dfltTempState.compareTo(langTempState);
+				if(sameStates) {
+					statePairing.put(index, index);
+					index++;
+				}
+			}
 		}
-		dfltLangJSONTrans.put("missingLangStates", (langStates.size()-index) );
-		System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || There was "+(langStates.size()-index)+" states in "+destLanguage+" Graph that were not paired");
-		//Add notProcessed stated from langGraph to set 
-		for (int i = index; i < langStates.size(); i++) {
-			State langTempState = langStates.get(i);
-			langStatesNotProcessed.add(langTempState.getId());
+
+		int paired = statePairing.size();
+		dfltLangJSONTrans.put("pairing", replay ? "replay" : "positional");
+		dfltLangJSONTrans.put("pairedStates", paired);
+		dfltLangJSONTrans.put("missingDfltStates", (defltStates.size()-paired) );
+		System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || "+paired+" states paired ("+(replay ? "by replayed id" : "positionally")+"); "+(defltStates.size()-paired)+" states in "+defltLanguage+" Graph were not paired");
+		for (int i = 0; i < defltStates.size(); i++) {
+			if (!statePairing.containsKey(i)) {
+				defltStatesNotProcessed.add(defltStates.get(i).getId());
+			}
+		}
+		dfltLangJSONTrans.put("missingLangStates", (langStates.size()-paired) );
+		System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || "+(langStates.size()-paired)+" states in "+destLanguage+" Graph were not paired");
+		for (int i = 0; i < langStates.size(); i++) {
+			if (!statePairing.containsValue(i)) {
+				langStatesNotProcessed.add(langStates.get(i).getId());
+			}
 		}
 	}
 

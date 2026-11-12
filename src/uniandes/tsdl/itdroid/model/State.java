@@ -63,6 +63,9 @@ public class State {
 
 	private Set<GraphEdgeType>[][] graph;
 
+	/** Id of the source-language state this one reproduces (replayed explorations), 0 when unknown. */
+	private int sourceStateId;
+
 	/**
 	 * Creates a new state
 	 * 
@@ -186,6 +189,29 @@ public class State {
 
 	public void setId(int id) {
 		this.id = id;
+	}
+
+	public int getSourceStateId() {
+		return sourceStateId;
+	}
+
+	public void setSourceStateId(int sourceStateId) {
+		this.sourceStateId = sourceStateId;
+	}
+
+	/**
+	 * Loose check for a state reached by REPLAYING the same taps in another language: same
+	 * activity and a similar node count (within 10%, at least 1). The text-based Levenshtein test
+	 * of {@link #compareTo} is not used here: translated text legitimately changes the raw XML.
+	 */
+	public boolean matchesReplayed(State other) {
+		if (activityName == null ? other.getActivityName() != null : !activityName.equals(other.getActivityName())) {
+			return false;
+		}
+		int mine = stateNodes.size();
+		int theirs = other.getStateNodes().size();
+		long tolerance = Math.max(1, mine / 10);
+		return Math.abs(mine - theirs) <= tolerance;
 	}
 
 	public String getActivityName() {
