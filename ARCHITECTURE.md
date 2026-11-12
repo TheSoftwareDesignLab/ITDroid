@@ -123,6 +123,20 @@ Un server que ITDroid arrancó se apaga al final (shutdown hook, mata el árbol 
 
 `java -jar ITDroid.jar --report [carpeta] [--port N] [--no-browser]` arranca `ReportServer` (el `HttpServer` del JDK, solo en 127.0.0.1): sirve `webreport/` en `/`, la carpeta de resultados en `/results/` y un índice en `/api/results` que recorre las subcarpetas con `report.json` y resume cada evaluación (estado, idiomas, IPFs, fecha, dispositivo, modelo, y la telemetría del harness si hay `meta.json`). La página (`webreport/js/main.js`, sin dependencias) lista las apps y muestra la seleccionada en pestañas: resumen, idiomas e IPFs (agrupa los IPFs por pantalla, lee `result.json` de la exploración origen y de la traducida, empareja la pantalla por `sourceStateId`, dibuja sobre las capturas los nodos afectados a partir de los `bounds` del volcado de uiautomator, en el mismo orden de documento con el que ITDroid numera los nodos), hardcodeados (desde `strings_inventory.json`), rendimiento, entorno y artefactos.
 
+# Re-análisis sin dispositivo
+
+`java -jar ITDroid.jar --reanalyze <carpeta> [--out <carpeta>]` (`helper/Reanalysis`) vuelve a calcular la comparación de evaluaciones ya exploradas: lee el `report.json` de cada una para saber el idioma origen y los idiomas evaluados, carga los `result.json` guardados con `LayoutGraph` y ejecuta `LayoutGraphComparision` tal como lo hace el pipeline. No usa dispositivo ni LLM y no escribe nada en la carpeta de entrada; la salida (por defecto `reanalysis/<nombre de la carpeta>`) lleva un `summary.csv` con los IPFs reportados y los recalculados por evaluación e idioma, y por evaluación un `reanalysis.json` y un `ipfs.csv`. Sirve para medir sobre un lote entero el efecto de cualquier cambio en el comparador sin volver a explorar las apps.
+
+# Pruebas
+
+`mvn test` corre las pruebas unitarias (JUnit 5), que viven en `test/` con los mismos paquetes que `src/`. No necesitan dispositivo ni LLM.
+
+- `model/`: relaciones entre los nodos de una pantalla (`StateRelationsTest`), reglas de la comparación sobre pantallas hechas a mano (`ComparisonRulesTest`), carga de `result.json` (`LayoutGraphTest`) y la comparación de cuatro evaluaciones reales guardadas en `test/fixtures/evaluations` (`StoredEvaluationsComparisonTest`), cuyos conteos de IPFs quedan fijados: un cambio en el comparador que los mueva tiene que ser intencionado.
+- `helper/`: detección de hardcoded e inventario sobre una app escrita a mano (`test/fixtures/decoded/shop`: smali en dos dex, código fuera de la carpeta del `applicationId`, recursos y un layout), parcheo del smali y el modo de re-análisis.
+- `translator/`: el traductor contra `FakeLlmServer`, un servidor local que imita el endpoint OpenAI-compatible, para probar lotes, reintentos, enmascarado de placeholders y la escritura de `values-<lang>/strings.xml`.
+
+Las pruebas llamadas `knownGap_...` fijan un comportamiento que la auditoría de noviembre de 2026 encontró incorrecto: afirman lo que el código hace hoy y nombran la corrección pendiente; cuando se corrige, la aserción se invierte en el mismo cambio.
+
 # Artefactos que se generan
 
 - `temp/`: APK decodificado (`smali*/`, `res/values*/`, `AndroidManifest.xml`); se regenera en cada run.
@@ -134,7 +148,7 @@ Un server que ITDroid arrancó se apaga al final (shutdown hook, mata el árbol 
 - `<output>/{trnsResults,noTrnsResults}/<lang>/result.json`: grafo explorado o reproducido.
 - `<output>/trnsResults/<origen>/exploration_script.json`: el recorrido grabado.
 - `<output>/.../<lang>/replay_report.json`: acciones reproducidas, estados capturados y divergencias.
-- `<output>/.../<lang>/{graph.txt, graph.json, screenshots/}`: volcados legibles y capturas.
+- `<output>/.../<lang>/screenshots/`: capturas. Con `debug.graphDumps=true`, además `graph.txt` y `graph.json`: volcados legibles de cada estado con todas las relaciones entre pares de nodos (varios MB por idioma; solo para depurar la comparación a mano).
 - `<output>/ipfs.csv`: IPFs en CSV.
 - `<output>/hardcoded_<lang>.csv`: auditoría de los textos hardcodeados traducidos.
 - `<output>/hcs.txt`: textos hardcodeados detectados.

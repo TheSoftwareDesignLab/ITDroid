@@ -1,0 +1,22 @@
+{
+ "appName": "com.chmouel.noisetimer",
+ "dfltLang": "en",
+ "langsReport": {
+  "en": {
+   "lang": "en",
+   "dflt": true,
+   "amStates": 2,
+   "amTrans": 4
+  },
+  "es": {
+   "lang": "Spanish",
+   "amStates": 2,
+   "amTrans": 3,
+   "amIPFs": 104,
+   "pairedStates": 2,
+   "missingDfltStates": 0,
+   "missingLangStates": 0,
+   "pairing": "replay"
+  }
+ }
+}

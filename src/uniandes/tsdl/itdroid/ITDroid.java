@@ -31,6 +31,7 @@ import uniandes.tsdl.itdroid.helper.LLMServerManager;
 import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
 import uniandes.tsdl.itdroid.helper.Preflight;
+import uniandes.tsdl.itdroid.helper.Reanalysis;
 import uniandes.tsdl.itdroid.helper.ReportServer;
 import uniandes.tsdl.itdroid.helper.RunConfig;
 import uniandes.tsdl.itdroid.helper.RunMetrics;
@@ -72,6 +73,8 @@ public class ITDroid {
 	static AdbExplorer.Options explorerOptions = new AdbExplorer.Options();
 	static boolean launchTest = true;
 	static boolean reuseInventory = true;
+	/** Write graph.txt / graph.json next to each result.json (config key debug.graphDumps). */
+	static boolean graphDumps = false;
 
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
@@ -79,6 +82,17 @@ public class ITDroid {
 			// java -jar ITDroid.jar --report [resultsFolder] [--port N]: serves the web report, no evaluation.
 			try {
 				ReportServer.run(Arrays.copyOfRange(args, 1, args.length));
+			} catch (Exception e) {
+				System.out.println("ERROR: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+				System.exit(1);
+			}
+			return;
+		}
+		if (args.length >= 1 && args[0].equals("--reanalyze")) {
+			// java -jar ITDroid.jar --reanalyze <folder> [--out <folder>]: recomputes the comparison of
+			// evaluations already explored, from their stored result.json. No device, no LLM.
+			try {
+				Reanalysis.run(Arrays.copyOfRange(args, 1, args.length));
 			} catch (Exception e) {
 				System.out.println("ERROR: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
 				System.exit(1);
@@ -171,6 +185,7 @@ public class ITDroid {
 			explorerOptions.fillForms = cfg.isFillForms();
 			launchTest = cfg.isLaunchTest();
 			reuseInventory = cfg.isReuseInventory();
+			graphDumps = cfg.isGraphDumps();
 		} else if (args.length == 7 || args.length == 8) {
 			// Positional mode (kept for backward compatibility).
 			apkPath = args[0];
@@ -356,6 +371,7 @@ public class ITDroid {
 		config.put("fillForms", explorerOptions.fillForms);
 		config.put("launchTest", launchTest);
 		config.put("reuseInventory", reuseInventory);
+		config.put("graphDumps", graphDumps);
 		config.put("emulator", emulatorName);
 		report.put("environment", RunMetrics.environment(device, llm.settings(), config));
 		writeReport();
@@ -377,7 +393,7 @@ public class ITDroid {
 		metrics.begin("explore:" + sourceLang);
 		String resultFolderPath = ExplorationHelper.exploreSource(deftLanguage, outputPath, true, sourceApkCopy.toString(), appName, explorerOptions);
 		System.out.println("The app has been inspected");
-		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath);
+		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath, graphDumps);
 		metrics.end("explore:" + sourceLang);
 		JSONObject dfltLangJSON = new JSONObject();
 		String deftLanguageName = lngBundle.isLanguageSelected(deftLanguage)
@@ -517,7 +533,7 @@ public class ITDroid {
 			// 5. Compare against the source graph.
 			metrics.end("replay:" + lang);
 			metrics.begin("compare:" + lang);
-			LayoutGraph langGraph = new LayoutGraph(lang, resultFolder);
+			LayoutGraph langGraph = new LayoutGraph(lang, resultFolder, graphDumps);
 			langJson.put("amStates", langGraph.getStates().size());
 			langJson.put("amTrans", langGraph.getTransitions().size());
 			graphs.put(lang, langGraph);
@@ -580,6 +596,10 @@ public class ITDroid {
 		System.out.println("8. (Optional) Ollama model name or a command to start the local LLM server, e.g.");
 		System.out.println("   \"qwen2.5:3b\" or \"llama-server -m model.gguf --port 8080\".");
 		System.out.println("   If omitted, the LLM server must already be running.");
+		System.out.println();
+		System.out.println("Other modes (no device, no LLM):");
+		System.out.println("  java -jar ITDroid.jar --report [resultsFolder] [--port N] [--no-browser]   web report");
+		System.out.println("  java -jar ITDroid.jar --reanalyze <folder> [--out <folder>]              recompute the comparison of stored evaluations");
 	}
 
 	/** Writes a reviewable CSV of the hardcoded strings and how they were translated. */

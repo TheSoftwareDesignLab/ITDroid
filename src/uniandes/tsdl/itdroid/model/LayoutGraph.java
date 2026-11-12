@@ -33,7 +33,18 @@ public class LayoutGraph {
 	private ArrayList<Transition> transitions;
 	private String language;
 
+	/** Loads the graph of one explored app version without writing the debug dumps. */
 	public LayoutGraph(String language, String resultFolderPath) {
+		this(language, resultFolderPath, false);
+	}
+
+	/**
+	 * Loads {@code result.json} from the folder. With {@code writeDumps}, also writes the readable
+	 * {@code graph.txt} and {@code graph.json} next to it: every relation of every pair of nodes, so
+	 * they are large, and nothing in the pipeline reads them. Off by default, so that loading a
+	 * graph never modifies the folder it reads (config key {@code debug.graphDumps}).
+	 */
+	public LayoutGraph(String language, String resultFolderPath, boolean writeDumps) {
 
 		scriptPath = resultFolderPath+File.separator+"result.json";
 		this.language = language;
@@ -136,27 +147,8 @@ public class LayoutGraph {
 				dest.addInboundTransition(tempTransition);
 				transitions.add(tempTransition);
 			}
-			// try-with-resources so the writer is always closed, even if writing throws part-way.
-			try (BufferedWriter bw = new BufferedWriter(new FileWriter(resultFolderPath+File.separator+"graph.txt"))) {
-				bw.write("-------------------------");
-				bw.newLine();
-				bw.write("Language Result for: "+language);
-				bw.newLine();
-				bw.write("-------------------------");
-				bw.newLine();
-				bw.write("States: ");
-				bw.newLine();
-				for (int i = 0; i < states.size(); i++) {
-					states.get(i).writeFile(bw);
-				}
-				JSONObject langReport = new JSONObject();
-				langReport.put("language", language);
-				JSONObject jsonStates = new JSONObject();
-				for(int i = 0; i < states.size(); i++){
-					jsonStates.put(i, states.get(i).getStateInfo());
-				}
-				langReport.put("states", jsonStates);
-				Files.write(Paths.get(resultFolderPath+File.separator+"graph.json"), langReport.toJSONString().getBytes());
+			if (writeDumps) {
+				writeDumps(resultFolderPath);
 			}
 		} catch (FileNotFoundException e) {
 			// Fail fast on a genuine load failure rather than leaving a truncated graph that would
@@ -177,6 +169,33 @@ public class LayoutGraph {
 			throw new RuntimeException(e);
 		}
 
+	}
+
+	/** Writes graph.txt and graph.json (states, nodes and every node-to-node relation) into the folder. */
+	@SuppressWarnings("unchecked")
+	private void writeDumps(String folder) throws IOException {
+		// try-with-resources so the writer is always closed, even if writing throws part-way.
+		try (BufferedWriter bw = new BufferedWriter(new FileWriter(folder+File.separator+"graph.txt"))) {
+			bw.write("-------------------------");
+			bw.newLine();
+			bw.write("Language Result for: "+language);
+			bw.newLine();
+			bw.write("-------------------------");
+			bw.newLine();
+			bw.write("States: ");
+			bw.newLine();
+			for (int i = 0; i < states.size(); i++) {
+				states.get(i).writeFile(bw);
+			}
+			JSONObject langReport = new JSONObject();
+			langReport.put("language", language);
+			JSONObject jsonStates = new JSONObject();
+			for(int i = 0; i < states.size(); i++){
+				jsonStates.put(i, states.get(i).getStateInfo());
+			}
+			langReport.put("states", jsonStates);
+			Files.write(Paths.get(folder+File.separator+"graph.json"), langReport.toJSONString().getBytes());
+		}
 	}
 
 	@Override

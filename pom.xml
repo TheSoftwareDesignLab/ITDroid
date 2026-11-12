@@ -12,10 +12,14 @@
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<junit.version>5.13.4</junit.version>
 	</properties>
 
 	<build>
 		<sourceDirectory>src</sourceDirectory>
+		<!-- Tests live in test/, next to src/ (the main tree is not the Maven standard layout, so
+			 src/test/java would be compiled as production code). Same package names as src/. -->
+		<testSourceDirectory>test</testSourceDirectory>
 		<resources>
 			<resource>
 				<directory>src</directory>
@@ -24,11 +28,26 @@
 				</excludes>
 			</resource>
 		</resources>
+		<!-- Everything under test/ that is not Java (fixtures) goes on the test classpath. -->
+		<testResources>
+			<testResource>
+				<directory>test</directory>
+				<excludes>
+					<exclude>**/*.java</exclude>
+				</excludes>
+			</testResource>
+		</testResources>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.13.0</version>
+			</plugin>
+			<plugin>
+				<!-- Runs the JUnit 5 tests in the test phase (mvn test, and before mvn package). -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.5.4</version>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -89,5 +108,12 @@
 			migration; antlr 3.5.2 + dexlib2 2.2.3 were removed when the smali AST analysis
 			was replaced by the regex-based HardcodedStringFinder.
 		-->
+		<!-- Tests only: test scope, so the shade plugin leaves it out of the runnable jar. -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 </project>

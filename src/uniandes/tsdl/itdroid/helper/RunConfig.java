@@ -156,6 +156,15 @@ public class RunConfig {
         return boolOptional("exploration.fillForms", false);
     }
 
+    /**
+     * Also write {@code graph.txt} and {@code graph.json} next to each {@code result.json} (default
+     * false). They list every relation of every pair of nodes: useful to debug the comparison by
+     * hand, large, and not read by anything else.
+     */
+    public boolean isGraphDumps() {
+        return boolOptional("debug.graphDumps", false);
+    }
+
     private int intOptional(String key, int defaultValue) {
         String raw = optional(key, "");
         if (raw.isEmpty()) {

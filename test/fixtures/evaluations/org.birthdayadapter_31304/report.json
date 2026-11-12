@@ -1,0 +1,22 @@
+{
+ "appName": "org.birthdayadapter",
+ "dfltLang": "en",
+ "langsReport": {
+  "en": {
+   "lang": "en",
+   "dflt": true,
+   "amStates": 5,
+   "amTrans": 10
+  },
+  "ar": {
+   "lang": "Arabic",
+   "amStates": 5,
+   "amTrans": 10,
+   "amIPFs": 157,
+   "pairedStates": 5,
+   "missingDfltStates": 0,
+   "missingLangStates": 0,
+   "pairing": "replay"
+  }
+ }
+}

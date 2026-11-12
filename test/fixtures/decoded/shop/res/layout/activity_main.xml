@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:layout_width="fill_parent" android:layout_height="fill_parent">
+    <TextView android:id="@id/title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/cart_title" />
+    <Button android:id="@id/add" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Add to cart" android:contentDescription="Adds the product to the cart" />
+    <EditText android:id="@id/coupon" android:layout_width="fill_parent" android:layout_height="wrap_content" android:hint="Coupon code" />
+</LinearLayout>

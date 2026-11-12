@@ -78,7 +78,7 @@ The folder you pass as `settingsDir` must also contain a `strings.xml` file list
 mvn clean package
 ```
 
-The runnable jar is `target/ITDroid-1.0.0.jar`.
+The runnable jar is `target/ITDroid-1.0.0.jar`. The build runs the unit tests first (JUnit 5, in `test/`, same packages as `src/`); `mvn test` runs only the tests. They need no device and no LLM.
 
 # Usage
 
@@ -173,7 +173,7 @@ The output directory contains the results and intermediate steps:
 
 - `report.json`: preflight results, inventory counts, and per language the states, the pairing with the source graph, the replay summary and the IPFs. Rewritten after each language.
 - `strings_inventory.json`: every string of the app with its origin (`res/values/strings.xml`, `smali_classes2/.../Foo.smali:123`), whether it is translated and why not, and its translations. Review or correct it by hand; the next run reuses it.
-- `trnsResults/<lang>/` and `noTrnsResults/<lang>/`: `result.json`, `graph.json`, screenshots; the source language also has `exploration_script.json` (the recorded path) and each translated language `replay_report.json` (what could be reproduced and where it diverged).
+- `trnsResults/<lang>/` and `noTrnsResults/<lang>/`: `result.json`, screenshots (plus the large `graph.txt` and `graph.json` debug dumps when `debug.graphDumps=true`); the source language also has `exploration_script.json` (the recorded path) and each translated language `replay_report.json` (what could be reproduced and where it diverged).
 - `<package>-<lang>-aligned-debugSigned.apk`: the APK built for each language; `hardcoded_<lang>.csv` lists how each hardcoded string was translated.
 - `ipfs.csv` and `hcs.txt`: the IPFs and the hardcoded strings as flat lists.
 
@@ -190,5 +190,17 @@ java -jar target/ITDroid-1.0.0.jar --report --port 9000 --no-browser
 ```
 
 The page (`webreport/`) lists the evaluated apps and shows, for the selected one: the IPFs of each language with the source and translated screens side by side and the affected nodes outlined, the hardcoded strings and how they were translated, the time of every phase and the machine usage, the static facts of the run (APK, version, device, Android API, translation model, configuration) and links to every artifact. A local server is needed because browsers do not let a page opened from disk read other files; the server only listens on 127.0.0.1 and only serves `webreport/` and the results folder.
+
+# Re-analysis without a device
+
+The layout comparison can be recomputed from the `result.json` files of evaluations that were already explored. It needs no device and no LLM, and never modifies the folder it reads. A batch of 40 apps in three languages takes about 7 minutes, against the day it takes to explore them again:
+
+```
+java -jar target/ITDroid-1.0.0.jar --reanalyze results/                     # every evaluation in the folder
+java -jar target/ITDroid-1.0.0.jar --reanalyze results/org.foo.app          # a single evaluation
+java -jar target/ITDroid-1.0.0.jar --reanalyze results/ --out some/folder   # default: reanalysis/<input folder name>
+```
+
+The output folder gets a `summary.csv` (one row per evaluation and language: the IPFs the stored report says and the IPFs the current code computes) and, per evaluation, a `reanalysis.json` with the recomputed comparison and an `ipfs.csv`. Use it to check that a change to the comparison does what was intended before spending hours exploring again.
 
 See ARCHITECTURE.md for how the code is organized and REFACTOR.md for the modernization change log.

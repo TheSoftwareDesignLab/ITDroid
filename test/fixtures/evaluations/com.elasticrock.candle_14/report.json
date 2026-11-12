@@ -1,0 +1,32 @@
+{
+ "appName": "com.elasticrock.candle",
+ "dfltLang": "en",
+ "langsReport": {
+  "en": {
+   "lang": "en",
+   "dflt": true,
+   "amStates": 5,
+   "amTrans": 9
+  },
+  "es": {
+   "lang": "Spanish",
+   "amStates": 5,
+   "amTrans": 9,
+   "amIPFs": 7,
+   "pairedStates": 5,
+   "missingDfltStates": 0,
+   "missingLangStates": 0,
+   "pairing": "replay"
+  },
+  "ar": {
+   "lang": "Arabic",
+   "amStates": 5,
+   "amTrans": 9,
+   "amIPFs": 41,
+   "pairedStates": 4,
+   "missingDfltStates": 1,
+   "missingLangStates": 1,
+   "pairing": "replay"
+  }
+ }
+}

@@ -13,7 +13,6 @@ buildNumber.properties
 .idea/
 .classpath
 .project
-test/
 .env
 
 # Personal run config (may hold a translation token / local paths). Commit only the .example.
@@ -34,3 +33,6 @@ eval/
 
 # Evaluations written by ITDroid (served by: java -jar target/ITDroid-1.0.0.jar --report)
 results/
+
+# Output of: java -jar target/ITDroid-1.0.0.jar --reanalyze <folder>
+reanalysis/

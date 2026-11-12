@@ -27,6 +27,7 @@ Para entender cómo está armado todo ver ARCHITECTURE.md. Para cómo ejecutar v
 - `commons-io` normalizado al artefacto canónico (`commons-io:commons-io:2.16.1`); venía repaquetado raro y viejo (de 2013).
 - Eliminadas `com.ibm.watson:java-sdk` y `io.github.cdimascio:java-dotenv` (el traductor IBM Watson se reemplazó por el LLM local).
 - Eliminadas `antlr 3.5.2` y `dexlib2 2.2.3`, las deps congeladas: quedaron sin uso al reemplazar el análisis smali AST por uno basado en regex. El jar bajó de 6.4 MB a 1.2 MB.
+- Pruebas unitarias: JUnit 5 (`junit-jupiter`, solo en alcance de test) con `maven-surefire-plugin`. Los tests viven en `test/`, junto a `src/` y con los mismos paquetes, porque el árbol principal no usa la estructura estándar de Maven. `mvn test` los corre y `mvn package` también, antes de armar el jar. El proyecto no tenía ninguna prueba; el jar resultante no cambia (las dependencias de test no se empaquetan).
 
 # 2. Traducción: IBM Watson a LLM local
 
@@ -236,3 +237,15 @@ ITDroid está pensado para que un desarrollador descargue el repositorio y eval�
 Ahora cada evaluación va a `results/<paquete>/` (clave `resultsDir`, por defecto `results`; `output=` sigue valiendo como carpeta explícita, que es lo que usa el harness), y `java -jar ITDroid.jar --report [carpeta]` arranca `ReportServer` (el `HttpServer` del JDK en 127.0.0.1, sin dependencias) que sirve `webreport/`, la carpeta de resultados y un índice `/api/results` con una entrada por subcarpeta que tenga `report.json`. La página (`webreport/`, JavaScript sin frameworks ni red, Bootstrap local) lista las apps evaluadas y muestra la elegida en pestañas: resumen (APK, versión, SDK, dispositivo, modelo, duración, totales), idiomas e IPFs (por pantalla, con la captura origen y la traducida lado a lado y los nodos afectados recuadrados a partir de los `bounds` del volcado), hardcodeados (desde `strings_inventory.json`, con su origen, si se tradujeron y cómo), rendimiento, entorno y artefactos. Sirve igual para los lotes del harness (`--report eval/results/<lote>`), que además aportan la telemetría de `meta.json`.
 
 Para alimentarlo, `report.json` ganó tres secciones: `itdroid` (versión, inicio, fin, estado), `environment` (host, dispositivo con modelo y versión de Android, motor de traducción con modelo y estilo, configuración de la corrida) y `performance` (segundos por fase: preflight, decode, inventory, build/explore del origen y translate/build/replay/compare por idioma; totales del LLM: peticiones, latencia, textos enviados, reutilizados y dejados en origen; CPU y heap de ITDroid; carga de CPU y memoria del host muestreadas cada 2 s). Lo recoge `RunMetrics`; el servidor LLM y el emulador son procesos aparte, así que su consumo aparece en las cifras del host, no en las del proceso.
+
+# 12. Correcciones tras la auditoría de noviembre de 2026
+
+Una auditoría comparó este refactor con el repositorio original de 2020 y dejó una lista de correcciones. Esta sección registra las que cambian el comportamiento, cada una con lo que hacía antes y lo que hace ahora.
+
+# Red de seguridad
+
+Problema: no había ninguna prueba, y comprobar un cambio en el comparador exigía volver a explorar las apps en el dispositivo (unas 20 horas por lote de 40 apps).
+
+- Pruebas unitarias con JUnit 5 en `test/` (ver sección 1): 75 pruebas sobre el comparador, la detección y el parcheo de hardcoded, el inventario y el traductor (contra un servidor local que imita al LLM). Fijan con datos reales los conteos de IPFs de cuatro apps evaluadas, y con una app escrita a mano lo que el detector acierta y lo que no. Los defectos conocidos quedan como pruebas `knownGap_...`, que afirman el comportamiento actual hasta que se corrija.
+- Re-análisis sin dispositivo: `java -jar ITDroid.jar --reanalyze <carpeta> [--out <carpeta>]` (`helper/Reanalysis`) recalcula la comparación a partir de los `result.json` ya guardados y deja, por evaluación e idioma, los IPFs que decía el informe y los que calcula el código actual. No usa dispositivo ni LLM y nunca escribe en la carpeta que lee (se rechaza una carpeta de salida que esté dentro de la de entrada). Sobre un lote de 40 apps en tres idiomas reproduce los 114 conteos del informe guardado en unos 7 minutos.
+- `graph.txt` y `graph.json` pasan a ser opcionales. Antes `LayoutGraph` los escribía siempre junto a cada `result.json`: listan todas las relaciones entre todos los pares de nodos, ocupaban 235 MB en un lote de 40 apps, nada los leía, y hacían que cargar un grafo modificara la carpeta de resultados. Ahora solo se escriben con `debug.graphDumps=true`; su contenido no cambia.

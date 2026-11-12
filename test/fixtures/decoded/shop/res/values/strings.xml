@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shop</string>
+    <string name="greeting">Hello %1$s</string>
+    <string name="cart_title">Your cart</string>
+    <string name="terms"><b>Terms</b> apply</string>
+    <string name="abc_action_bar_home_description">Navigate home</string>
+    <string name="version_label">2.1.0</string>
+    <string name="title_reference">@string/app_name</string>
+</resources>
