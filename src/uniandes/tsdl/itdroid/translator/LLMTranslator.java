@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.OutputStreamWriter;
+import java.io.StringReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,12 +19,16 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.jdom2.Content;
 import org.jdom2.Document;
 import org.jdom2.Element;
+import org.jdom2.Text;
 import org.jdom2.input.SAXBuilder;
 import org.jdom2.output.Format;
 import org.jdom2.output.XMLOutputter;
@@ -32,17 +37,21 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
 import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
+import uniandes.tsdl.itdroid.helper.StringInventory;
 
 /**
  * Translates strings via a local LLM behind an OpenAI-compatible endpoint (Ollama, llama.cpp,
- * LM Studio). Runs on the host, CPU-only, no cloud key. Configured by {@code ITDROID_LLM_*}
- * system properties / env vars / {@code .env} (see {@code .env.example}).
+ * LM Studio). Runs on the host, no cloud key. Configured by {@code ITDROID_LLM_*} system
+ * properties / env vars / {@code .env} (see {@code .env.example}).
+ *
+ * <p>The texts come from the {@link StringInventory}: every string, plurals item and array item of
+ * the app, deduplicated, with the ones that must stay verbatim already flagged. All of them are
+ * sent in global batches (not one request per container), and the inventory acts as translation
+ * memory so a text is never translated twice.
  */
 public class LLMTranslator implements TranslationInterface {
 
-    private static final String OUTPUT_FOLDER = "./temp/res/values";
-    private static final String NO_ATTRIBUTE_FOUND = "NOT_FOUND";
-    /** Strings translated per LLM request. Keeps prompts small enough for CPU inference. */
+    /** Strings translated per LLM request. Keeps prompts small enough for local inference. */
     private static final int TRANSLATOR_PACKAGE_SIZE = 25;
 
     /**
@@ -59,25 +68,48 @@ public class LLMTranslator implements TranslationInterface {
             + "and format placeholders (e.g. %1$s, %d, %.2f, {count}). "
             + "If a value consists ONLY of such data (not a human-facing phrase), return it unchanged.";
 
-    private final List<String> values;
-    private final List<String> names;
-    private final List<String> formatted;
     private final String propertiesDirectory;
-
     private final String endpoint;
     private final String model;
     private final String apiKey;
     private final int timeoutSeconds;
     private final String temperature;
-
     private final HttpClient httpClient;
 
-    public LLMTranslator(String directory) {
-        this.values = new ArrayList<>();
-        this.names = new ArrayList<>();
-        this.formatted = new ArrayList<>();
-        this.propertiesDirectory = directory;
+    /** Source of the texts and translation memory; built on demand when none was given. */
+    private StringInventory inventory;
 
+    /**
+     * Request style. General chat models get batched JSON. Translation-specialised models expect
+     * ONE text per user message and no JSON: {@code translategemma} uses Google's fixed prompt,
+     * {@code template} uses {@code ITDROID_LLM_PROMPT_TEMPLATE} (placeholders {source}, {target},
+     * {text}; default: the Hy-MT2 default-translation prompt). {@code ITDROID_LLM_STYLE} =
+     * {@code auto} (by model name), {@code json}, {@code translategemma} or {@code template}.
+     */
+    private final boolean nativeTranslateGemma;
+    private final boolean templateStyle;
+    private final String promptTemplate;
+    /**
+     * Mask format placeholders before a single-text request and restore them afterwards (the
+     * original ITDroid did this with IBM Watson): small translation models mangle {@code %1$s} or
+     * {@code {count}} more often than they copy them. {@code ITDROID_LLM_MASK_PLACEHOLDERS}.
+     */
+    private final boolean maskPlaceholders;
+    private static final String DEFAULT_TEMPLATE = "Translate the following text into {target}. Note that you should "
+            + "**only output the translated result without any additional explanation**:\n\n{text}";
+    /** Concurrent requests in the one-text-per-request mode (Ollama serves them in parallel when it can). */
+    private static final int NATIVE_PARALLELISM = 4;
+
+    /** Run-wide totals for the performance section of report.json (every instance adds to them). */
+    private static final java.util.concurrent.atomic.AtomicLong REQUESTS = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong REQUEST_MS = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong WALL_MS = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong TEXTS_SENT = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong TEXTS_REUSED = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong TEXTS_KEPT = new java.util.concurrent.atomic.AtomicLong();
+
+    public LLMTranslator(String directory) {
+        this.propertiesDirectory = directory;
         Map<String, String> env = loadDotEnv(directory);
         this.endpoint = resolve(env, "ITDROID_LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions");
         this.model = resolve(env, "ITDROID_LLM_MODEL", "qwen2.5:3b");
@@ -90,31 +122,78 @@ public class LLMTranslator implements TranslationInterface {
             timeout = 180;
         }
         this.timeoutSeconds = timeout;
-
+        String style = resolve(env, "ITDROID_LLM_STYLE", "auto").trim().toLowerCase();
+        this.templateStyle = style.equals("template")
+                || (style.equals("auto") && model.toLowerCase().matches(".*(hy-?mt|hunyuan-?mt).*"));
+        this.nativeTranslateGemma = style.equals("translategemma")
+                || (style.equals("auto") && model.toLowerCase().contains("translategemma"));
+        this.promptTemplate = resolve(env, "ITDROID_LLM_PROMPT_TEMPLATE", DEFAULT_TEMPLATE).replace("\\n", "\n");
+        String mask = resolve(env, "ITDROID_LLM_MASK_PLACEHOLDERS", "").trim().toLowerCase();
+        this.maskPlaceholders = mask.isEmpty() ? (templateStyle || nativeTranslateGemma)
+                : (mask.equals("true") || mask.equals("yes") || mask.equals("1") || mask.equals("on"));
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
     }
 
+    public LLMTranslator(String directory, StringInventory inventory) {
+        this(directory);
+        this.inventory = inventory;
+    }
+
+    /** The engine as configured, for the environment section of report.json. */
+    @SuppressWarnings("unchecked")
+    public JSONObject settings() {
+        JSONObject o = new JSONObject();
+        o.put("endpoint", endpoint);
+        o.put("model", model);
+        o.put("style", nativeTranslateGemma ? "translategemma" : templateStyle ? "template" : "json");
+        o.put("maskPlaceholders", maskPlaceholders);
+        o.put("temperature", temperature);
+        o.put("timeoutSeconds", timeoutSeconds);
+        return o;
+    }
+
+    /** Totals of the calls made so far by every instance, for the performance section of report.json. */
+    @SuppressWarnings("unchecked")
+    public static JSONObject stats() {
+        JSONObject o = new JSONObject();
+        o.put("requests", REQUESTS.get());
+        // Sum of request latencies (parallel requests overlap) vs. the time the pipeline waited for translations.
+        o.put("requestSeconds", Math.round(REQUEST_MS.get() / 100.0) / 10.0);
+        o.put("wallSeconds", Math.round(WALL_MS.get() / 100.0) / 10.0);
+        o.put("textsSent", TEXTS_SENT.get());
+        o.put("textsReused", TEXTS_REUSED.get());
+        o.put("textsKeptInSource", TEXTS_KEPT.get());
+        return o;
+    }
+
+    public StringInventory getInventory() {
+        return inventory;
+    }
+
+    /**
+     * Writes {@code values-<outputLang>/strings.xml} next to the given default {@code strings.xml}
+     * with every translatable resource of the inventory (strings, plurals and string-arrays,
+     * wherever they lived) translated. Resources the target folder already defines are left alone.
+     */
     @Override
     public void translate(String xmlPath, String inputLang, String outputLang) throws Exception {
+        File xmlFile = new File(xmlPath).getAbsoluteFile();
+        File valuesDir = xmlFile.getParentFile();
+        File resDir = valuesDir.getParentFile();
+        if (inventory == null) {
+            inventory = StringInventory.collect(resDir.getParentFile().getPath(), "",
+                    new NotTranslatableStringsDictionary(propertiesDirectory));
+        }
         System.out.println("LLM translation: " + inputLang + " -> " + outputLang
                 + " using model '" + model + "' at " + endpoint);
 
-        // Strings the developer marked as non translatable.
-        NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(propertiesDirectory);
-
-        // Read the default strings.xml file.
         SAXBuilder builder = new SAXBuilder();
-        File xmlFile = new File(xmlPath);
-        Document document = builder.build(xmlFile);
-
-        // Read (or create) the language specific strings.xml file.
-        File xmlOutputFolder = new File(OUTPUT_FOLDER + "-" + outputLang + "/");
-        File xmlOutputFile = new File(OUTPUT_FOLDER + "-" + outputLang + "/strings.xml");
-        if (!xmlOutputFolder.exists()) {
+        File xmlOutputFolder = new File(resDir, "values-" + outputLang);
+        File xmlOutputFile = new File(xmlOutputFolder, "strings.xml");
+        if (!xmlOutputFile.exists()) {
             xmlOutputFolder.mkdirs();
-            xmlOutputFile.createNewFile();
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(xmlOutputFile))) {
                 writer.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
                 writer.newLine();
@@ -127,211 +206,449 @@ public class LLMTranslator implements TranslationInterface {
         Document outputDocument = builder.build(xmlOutputFile);
         Element outputRoot = outputDocument.getRootElement();
 
-        // Strings that were already translated (by the developer or a previous run).
-        Set<String> translatedStrings = new HashSet<>();
-        for (Element existing : outputRoot.getChildren()) {
-            translatedStrings.add(existing.getAttributeValue("name"));
-        }
+        // Resources already defined for this language (by the developer, a library or a previous
+        // run) win: defining one twice makes aapt2 refuse the build ("conflicting value").
+        Set<String> defined = definedNames(xmlOutputFolder, builder);
 
-        // Collect the <string> values that must be translated.
-        Element root = document.getRootElement();
-        for (Element e : root.getChildren("string")) {
-            String attributeValue = e.getAttributeValue("name");
-            String attributeFormatted = e.getAttributeValue("formatted", NO_ATTRIBUTE_FOUND);
-            String text = e.getText();
-            if (dictionary.translatable(attributeValue)
-                    && !translatedStrings.contains(attributeValue)
-                    && !isOnlyNumbersAndSpecs(text)
-                    && !text.startsWith("@")) {
-                values.add(text);
-                names.add(attributeValue);
-                formatted.add(attributeFormatted);
+        LinkedHashMap<String, List<StringInventory.Entry>> groups = new LinkedHashMap<>();
+        for (StringInventory.Entry e : inventory.resourceEntries()) {
+            if (defined.contains(e.name)) {
+                continue;
             }
+            groups.computeIfAbsent(e.groupKey(), k -> new ArrayList<>()).add(e);
         }
-
-        // Collect <plurals> and <string-array> elements (each <item> is translated too).
-        List<Element> containers = new ArrayList<>();
-        for (Element e : root.getChildren("plurals")) {
-            if (dictionary.translatable(e.getAttributeValue("name")) && !translatedStrings.contains(e.getAttributeValue("name"))) {
-                containers.add(e);
-            }
-        }
-        for (Element e : root.getChildren("string-array")) {
-            if (dictionary.translatable(e.getAttributeValue("name")) && !translatedStrings.contains(e.getAttributeValue("name"))) {
-                containers.add(e);
-            }
-        }
-
-        // <plurals>/<string-array> often live in SIBLING files (plurals.xml, arrays.xml), not in
-        // strings.xml. Scan the rest of the source values/ folder so those get translated too;
-        // Android merges resources by type, so writing them into the output strings.xml is valid.
-        File valuesDir = xmlFile.getParentFile();
-        File[] siblings = valuesDir == null ? null
-                : valuesDir.listFiles((d, n) -> n.endsWith(".xml") && !n.equals(xmlFile.getName()));
-        if (siblings != null) {
-            for (File sibling : siblings) {
-                Element sibRoot;
-                try {
-                    sibRoot = builder.build(sibling).getRootElement();
-                } catch (Exception ex) {
-                    continue; // not a parseable resource file
-                }
-                for (Element e : sibRoot.getChildren("plurals")) {
-                    if (dictionary.translatable(e.getAttributeValue("name")) && !translatedStrings.contains(e.getAttributeValue("name"))) {
-                        containers.add(e);
-                    }
-                }
-                for (Element e : sibRoot.getChildren("string-array")) {
-                    if (dictionary.translatable(e.getAttributeValue("name")) && !translatedStrings.contains(e.getAttributeValue("name"))) {
-                        containers.add(e);
-                    }
+        LinkedHashSet<String> texts = new LinkedHashSet<>();
+        for (List<StringInventory.Entry> g : groups.values()) {
+            for (StringInventory.Entry e : g) {
+                if (e.translatable) {
+                    texts.add(e.text);
                 }
             }
         }
-
-        if (values.isEmpty() && containers.isEmpty()) {
+        if (texts.isEmpty()) {
             System.out.println("Nothing to translate for " + outputLang + ".");
             return;
         }
 
-        // Translate and write the simple <string> values.
-        List<String> fullTranslations = translateList(values, inputLang, outputLang);
-        System.out.println("  translated " + fullTranslations.size() + "/" + values.size());
-        for (int i = 0; i < fullTranslations.size(); i++) {
-            Element newString = new Element("string");
-            newString.setAttribute("name", names.get(i));
-            String attributeFormatted = formatted.get(i);
-            if (!attributeFormatted.equals(NO_ATTRIBUTE_FOUND)) {
-                newString.setAttribute("formatted", attributeFormatted);
+        Map<String, String> translated = translateResourceTexts(new ArrayList<>(texts), inputLang, outputLang);
+        System.out.println("  translated " + translated.size() + "/" + texts.size());
+
+        int written = 0;
+        for (List<StringInventory.Entry> g : groups.values()) {
+            StringInventory.Entry first = g.get(0);
+            if (StringInventory.KIND_STRING.equals(first.kind)) {
+                if (!first.translatable) {
+                    continue;   // data/reference: the default value is used in every language
+                }
+                Element s = new Element("string");
+                s.setAttribute("name", first.name);
+                if (first.formatted != null) {
+                    s.setAttribute("formatted", first.formatted);
+                }
+                setTranslatedContent(s, translated.getOrDefault(first.text, first.text));
+                outputRoot.addContent(s);
+                written++;
+            } else {
+                boolean any = false;
+                for (StringInventory.Entry e : g) {
+                    any |= e.translatable;
+                }
+                if (!any) {
+                    continue;
+                }
+                // Containers are all-or-nothing: every item is written, verbatim when not translatable.
+                Element c = new Element(first.kind);
+                c.setAttribute("name", first.name);
+                for (StringInventory.Entry e : g) {
+                    Element item = new Element("item");
+                    if (e.quantity != null) {
+                        item.setAttribute("quantity", e.quantity);
+                    }
+                    setTranslatedContent(item, e.translatable ? translated.getOrDefault(e.text, e.text) : e.text);
+                    c.addContent(item);
+                }
+                outputRoot.addContent(c);
+                written++;
             }
-            newString.setText(replaceUnscapedCharacters(fullTranslations.get(i)));
-            outputRoot.addContent(newString);
         }
 
-        // Translate and write <plurals> / <string-array> (each <item> translated, attributes kept).
-        for (Element container : containers) {
-            outputRoot.addContent(translateItemContainer(container, inputLang, outputLang));
-        }
-
-        // Persist changes.
         XMLOutputter output = new XMLOutputter();
         // PRESERVE text mode: keep leading/trailing whitespace in translated values (TRIM would strip it).
         output.setFormat(Format.getPrettyFormat().setTextMode(Format.TextMode.PRESERVE));
         try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(xmlOutputFile), StandardCharsets.UTF_8)) {
             output.output(outputDocument, writer);
         }
+        System.out.println("  " + written + " resources written to " + xmlOutputFile.getPath());
     }
 
-    /** Translates a list of texts in small batches (keeps prompts manageable for CPU inference). */
-    private List<String> translateList(List<String> texts, String inputLang, String outputLang) throws Exception {
-        List<String> out = new ArrayList<>();
-        int index = 0;
-        while (index < texts.size()) {
-            int end = Math.min(index + TRANSLATOR_PACKAGE_SIZE, texts.size());
-            out.addAll(translateBatch(texts.subList(index, end), inputLang, outputLang));
-            index = end;
+    /** Every resource name defined in the target values-&lt;lang&gt;/ folder (all its xml files). */
+    private static Set<String> definedNames(File folder, SAXBuilder builder) {
+        Set<String> names = new HashSet<>();
+        File[] files = folder.listFiles((d, n) -> n.toLowerCase().endsWith(".xml"));
+        if (files == null) {
+            return names;
         }
-        return out;
-    }
-
-    /** Rebuilds a {@code <plurals>}/{@code <string-array>} with every {@code <item>} translated, keeping attributes. */
-    private Element translateItemContainer(Element source, String inputLang, String outputLang) throws Exception {
-        List<Element> items = source.getChildren("item");
-        List<String> texts = new ArrayList<>();
-        for (Element item : items) {
-            texts.add(item.getText());
-        }
-        List<String> translated = translateList(texts, inputLang, outputLang);
-        Element out = new Element(source.getName());
-        out.setAttribute("name", source.getAttributeValue("name"));
-        for (int i = 0; i < items.size(); i++) {
-            Element newItem = new Element("item");
-            String quantity = items.get(i).getAttributeValue("quantity");
-            if (quantity != null) {
-                newItem.setAttribute("quantity", quantity);
+        for (File f : files) {
+            try {
+                for (Element existing : builder.build(f).getRootElement().getChildren()) {
+                    String n = existing.getAttributeValue("name");
+                    if (n != null) {
+                        names.add(n);
+                    }
+                }
+            } catch (Exception ex) {
+                // not a parseable resource file: nothing to protect
             }
-            newItem.setText(replaceUnscapedCharacters(translated.get(i)));
-            out.addContent(newItem);
         }
-        System.out.println("  translated " + source.getName() + " '" + source.getAttributeValue("name") + "' (" + items.size() + " items)");
-        return out;
+        return names;
     }
 
-    /** Translates one batch in a single request: JSON keyed by index; placeholders preserved via the prompt. */
-    @SuppressWarnings("unchecked")
-    private List<String> translateBatch(List<String> batch, String inputLang, String outputLang) throws Exception {
-        JSONObject items = new JSONObject();
-        for (int i = 0; i < batch.size(); i++) {
-            items.put(String.valueOf(i), batch.get(i));
-        }
-
-        String systemPrompt = buildSystemPrompt(languageName(inputLang), languageName(outputLang));
-        String userPrompt = "Translate the values of this JSON object. Return ONLY a JSON object with the"
-                + " exact same keys and the translated values:\n" + items.toJSONString();
-
-        JSONArray messages = new JSONArray();
-        messages.add(message("system", systemPrompt));
-        messages.add(message("user", userPrompt));
-
-        // A malformed/empty LLM response (parse or HTTP failure) must not abort the whole run: fall back
-        // to keeping the source strings for this batch (filled in below) and continue with the next batch/language.
-        Map<String, String> translatedByKey;
+    /**
+     * Sets a translated value as the element's content. The value is the inner XML of the source
+     * (entities and inline markup such as {@code <b>} or {@code <xliff:g>}), so it is parsed back;
+     * if the model broke the markup, it is stored as plain text instead of failing the build.
+     */
+    private static void setTranslatedContent(Element target, String value) {
         try {
-            String content = chatCompletion(messages, true);
-            translatedByKey = parseTranslations(content);
+            String wrapped = "<x xmlns:xliff=\"urn:oasis:names:tc:xliff:document:1.2\""
+                    + " xmlns:tools=\"http://schemas.android.com/tools\">" + value + "</x>";
+            Element parsed = new SAXBuilder().build(new StringReader(wrapped)).getRootElement();
+            List<Content> content = parsed.removeContent();
+            escapeTextNodes(content);
+            target.setContent(content);
         } catch (Exception e) {
-            System.out.println("  WARNING: batch translation failed (" + e.getMessage()
-                    + "); keeping original strings for this batch.");
-            translatedByKey = new HashMap<>();
+            String plain = value.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                    .replace("&quot;", "\"").replace("&apos;", "'");
+            target.setText(replaceUnscapedCharacters(plain));
         }
+    }
 
-        List<String> result = new ArrayList<>(batch.size());
-        for (int i = 0; i < batch.size(); i++) {
-            String translated = translatedByKey.get(String.valueOf(i));
-            if (translated == null) {
-                // The model dropped this entry: keep the source text rather than losing it.
-                System.out.println("  WARNING: missing translation for item " + i + "; keeping original.");
-                translated = batch.get(i);
+    /** Applies the Android quote escaping to text nodes only (never inside tags/attributes). */
+    private static void escapeTextNodes(List<Content> content) {
+        for (Content c : content) {
+            if (c instanceof Text) {
+                Text t = (Text) c;
+                t.setText(replaceUnscapedCharacters(t.getText()));
+            } else if (c instanceof Element) {
+                escapeTextNodes(((Element) c).getContent());
             }
-            result.add(translated);
         }
-        return result;
+    }
+
+    /**
+     * Translates resource texts (strings, plurals and array items) in batches, reusing the inventory
+     * memory. Returns source text -> translation for every input (the source itself on failure).
+     */
+    public Map<String, String> translateResourceTexts(List<String> texts, String inputLang, String outputLang) {
+        return translateTexts(texts, inputLang, outputLang, buildSystemPrompt(languageName(inputLang), languageName(outputLang)),
+                "Translate the values of this JSON object. Return ONLY a JSON object with the exact same keys and the translated values:\n",
+                "resource texts");
     }
 
     /**
      * Translates hardcoded UI labels, leaving proper names, emails, URLs, codes and data unchanged.
      * Returns a map original -> result (the original verbatim when it should not change).
      */
-    @SuppressWarnings("unchecked")
-    public Map<String, String> translateUiLabels(List<String> texts, String inputLang, String outputLang) throws Exception {
+    public Map<String, String> translateUiLabels(List<String> texts, String inputLang, String outputLang) {
+        return translateTexts(texts, inputLang, outputLang, buildLabelSystemPrompt(languageName(inputLang), languageName(outputLang)),
+                "Process this JSON object and return ONLY a JSON object with the exact same keys:\n",
+                "hardcoded labels");
+    }
+
+    /** Source characters per request. Long texts (licenses, help pages) otherwise overflow the model's context and truncate the JSON. */
+    private static final int BATCH_CHAR_BUDGET = 2500;
+
+    private Map<String, String> translateTexts(List<String> texts, String inputLang, String outputLang, String systemPrompt,
+            String userPrefix, String what) {
         Map<String, String> result = new LinkedHashMap<>();
+        List<String> pending = new ArrayList<>();
+        for (String t : texts) {
+            String memory = inventory != null ? inventory.translation(outputLang, t) : null;
+            if (memory != null) {
+                result.put(t, memory);
+            } else if (!pending.contains(t)) {
+                pending.add(t);
+            }
+        }
+        long start = System.currentTimeMillis();
+        int[] requests = {0};
+        List<String> missing;
+        if (nativeTranslateGemma || templateStyle) {
+            // One request per text in the model's own prompt; a second attempt for the ones that
+            // came back empty or lost a placeholder.
+            missing = translateNativePass(pending, inputLang, outputLang, result, requests);
+            if (!missing.isEmpty()) {
+                System.out.println("  retrying " + missing.size() + " " + what + " that came back empty or without their placeholders");
+                missing = translateNativePass(missing, inputLang, outputLang, result, requests);
+            }
+        } else {
+            // First pass in normal batches; whatever the model dropped or returned empty is retried once in
+            // small batches (a truncated or empty answer usually comes from a long batch), then kept as is.
+            missing = translatePass(pending, TRANSLATOR_PACKAGE_SIZE, BATCH_CHAR_BUDGET, outputLang, systemPrompt, userPrefix, result, requests);
+            if (!missing.isEmpty()) {
+                System.out.println("  retrying " + missing.size() + " " + what + " the model left out, in smaller batches");
+                missing = translatePass(missing, 5, 1200, outputLang, systemPrompt, userPrefix, result, requests);
+            }
+        }
+        for (String t : missing) {
+            result.put(t, t);
+        }
+        if (!missing.isEmpty()) {
+            System.out.println("  WARNING: " + missing.size() + " " + what + " kept in the source language (no usable answer from the model)");
+        }
+        System.out.println(String.format(Locale.ROOT, "  LLM: %d %s -> %s in %.1f s (%d requests, %d reused from the inventory)",
+                pending.size(), what, outputLang, (System.currentTimeMillis() - start) / 1000.0, requests[0],
+                texts.size() - pending.size()));
+        WALL_MS.addAndGet(System.currentTimeMillis() - start);
+        TEXTS_SENT.addAndGet(pending.size());
+        TEXTS_REUSED.addAndGet(texts.size() - pending.size());
+        TEXTS_KEPT.addAndGet(missing.size());
+        return result;
+    }
+
+    /**
+     * TranslateGemma pass: every text in its own request, a few in flight at a time. A translation
+     * that lost a format placeholder ({@code %1$s}, {@code {count}}, {@code \n}, a tag) is rejected,
+     * because that would break the app at runtime; the caller retries and finally keeps the source.
+     */
+    private List<String> translateNativePass(List<String> texts, String inputLang, String outputLang,
+            Map<String, String> result, int[] requests) {
+        List<String> missing = new ArrayList<>();
+        if (texts.isEmpty()) {
+            return missing;
+        }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(NATIVE_PARALLELISM);
+        try {
+            List<java.util.concurrent.Future<String>> futures = new ArrayList<>();
+            for (String t : texts) {
+                futures.add(pool.submit(() -> translateOneNative(t, inputLang, outputLang)));
+            }
+            for (int i = 0; i < texts.size(); i++) {
+                String source = texts.get(i);
+                String out = null;
+                try {
+                    out = futures.get(i).get();
+                } catch (Exception e) {
+                    System.out.println("  WARNING: request failed for '" + preview(source) + "': " + describe(e));
+                }
+                requests[0]++;
+                if (out == null || out.trim().isEmpty()) {
+                    missing.add(source);
+                } else if (!placeholdersKept(source, out)) {
+                    System.out.println("  WARNING: placeholder lost in '" + preview(source) + "' -> '" + preview(out) + "'");
+                    missing.add(source);
+                } else {
+                    result.put(source, out);
+                    if (inventory != null) {
+                        synchronized (inventory) {
+                            inventory.putTranslation(outputLang, source, out);
+                        }
+                    }
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        return missing;
+    }
+
+    /**
+     * One text per request, in the model's own prompt: TranslateGemma's fixed instruction (two
+     * blank lines before the text) or the configured template. Placeholders are masked with
+     * neutral tokens before the request and restored afterwards when masking is on.
+     */
+    @SuppressWarnings("unchecked")
+    private String translateOneNative(String text, String inputLang, String outputLang) {
+        String src = languageName(inputLang);
+        String tgt = languageName(outputLang);
+        List<String> masked = new ArrayList<>();
+        String body = maskPlaceholders ? mask(text, masked) : text;
+        String prompt;
+        if (templateStyle) {
+            prompt = promptTemplate.replace("{source}", src).replace("{target}", tgt).replace("{text}", body);
+        } else {
+            prompt = "You are a professional " + src + " (" + isoCode(inputLang) + ") to " + tgt + " (" + isoCode(outputLang)
+                    + ") translator. Your goal is to accurately convey the meaning and nuances of the original " + src
+                    + " text while adhering to " + tgt + " grammar, vocabulary, and cultural sensitivities.\n"
+                    + "Produce only the " + tgt + " translation, without any additional explanations or commentary. "
+                    + "Please translate the following " + src + " text into " + tgt + ":\n\n\n" + body;
+        }
+        JSONArray messages = new JSONArray();
+        messages.add(message("user", prompt));
+        try {
+            String out = chatCompletion(messages, false).trim();
+            // The model occasionally wraps the answer in quotes the source did not have.
+            if (out.length() >= 2 && out.startsWith("\"") && out.endsWith("\"") && !text.trim().startsWith("\"")) {
+                out = out.substring(1, out.length() - 1).trim();
+            }
+            return maskPlaceholders ? unmask(out, masked, text.contains("\\n")) : out;
+        } catch (Exception e) {
+            System.out.println("  WARNING: translation request failed for '" + preview(text) + "': " + describe(e));
+            return null;
+        }
+    }
+
+    /**
+     * Replaces every placeholder, tag and entity with a numbered token the model copies through
+     * ({@code <ph0>}, {@code <ph1>}, ...), recording the originals in {@code originals}. A literal
+     * backslash-n escape goes as a real line break instead: the models reproduce those but drop tokens.
+     */
+    static String mask(String text, List<String> originals) {
+        java.util.regex.Matcher m = PLACEHOLDER.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            if (m.group().equals("\\n")) {
+                m.appendReplacement(sb, "\n");
+                continue;
+            }
+            originals.add(m.group());
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement("<ph" + (originals.size() - 1) + ">"));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    /**
+     * Puts the originals back, tolerating the spacing/case drift translation models introduce in the
+     * tokens; when the source had literal backslash-n escapes, real line breaks become escapes again.
+     */
+    static String unmask(String text, List<String> originals, boolean restoreEscapes) {
+        String out = restoreEscapes ? text.replace("\r\n", "\n").replace("\n", "\\n") : text;
+        for (int i = originals.size() - 1; i >= 0; i--) {
+            out = out.replaceAll("(?i)<\\s*ph\\s*" + i + "\\s*/?\\s*>", java.util.regex.Matcher.quoteReplacement(originals.get(i)));
+        }
+        return out;
+    }
+
+    private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile(
+            "%(\\d+\\$)?[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z]|\\{[A-Za-z_][\\w.]*\\}|\\\\n|<[^<>]+>|&[a-z]+;");
+
+    /** True when every placeholder, tag and entity of the source appears at least as often in the translation. */
+    static boolean placeholdersKept(String source, String translated) {
+        Map<String, Integer> needed = new HashMap<>();
+        java.util.regex.Matcher m = PLACEHOLDER.matcher(source);
+        while (m.find()) {
+            needed.merge(m.group(), 1, Integer::sum);
+        }
+        if (needed.isEmpty()) {
+            return true;
+        }
+        Map<String, Integer> found = new HashMap<>();
+        m = PLACEHOLDER.matcher(translated);
+        while (m.find()) {
+            found.merge(m.group(), 1, Integer::sum);
+        }
+        for (Map.Entry<String, Integer> e : needed.entrySet()) {
+            if (found.getOrDefault(e.getKey(), 0) < e.getValue()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String preview(String s) {
+        String one = s.replace('\n', ' ');
+        return one.length() > 60 ? one.substring(0, 60) + "..." : one;
+    }
+
+    /** The code the TranslateGemma prompt shows next to the language name (ISO 639-1, region kept). */
+    private static String isoCode(String code) {
+        return code == null ? "" : code.replace("-r", "-");
+    }
+
+    /** One pass over {@code texts} in batches bounded by item count and characters; returns the texts still untranslated. */
+    private List<String> translatePass(List<String> texts, int maxItems, int charBudget, String outputLang,
+            String systemPrompt, String userPrefix, Map<String, String> result, int[] requests) {
+        List<String> missing = new ArrayList<>();
         int index = 0;
         while (index < texts.size()) {
-            int end = Math.min(index + TRANSLATOR_PACKAGE_SIZE, texts.size());
+            int end = index;
+            int chars = 0;
+            while (end < texts.size() && end - index < maxItems && (end == index || chars + texts.get(end).length() <= charBudget)) {
+                chars += texts.get(end).length();
+                end++;
+            }
             List<String> batch = texts.subList(index, end);
-            JSONObject items = new JSONObject();
+            List<String> out = translateBatch(batch, systemPrompt, userPrefix);
+            requests[0]++;
             for (int i = 0; i < batch.size(); i++) {
-                items.put(String.valueOf(i), batch.get(i));
-            }
-            JSONArray messages = new JSONArray();
-            messages.add(message("system", buildLabelSystemPrompt(languageName(inputLang), languageName(outputLang))));
-            messages.add(message("user", "Process this JSON object and return ONLY a JSON object with the exact same keys:\n" + items.toJSONString()));
-            // On parse/HTTP failure, keep the source labels for this batch instead of aborting the run.
-            Map<String, String> byKey;
-            try {
-                byKey = parseTranslations(chatCompletion(messages, true));
-            } catch (Exception e) {
-                System.out.println("  WARNING: label batch translation failed (" + e.getMessage()
-                        + "); keeping original strings for this batch.");
-                byKey = new HashMap<>();
-            }
-            for (int i = 0; i < batch.size(); i++) {
-                String t = byKey.get(String.valueOf(i));
-                result.put(batch.get(i), (t != null && !t.isEmpty()) ? t : batch.get(i));
+                String t = out.get(i);
+                if (t == null || t.trim().isEmpty()) {
+                    missing.add(batch.get(i));
+                    continue;
+                }
+                result.put(batch.get(i), t);
+                if (inventory != null) {
+                    inventory.putTranslation(outputLang, batch.get(i), t);
+                }
             }
             index = end;
         }
+        return missing;
+    }
+
+    /**
+     * Translates one batch in a single request: JSON keyed by index; placeholders preserved via the
+     * prompt. Entries the model dropped come back as null (the caller retries them).
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> translateBatch(List<String> batch, String systemPrompt, String userPrefix) {
+        JSONObject items = new JSONObject();
+        for (int i = 0; i < batch.size(); i++) {
+            items.put(String.valueOf(i), batch.get(i));
+        }
+        JSONArray messages = new JSONArray();
+        messages.add(message("system", systemPrompt));
+        messages.add(message("user", userPrefix + items.toJSONString()));
+
+        // A malformed/empty LLM response (parse or HTTP failure) must not abort the whole run: the
+        // batch is reported as missing and retried in smaller pieces by the caller.
+        Map<String, String> translatedByKey;
+        try {
+            translatedByKey = parseTranslations(chatCompletion(messages, true));
+        } catch (Exception e) {
+            System.out.println("  WARNING: batch of " + batch.size() + " failed (" + describe(e) + ")");
+            translatedByKey = new HashMap<>();
+        }
+        List<String> result = new ArrayList<>(batch.size());
+        int dropped = 0;
+        for (int i = 0; i < batch.size(); i++) {
+            String translated = translatedByKey.get(String.valueOf(i));
+            if (translated == null) {
+                dropped++;
+            }
+            result.add(translated);
+        }
+        if (dropped > 0 && dropped < batch.size()) {
+            System.out.println("  WARNING: the model left out " + dropped + " of " + batch.size() + " items in a batch");
+        }
         return result;
+    }
+
+    /**
+     * Asks the model for realistic values to type into the text fields of a screen (optional form
+     * filling during exploration). One value per description, "" when the model gave none.
+     */
+    @SuppressWarnings("unchecked")
+    public List<String> suggestInputValues(List<String> fieldDescriptions, String language) throws Exception {
+        JSONObject items = new JSONObject();
+        for (int i = 0; i < fieldDescriptions.size(); i++) {
+            items.put(String.valueOf(i), fieldDescriptions.get(i));
+        }
+        JSONArray messages = new JSONArray();
+        messages.add(message("system", "You help test an Android app. Each JSON value describes one text input field of a screen "
+                + "(its hint or current text, its description and its id). For each field invent ONE short, realistic value a "
+                + "user would type, written in " + languageName(language) + ", using plain ASCII letters, digits, spaces and basic "
+                + "punctuation only (no quotes, no emoji, at most 25 characters). Match the field type: an email for email fields, "
+                + "digits for numeric fields, a name for name fields. Return ONLY a JSON object with the same keys and the values."));
+        messages.add(message("user", items.toJSONString()));
+        Map<String, String> byKey = parseTranslations(chatCompletion(messages, true));
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < fieldDescriptions.size(); i++) {
+            String v = byKey.get(String.valueOf(i));
+            out.add(v == null ? "" : v);
+        }
+        return out;
     }
 
     private static String buildLabelSystemPrompt(String inputLang, String outputLang) {
@@ -343,6 +660,22 @@ public class LLMTranslator implements TranslationInterface {
                 + "2. " + DO_NOT_TRANSLATE + "\n"
                 + "Keep the same JSON keys and do not add explanations. "
                 + "Return ONLY a valid JSON object mapping each key to its result.";
+    }
+
+    private static String buildSystemPrompt(String inputLang, String outputLang) {
+        return "You are a professional native " + outputLang + " software localizer for Android apps. "
+                + "Translate UI string values from " + inputLang + " to " + outputLang + ". "
+                + "Strict rules:\n"
+                + "1. Translate ONLY the text values; never translate, add or remove the JSON keys.\n"
+                + "2. Preserve EXACTLY every format placeholder and markup: %s, %d, %f, positional ones like "
+                + "%1$s and %2$d, escape sequences (\\n, \\t, \\', \\\"), HTML/Android tags such as <b>, </b>, "
+                + "<xliff:g ...>, named placeholders like {count}, and XML entities such as &amp; or &lt;.\n"
+                + "3. Keep leading and trailing whitespace.\n"
+                + "4. Write natural, fluent, idiomatic " + outputLang + " as it actually appears in real apps; "
+                + "respect grammar, gender, number and agreement, and keep labels short.\n"
+                + "5. " + DO_NOT_TRANSLATE + "\n"
+                + "6. Do not add explanations, comments or markdown fences.\n"
+                + "Return ONLY a valid JSON object mapping each original key to its translated string.";
     }
 
     /** Detects the language of the default {@code strings.xml}; returns an ISO 639-1 code, or null on failure. */
@@ -375,9 +708,19 @@ public class LLMTranslator implements TranslationInterface {
         }
     }
 
-    /** Sends a chat-completion request and returns the assistant message content. */
-    @SuppressWarnings("unchecked")
+    /** Sends a chat-completion request and returns the assistant message content; every call is counted and timed. */
     private String chatCompletion(JSONArray messages, boolean jsonMode) throws Exception {
+        long t0 = System.currentTimeMillis();
+        REQUESTS.incrementAndGet();
+        try {
+            return chatCompletionRaw(messages, jsonMode);
+        } finally {
+            REQUEST_MS.addAndGet(System.currentTimeMillis() - t0);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String chatCompletionRaw(JSONArray messages, boolean jsonMode) throws Exception {
         JSONObject body = new JSONObject();
         body.put("model", model);
         body.put("messages", messages);
@@ -413,22 +756,6 @@ public class LLMTranslator implements TranslationInterface {
         return extractContent(response.body());
     }
 
-    private static String buildSystemPrompt(String inputLang, String outputLang) {
-        return "You are a professional native " + outputLang + " software localizer for Android apps. "
-                + "Translate UI string values from " + inputLang + " to " + outputLang + ". "
-                + "Strict rules:\n"
-                + "1. Translate ONLY the text values; never translate, add or remove the JSON keys.\n"
-                + "2. Preserve EXACTLY every format placeholder and markup: %s, %d, %f, positional ones like "
-                + "%1$s and %2$d, escape sequences (\\n, \\t, \\', \\\"), HTML/Android tags such as <b>, </b>, "
-                + "<xliff:g ...>, named placeholders like {count}, and HTML entities such as &amp;.\n"
-                + "3. Keep leading and trailing whitespace.\n"
-                + "4. Write natural, fluent, idiomatic " + outputLang + " as it actually appears in real apps; "
-                + "respect grammar, gender, number and agreement, and keep labels short.\n"
-                + "5. " + DO_NOT_TRANSLATE + "\n"
-                + "6. Do not add explanations, comments or markdown fences.\n"
-                + "Return ONLY a valid JSON object mapping each original key to its translated string.";
-    }
-
     @SuppressWarnings("unchecked")
     private static JSONObject message(String role, String content) {
         JSONObject m = new JSONObject();
@@ -453,11 +780,50 @@ public class LLMTranslator implements TranslationInterface {
         return (String) messageObj.get("content");
     }
 
+    /**
+     * Exception text for the logs. json-simple's ParseException puts its detail ("Unexpected token X
+     * at position N") in toString() and leaves getMessage() null, which printed as "failed (null)".
+     */
+    private static String describe(Exception e) {
+        return e.getMessage() != null ? e.getMessage() : e.toString();
+    }
+
+    /**
+     * Values that are not human-readable UI text and must never reach the translator: vector path
+     * data, CSS-like easing functions, fully-qualified class names and font-family tokens. Material
+     * Components ships dozens of them in strings.xml (mtrl_*_path*, m3_sys_motion_easing_*,
+     * *_behavior, m3_ref_typeface_*). "Translating" them corrupts the app, and batching them also
+     * truncated the model's JSON output on real apps. Deliberately conservative: a UI sentence has
+     * spaces and letters, none of these shapes do.
+     */
+    public static boolean looksLikeNonText(String value) {
+        if (value == null) {
+            return false;
+        }
+        String v = value.trim();
+        if (v.isEmpty()) {
+            return false;
+        }
+        return v.matches("(?s)^[MmLlHhVvCcSsQqTtAaZz]\\s*-?\\d+(\\.\\d+)?[\\s,]-?\\d.*")   // "M12,4.5C7,..." path data
+                || v.matches("(?is)^(cubic-bezier|path|linear|steps|spline)\\s*\\(.*")   // easing / path(...) functions
+                || v.matches("^[a-z]\\w*(\\.[A-Za-z_$][\\w$]*){2,}$")                     // com.example.Foo$Bar, www.x.com
+                || v.matches("^[a-z]\\w*\\.[a-zA-Z_$][\\w$]*$")                            // window.decorView, view.resources
+                || v.matches("(?i)^(sans-serif(-[a-z]+)?|serif|monospace|casual|cursive)$"); // font families
+    }
+
     /** Parses the model output into a key -> translation map, tolerating markdown fences. */
     private Map<String, String> parseTranslations(String content) throws Exception {
         String json = stripCodeFences(content);
         JSONParser parser = new JSONParser();
-        JSONObject obj = (JSONObject) parser.parse(json);
+        JSONObject obj;
+        try {
+            obj = (JSONObject) parser.parse(json);
+        } catch (Exception pe) {
+            // Say WHAT the model returned: small / "thinking" models sometimes answer with prose, a
+            // truncated object, an array or nothing at all, and the bare ParseException hides that.
+            String preview = json.length() > 160 ? json.substring(0, 160) + "..." : json;
+            throw new Exception("model returned invalid JSON (" + describe(pe) + "); content: \"" + preview + "\"", pe);
+        }
         Map<String, String> result = new LinkedHashMap<>();
         for (Object key : obj.keySet()) {
             Object value = obj.get(key);
@@ -477,11 +843,8 @@ public class LLMTranslator implements TranslationInterface {
         return trimmed;
     }
 
-    /**
-     * Checks if a string only contains numbers and special characters (kept from the
-     * previous implementation: such strings are not worth translating).
-     */
-    public boolean isOnlyNumbersAndSpecs(String string) {
+    /** Checks if a string only contains numbers and special characters (not worth translating). */
+    public static boolean isOnlyNumbersAndSpecs(String string) {
         return string.matches("[\\d/@#$%^&_+=():\\s-]+");
     }
 

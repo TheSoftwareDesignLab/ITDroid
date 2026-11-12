@@ -6,8 +6,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,36 +28,32 @@ public class HardcodedStringFinder {
 	/** Matches a smali const-string instruction and captures its literal. */
 	private static final Pattern CONST_STRING = Pattern.compile("^const-string(?:/jumbo)?\\s+[vp]\\d+,\\s*\"(.*)\"$");
 
+	/** A hardcoded literal with the first place it was found and how many times it appears. */
+	public static class Hit {
+		public final String text;
+		public final String origin;   // smali_classes2/com/x/Foo.smali:123 (relative to the decoded folder)
+		public int occurrences = 1;
+
+		Hit(String text, String origin) {
+			this.text = text;
+			this.origin = origin;
+		}
+	}
+
 	/** Scans the app package across all dex dirs and writes findings to {@code hcs.txt}. */
 	public static int findHardCodedStrings(String decodedFolderPath, String packageName, String outputPath) throws IOException {
-		String pkgPath = packageName.replace(".", File.separator);
 		int possibleIPFS = 0;
 		// try-with-resources: guarantees hcs.txt is closed even if the scan throws mid-way (no leaked/locked handle on Windows).
 		try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath + File.separator + "hcs.txt"))) {
-			File[] smaliDirs = new File(decodedFolderPath).listFiles((dir, name) -> name.equals("smali") || name.startsWith("smali_classes"));
-			if (smaliDirs != null) {
-				for (File smaliDir : smaliDirs) {
-					File pkgDir = new File(smaliDir, pkgPath);
-					if (!pkgDir.isDirectory()) {
-						continue;
-					}
-					Collection<File> files = FileUtils.listFiles(pkgDir, new String[]{"smali"}, true);
-					for (File file : files) {
-						String fileName = file.getName();
-						if (fileName.contains("EmmaInstrumentation") || fileName.contains("FinishListener")
-								|| fileName.contains("InstrumentedActivity") || fileName.contains("SMSInstrumentedReceiver")) {
-							continue;
-						}
-						List<String> hardcoded = extractUiStrings(file);
-						if (!hardcoded.isEmpty()) {
-							bw.write(fileName.replace(".smali", ""));
-							bw.newLine();
-							for (String hardcodedString : hardcoded) {
-								bw.write("\t" + hardcodedString);
-								bw.newLine();
-								possibleIPFS++;
-							}
-						}
+			for (File file : appSmaliFiles(decodedFolderPath, packageName)) {
+				List<String> hardcoded = extractUiStrings(file);
+				if (!hardcoded.isEmpty()) {
+					bw.write(file.getName().replace(".smali", ""));
+					bw.newLine();
+					for (String hardcodedString : hardcoded) {
+						bw.write("\t" + hardcodedString);
+						bw.newLine();
+						possibleIPFS++;
 					}
 				}
 			}
@@ -67,25 +65,70 @@ public class HardcodedStringFinder {
 	/** Unique hardcoded UI strings in the app package (across all dex dirs), for translation. */
 	public static Set<String> collectUiStrings(String decodedFolderPath, String packageName) {
 		Set<String> all = new LinkedHashSet<>();
-		String pkgPath = packageName.replace(".", File.separator);
-		File[] smaliDirs = new File(decodedFolderPath).listFiles((dir, name) -> name.equals("smali") || name.startsWith("smali_classes"));
-		if (smaliDirs != null) {
-			for (File smaliDir : smaliDirs) {
-				File pkgDir = new File(smaliDir, pkgPath);
-				if (!pkgDir.isDirectory()) {
-					continue;
-				}
-				for (File file : FileUtils.listFiles(pkgDir, new String[]{"smali"}, true)) {
-					String n = file.getName();
-					if (n.contains("EmmaInstrumentation") || n.contains("FinishListener")
-							|| n.contains("InstrumentedActivity") || n.contains("SMSInstrumentedReceiver")) {
-						continue;
-					}
-					all.addAll(extractUiStrings(file));
-				}
-			}
+		for (Hit h : collectUiStringsWithOrigin(decodedFolderPath, packageName)) {
+			all.add(h.text);
 		}
 		return all;
+	}
+
+	/** Unique hardcoded UI strings with the smali file and line of their first occurrence. */
+	public static List<Hit> collectUiStringsWithOrigin(String decodedFolderPath, String packageName) {
+		LinkedHashMap<String, Hit> hits = new LinkedHashMap<>();
+		for (File file : appSmaliFiles(decodedFolderPath, packageName)) {
+			String origin = Paths.get(decodedFolderPath).toAbsolutePath()
+					.relativize(file.toPath().toAbsolutePath()).toString().replace('\\', '/');
+			try {
+				List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
+				for (int i = 0; i < lines.size(); i++) {
+					Matcher m = CONST_STRING.matcher(lines.get(i).trim());
+					if (!m.matches()) {
+						continue;
+					}
+					String value = unescapeSmali(m.group(1));
+					if (!isLikelyUiString(value)) {
+						continue;
+					}
+					Hit h = hits.get(value);
+					if (h == null) {
+						hits.put(value, new Hit(value, origin + ":" + (i + 1)));
+					} else {
+						h.occurrences++;
+					}
+				}
+			} catch (IOException e) {
+				// Unreadable file: skip it.
+			}
+		}
+		return new ArrayList<>(hits.values());
+	}
+
+	/** The app's own smali files (all dex dirs), in a deterministic order, minus instrumentation noise. */
+	private static List<File> appSmaliFiles(String decodedFolderPath, String packageName) {
+		List<File> result = new ArrayList<>();
+		String pkgPath = packageName.replace(".", File.separator);
+		File[] smaliDirs = new File(decodedFolderPath).listFiles((dir, name) -> name.equals("smali") || name.startsWith("smali_classes"));
+		if (smaliDirs == null) {
+			return result;
+		}
+		java.util.Arrays.sort(smaliDirs);
+		for (File smaliDir : smaliDirs) {
+			File pkgDir = new File(smaliDir, pkgPath);
+			if (!pkgDir.isDirectory()) {
+				continue;
+			}
+			Collection<File> files = FileUtils.listFiles(pkgDir, new String[]{"smali"}, true);
+			List<File> sorted = new ArrayList<>(files);
+			sorted.sort((a, b) -> a.getPath().compareTo(b.getPath()));
+			for (File file : sorted) {
+				String n = file.getName();
+				if (n.contains("EmmaInstrumentation") || n.contains("FinishListener")
+						|| n.contains("InstrumentedActivity") || n.contains("SMSInstrumentedReceiver")) {
+					continue;
+				}
+				result.add(file);
+			}
+		}
+		return result;
 	}
 
 	/** Const-string literals in a file that look like human-readable UI text. */
