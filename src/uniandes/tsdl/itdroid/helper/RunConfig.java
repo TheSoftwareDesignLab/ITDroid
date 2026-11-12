@@ -165,6 +165,23 @@ public class RunConfig {
     }
 
     /**
+     * Which hardcoded literals of the code are translated (key hardcoded.translate): {@code ui}
+     * (default), {@code ui+unknown} or {@code all}. See {@link HardcodedPolicy}.
+     */
+    public HardcodedPolicy getHardcodedPolicy() {
+        return HardcodedPolicy.parse(optional("hardcoded.translate", ""));
+    }
+
+    /**
+     * Move the translated literals of the code to string resources, so the single internationalized
+     * APK shows them in every language (key hardcoded.extractCode, default true). With false they
+     * are only patched into the per-language APKs.
+     */
+    public boolean isExtractCode() {
+        return boolOptional("hardcoded.extractCode", true);
+    }
+
+    /**
      * Also write {@code graph.txt} and {@code graph.json} next to each {@code result.json} (default
      * false). They list every relation of every pair of nodes: useful to debug the comparison by
      * hand, large, and not read by anything else.

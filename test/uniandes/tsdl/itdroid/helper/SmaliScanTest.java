@@ -206,6 +206,31 @@ class SmaliScanTest {
         assertEquals(Consumer.LIBRARY_CALL, of(scan, "Axis name").consumer);
     }
 
+    /**
+     * A composable function of the app that receives a text most likely draws it, but it can also
+     * take the name of an icon: the label is translated, the bare identifier is not even listed.
+     */
+    @Test
+    void aTextGivenToAComposableOfTheAppIsTakenForTextUnlessItIsABareIdentifier() throws Exception {
+        SmaliScan scan = scanMethods(method("Toolbar(Landroidx/compose/runtime/Composer;I)V",
+                "const-string v0, \"Back to the list\"",
+                "invoke-static {v0, p0, p1}, Lcom/acme/app/WidgetsKt;->LabelledButton(Ljava/lang/String;Landroidx/compose/runtime/Composer;I)V",
+                "const-string v1, \"arrow_back\"",
+                "invoke-static {v1, p0, p1}, Lcom/acme/app/WidgetsKt;->SymbolIcon(Ljava/lang/String;Landroidx/compose/runtime/Composer;I)V",
+                "const-string v2, \"search\"",
+                "invoke-static {v2, p0, p1}, Lcom/acme/app/WidgetsKt;->SymbolIcon(Ljava/lang/String;Landroidx/compose/runtime/Composer;I)V",
+                "return-void"));
+
+        assertEquals(Consumer.COMPOSABLE, of(scan, "Back to the list").consumer);
+        assertEquals(Consumer.COMPOSABLE, of(scan, "arrow_back").consumer);
+
+        List<HardcodedStringFinder.Hit> hits = HardcodedStringFinder.hits(scan);
+        assertEquals(List.of("Back to the list"), hits.stream().map(h -> h.text).toList(), "the icon names are not strings for a person");
+        assertEquals(Consumer.COMPOSABLE, hits.get(0).consumer());
+        assertTrue(HardcodedPolicy.UI.translates(Consumer.COMPOSABLE));
+        assertNull(StringInventory.codeSkipReason(hits.get(0), java.util.Set.of(), HardcodedPolicy.UI));
+    }
+
     // ------------------------------------------------------------------ the rule table
 
     @Test

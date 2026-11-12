@@ -1009,6 +1009,42 @@ public class AdbExplorer {
         return crashReason(serial, pkg);
     }
 
+    /**
+     * Every crash of the app since the crash log was cleared at the start of this run: the
+     * exception of each one, once. Empty when the app never crashed.
+     */
+    private List<String> crashReasons() {
+        List<String> reasons = new ArrayList<>();
+        try {
+            String out = execAdb(serial, 15000, "logcat", "-b", "crash", "-d", "-t", "3000");
+            if (out == null) {
+                return reasons;
+            }
+            boolean ours = false;
+            boolean taken = false;
+            for (String line : out.split("\n")) {
+                int at = line.indexOf("AndroidRuntime: ");
+                if (at < 0) {
+                    continue;
+                }
+                String msg = line.substring(at + "AndroidRuntime: ".length()).trim();
+                if (msg.startsWith("Process: ")) {
+                    ours = msg.contains(pkg);
+                    taken = false;
+                } else if (ours && !taken && !msg.isEmpty() && !msg.startsWith("FATAL") && !msg.startsWith("at ")) {
+                    taken = true;
+                    String reason = msg.length() > 200 ? msg.substring(0, 200) + "..." : msg;
+                    if (!reasons.contains(reason)) {
+                        reasons.add(reason);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // the crash log is informative: a device that does not give it must not fail the run
+        }
+        return reasons;
+    }
+
     /** The exception that killed the app, read from the crash log; null when it did not crash. */
     private static String crashReason(String serial, String pkg) throws Exception {
         String out = execAdb(serial, 10000, "logcat", "-b", "crash", "-d", "-t", "300");
@@ -1336,6 +1372,11 @@ public class AdbExplorer {
         root.put("package", pkg);
         root.put("locale", locale);
         root.put("rootId", states.isEmpty() ? 0L : (long) states.get(0).id);
+        // crashes of the ORIGINAL app while it was explored: a translated build that crashes the
+        // same way was not broken by its translation
+        JSONArray crashes = new JSONArray();
+        crashes.addAll(crashReasons());
+        root.put("crashes", crashes);
         JSONArray st = new JSONArray();
         for (StateRec s : states) {
             JSONObject o = new JSONObject();
@@ -1385,6 +1426,9 @@ public class AdbExplorer {
         JSONArray div = new JSONArray();
         div.addAll(divergences);
         o.put("divergences", div);
+        JSONArray crashes = new JSONArray();
+        crashes.addAll(crashReasons());
+        o.put("crashes", crashes);
         Files.writeString(Paths.get(outputFolder, REPLAY_REPORT_FILE), o.toJSONString(), StandardCharsets.UTF_8);
     }
 
@@ -1420,6 +1464,11 @@ public class AdbExplorer {
      * removed afterwards.
      */
     public static String checkLaunch(String serial, String pkg, String apkPath) throws Exception {
+        return checkLaunch(serial, pkg, apkPath, "the original app");
+    }
+
+    /** The same launch test on any build of the app; {@code what} names it in the messages ("the rebuilt app"). */
+    public static String checkLaunch(String serial, String pkg, String apkPath, String what) throws Exception {
         execAdb(serial, 15000, "uninstall", pkg);
         String out = execAdb(serial, 180000, "install", "-r", "-t", "-g", apkPath);
         if (out == null || !out.contains("Success")) {
@@ -1453,16 +1502,16 @@ public class AdbExplorer {
         String crash = crashReason(serial, pkg);
         String reason = null;
         if (crash != null) {
-            reason = "the original app crashes on launch: " + crash;
+            reason = what + " crashes on launch: " + crash;
         } else if (!seen) {
-            reason = "the original app never reached the foreground (" + foregroundOwner(top) + ")";
+            reason = what + " never reached the foreground (" + foregroundOwner(top) + ")";
         } else if (!still) {
-            reason = "the original app handed the screen to another package right after launch (" + foregroundOwner(top)
+            reason = what + " handed the screen to another package right after launch (" + foregroundOwner(top)
                     + "); Trusted Web Activities and browser-backed apps are out of scope";
         }
         execAdb(serial, 8000, "shell", "am", "force-stop", pkg);
         execAdb(serial, 15000, "uninstall", pkg);
-        System.out.println("PREFLIGHT: launch test of the original app: " + (reason == null ? "OK" : reason));
+        System.out.println("PREFLIGHT: launch test of " + what + ": " + (reason == null ? "OK" : reason));
         return reason;
     }
 

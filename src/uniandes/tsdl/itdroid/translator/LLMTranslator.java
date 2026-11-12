@@ -83,11 +83,14 @@ public class LLMTranslator implements TranslationInterface {
      * Request style. General chat models get batched JSON. Translation-specialised models expect
      * ONE text per user message and no JSON: {@code translategemma} uses Google's fixed prompt,
      * {@code template} uses {@code ITDROID_LLM_PROMPT_TEMPLATE} (placeholders {source}, {target},
-     * {text}; default: the Hy-MT2 default-translation prompt). {@code ITDROID_LLM_STYLE} =
-     * {@code auto} (by model name), {@code json}, {@code translategemma} or {@code template}.
+     * {text}; default: the Hy-MT2 default-translation prompt), {@code plamo} sends the options of
+     * PLaMo Translate (source and target language codes) as the system message and the bare text
+     * as the user message. {@code ITDROID_LLM_STYLE} = {@code auto} (by model name), {@code json},
+     * {@code translategemma}, {@code template} or {@code plamo}.
      */
     private final boolean nativeTranslateGemma;
     private final boolean templateStyle;
+    private final boolean plamoStyle;
     private final String promptTemplate;
     /**
      * Mask format placeholders before a single-text request and restore them afterwards (the
@@ -127,9 +130,10 @@ public class LLMTranslator implements TranslationInterface {
                 || (style.equals("auto") && model.toLowerCase().matches(".*(hy-?mt|hunyuan-?mt).*"));
         this.nativeTranslateGemma = style.equals("translategemma")
                 || (style.equals("auto") && model.toLowerCase().contains("translategemma"));
+        this.plamoStyle = style.equals("plamo") || (style.equals("auto") && model.toLowerCase().contains("plamo"));
         this.promptTemplate = resolve(env, "ITDROID_LLM_PROMPT_TEMPLATE", DEFAULT_TEMPLATE).replace("\\n", "\n");
         String mask = resolve(env, "ITDROID_LLM_MASK_PLACEHOLDERS", "").trim().toLowerCase();
-        this.maskPlaceholders = mask.isEmpty() ? (templateStyle || nativeTranslateGemma)
+        this.maskPlaceholders = mask.isEmpty() ? (templateStyle || nativeTranslateGemma || plamoStyle)
                 : (mask.equals("true") || mask.equals("yes") || mask.equals("1") || mask.equals("on"));
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -147,7 +151,7 @@ public class LLMTranslator implements TranslationInterface {
         JSONObject o = new JSONObject();
         o.put("endpoint", endpoint);
         o.put("model", model);
-        o.put("style", nativeTranslateGemma ? "translategemma" : templateStyle ? "template" : "json");
+        o.put("style", plamoStyle ? "plamo" : nativeTranslateGemma ? "translategemma" : templateStyle ? "template" : "json");
         o.put("maskPlaceholders", maskPlaceholders);
         o.put("temperature", temperature);
         o.put("timeoutSeconds", timeoutSeconds);
@@ -179,6 +183,15 @@ public class LLMTranslator implements TranslationInterface {
      */
     @Override
     public void translate(String xmlPath, String inputLang, String outputLang) throws Exception {
+        translate(xmlPath, inputLang, outputLang, null);
+    }
+
+    /**
+     * The same, restricted to the resources with the given names (null for all). Used for a
+     * language the app already ships: its own translation is evaluated as it is, and only the
+     * strings ITDroid added to the app (the literals moved out of the XML) are filled in.
+     */
+    public void translate(String xmlPath, String inputLang, String outputLang, Set<String> onlyNames) throws Exception {
         File xmlFile = new File(xmlPath).getAbsoluteFile();
         File valuesDir = xmlFile.getParentFile();
         File resDir = valuesDir.getParentFile();
@@ -212,7 +225,7 @@ public class LLMTranslator implements TranslationInterface {
 
         LinkedHashMap<String, List<StringInventory.Entry>> groups = new LinkedHashMap<>();
         for (StringInventory.Entry e : inventory.resourceEntries()) {
-            if (defined.contains(e.name)) {
+            if (defined.contains(e.name) || (onlyNames != null && !onlyNames.contains(e.name))) {
                 continue;
             }
             groups.computeIfAbsent(e.groupKey(), k -> new ArrayList<>()).add(e);
@@ -309,6 +322,13 @@ public class LLMTranslator implements TranslationInterface {
      * if the model broke the markup, it is stored as plain text instead of failing the build.
      */
     private static void setTranslatedContent(Element target, String value) {
+        if (isQuoted(value)) {
+            // write what is inside the quotes as usual and put the quotes back around it, unescaped
+            setTranslatedContent(target, value.substring(1, value.length() - 1));
+            target.addContent(0, new Text("\""));
+            target.addContent(new Text("\""));
+            return;
+        }
         try {
             String wrapped = "<x xmlns:xliff=\"urn:oasis:names:tc:xliff:document:1.2\""
                     + " xmlns:tools=\"http://schemas.android.com/tools\">" + value + "</x>";
@@ -373,7 +393,7 @@ public class LLMTranslator implements TranslationInterface {
         long start = System.currentTimeMillis();
         int[] requests = {0};
         List<String> missing;
-        if (nativeTranslateGemma || templateStyle) {
+        if (nativeTranslateGemma || templateStyle || plamoStyle) {
             // One request per text in the model's own prompt; a second attempt for the ones that
             // came back empty or lost a placeholder.
             missing = translateNativePass(pending, inputLang, outputLang, result, requests);
@@ -454,15 +474,46 @@ public class LLMTranslator implements TranslationInterface {
 
     /**
      * One text per request, in the model's own prompt: TranslateGemma's fixed instruction (two
-     * blank lines before the text) or the configured template. Placeholders are masked with
-     * neutral tokens before the request and restored afterwards when masking is on.
+     * blank lines before the text), the configured template, or PLaMo's options as the system
+     * message. Placeholders are masked with neutral tokens before the request and restored
+     * afterwards when masking is on. The answer keeps the leading and trailing whitespace of the
+     * source: a literal is often one piece of a sentence built in the code ("Items: " + n +
+     * " of 3"), and without its edge space the pieces run together.
      */
+    private String translateOneNative(String wholeText, String inputLang, String outputLang) {
+        // The quotes around a whole resource value are Android syntax, not text: the model gets
+        // what is inside them and the answer is wrapped again.
+        boolean quoted = isQuoted(wholeText);
+        String out = translateOneNativeBare(quoted ? wholeText.substring(1, wholeText.length() - 1) : wholeText, inputLang, outputLang);
+        return out == null || !quoted ? out : "\"" + out + "\"";
+    }
+
     @SuppressWarnings("unchecked")
-    private String translateOneNative(String text, String inputLang, String outputLang) {
+    private String translateOneNativeBare(String text, String inputLang, String outputLang) {
         String src = languageName(inputLang);
         String tgt = languageName(outputLang);
         List<String> masked = new ArrayList<>();
         String body = maskPlaceholders ? mask(text, masked) : text;
+        if (plamoStyle) {
+            // The whole user message is translated, so the text goes alone and without its edge
+            // whitespace; the options go in the system message, as the model card specifies.
+            JSONArray messages = new JSONArray();
+            messages.add(message("system", "[plamo-translate]\nsource_lang=" + plamoCode(inputLang) + "\ntarget_lang=" + plamoCode(outputLang)));
+            messages.add(message("user", body.strip()));
+            JSONObject extra = new JSONObject();
+            JSONArray stop = new JSONArray();
+            stop.add("<|plamo:tag|>");
+            stop.add("<|plamo:bos|>");
+            extra.put("stop", stop);
+            extra.put("max_tokens", 1024L);
+            try {
+                String out = chatCompletion(messages, false, extra).trim();
+                return withEdges(text, maskPlaceholders ? unmask(out, masked, text.contains("\\n")) : out);
+            } catch (Exception e) {
+                System.out.println("  WARNING: translation request failed for '" + preview(text) + "': " + describe(e));
+                return null;
+            }
+        }
         String prompt;
         if (templateStyle) {
             prompt = promptTemplate.replace("{source}", src).replace("{target}", tgt).replace("{text}", body);
@@ -481,11 +532,60 @@ public class LLMTranslator implements TranslationInterface {
             if (out.length() >= 2 && out.startsWith("\"") && out.endsWith("\"") && !text.trim().startsWith("\"")) {
                 out = out.substring(1, out.length() - 1).trim();
             }
-            return maskPlaceholders ? unmask(out, masked, text.contains("\\n")) : out;
+            return withEdges(text, maskPlaceholders ? unmask(out, masked, text.contains("\\n")) : out);
         } catch (Exception e) {
             System.out.println("  WARNING: translation request failed for '" + preview(text) + "': " + describe(e));
             return null;
         }
+    }
+
+    /** The language code PLaMo Translate expects: the bare language, without Android's region suffix (pt-rBR gives pt). */
+    private static String plamoCode(String code) {
+        if (code == null || code.isEmpty()) {
+            return "en";
+        }
+        int dash = code.indexOf('-');
+        return (dash > 0 ? code.substring(0, dash) : code).toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * True when a value is wrapped in double quotes as a whole. In a string resource that means
+     * "keep the whitespace inside"; apktool also writes that way every string with an apostrophe.
+     * The quotes are not part of the text the user sees.
+     */
+    static boolean isQuoted(String value) {
+        if (value == null || value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
+            return false;
+        }
+        String inner = value.substring(1, value.length() - 1);
+        // an unescaped quote inside, or an escaped closing quote, means these are two separate quoted parts
+        return !inner.matches("(?s).*(?<!\\\\)\".*") && !inner.endsWith("\\");
+    }
+
+    /**
+     * The translation with the leading and trailing whitespace of the source instead of its own.
+     * An empty translation stays empty (the caller treats it as "no answer").
+     */
+    static String withEdges(String source, String translated) {
+        if (translated == null) {
+            return null;
+        }
+        String core = translated.strip();
+        if (core.isEmpty() || source == null) {
+            return core;
+        }
+        int start = 0;
+        while (start < source.length() && Character.isWhitespace(source.charAt(start))) {
+            start++;
+        }
+        if (start == source.length()) {
+            return core;
+        }
+        int end = source.length();
+        while (end > start && Character.isWhitespace(source.charAt(end - 1))) {
+            end--;
+        }
+        return source.substring(0, start) + core + source.substring(end);
     }
 
     /**
@@ -577,7 +677,14 @@ public class LLMTranslator implements TranslationInterface {
                     missing.add(batch.get(i));
                     continue;
                 }
-                result.put(batch.get(i), t);
+                String source = batch.get(i);
+                if (isQuoted(source)) {
+                    String inner = source.substring(1, source.length() - 1);
+                    t = "\"" + withEdges(inner, isQuoted(t.trim()) ? t.trim().substring(1, t.trim().length() - 1) : t) + "\"";
+                } else {
+                    t = withEdges(source, t);
+                }
+                result.put(source, t);
                 if (inventory != null) {
                     inventory.putTranslation(outputLang, batch.get(i), t);
                 }
@@ -595,7 +702,8 @@ public class LLMTranslator implements TranslationInterface {
     private List<String> translateBatch(List<String> batch, String systemPrompt, String userPrefix) {
         JSONObject items = new JSONObject();
         for (int i = 0; i < batch.size(); i++) {
-            items.put(String.valueOf(i), batch.get(i));
+            String text = batch.get(i);
+            items.put(String.valueOf(i), isQuoted(text) ? text.substring(1, text.length() - 1) : text);
         }
         JSONArray messages = new JSONArray();
         messages.add(message("system", systemPrompt));
@@ -710,18 +818,26 @@ public class LLMTranslator implements TranslationInterface {
 
     /** Sends a chat-completion request and returns the assistant message content; every call is counted and timed. */
     private String chatCompletion(JSONArray messages, boolean jsonMode) throws Exception {
+        return chatCompletion(messages, jsonMode, null);
+    }
+
+    /** The same, with extra fields for the request body (stop sequences, max_tokens). */
+    private String chatCompletion(JSONArray messages, boolean jsonMode, JSONObject extra) throws Exception {
         long t0 = System.currentTimeMillis();
         REQUESTS.incrementAndGet();
         try {
-            return chatCompletionRaw(messages, jsonMode);
+            return chatCompletionRaw(messages, jsonMode, extra);
         } finally {
             REQUEST_MS.addAndGet(System.currentTimeMillis() - t0);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private String chatCompletionRaw(JSONArray messages, boolean jsonMode) throws Exception {
+    private String chatCompletionRaw(JSONArray messages, boolean jsonMode, JSONObject extra) throws Exception {
         JSONObject body = new JSONObject();
+        if (extra != null) {
+            body.putAll(extra);
+        }
         body.put("model", model);
         body.put("messages", messages);
         body.put("stream", false);

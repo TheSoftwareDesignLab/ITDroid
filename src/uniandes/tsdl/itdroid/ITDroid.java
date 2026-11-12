@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,9 +25,12 @@ import org.json.simple.parser.JSONParser;
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.AppCode;
+import uniandes.tsdl.itdroid.helper.CodeLiteralExtractor;
 import uniandes.tsdl.itdroid.helper.ConsumerRules;
 import uniandes.tsdl.itdroid.helper.ExplorationException;
 import uniandes.tsdl.itdroid.helper.ExplorationHelper;
+import uniandes.tsdl.itdroid.helper.HardcodedLog;
+import uniandes.tsdl.itdroid.helper.HardcodedPolicy;
 import uniandes.tsdl.itdroid.helper.HardcodedStringFinder;
 import uniandes.tsdl.itdroid.helper.Helper;
 import uniandes.tsdl.itdroid.helper.ITDroidException;
@@ -42,6 +46,7 @@ import uniandes.tsdl.itdroid.helper.SmaliPatcher;
 import uniandes.tsdl.itdroid.helper.SmaliScan;
 import uniandes.tsdl.itdroid.helper.StringInventory;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
+import uniandes.tsdl.itdroid.helper.XmlLiteralExtractor;
 import uniandes.tsdl.itdroid.helper.XmlLiteralFinder;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
@@ -85,6 +90,10 @@ public class ITDroid {
 	static boolean graphDumps = false;
 	/** --static: decode and analyse only (hardcoded strings, inventory); no device, no LLM. */
 	static boolean staticOnly = false;
+	/** Which hardcoded literals of the code are translated (config key hardcoded.translate). */
+	static HardcodedPolicy hardcodedPolicy = HardcodedPolicy.DEFAULT;
+	/** Move the translated literals of the code to string resources (config key hardcoded.extractCode). */
+	static boolean extractCode = true;
 
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
@@ -205,6 +214,8 @@ public class ITDroid {
 			reuseInventory = cfg.isReuseInventory();
 			graphDumps = cfg.isGraphDumps();
 			AppCode.setExtraRoots(cfg.getCodePackages());
+			hardcodedPolicy = cfg.getHardcodedPolicy();
+			extractCode = cfg.isExtractCode();
 		} else if (staticOnly && args.length == 5) {
 			// --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>
 			apkPath = args[0];
@@ -324,6 +335,13 @@ public class ITDroid {
 		JSONObject appInfo = Preflight.describeDecodedApp(decodedFolderPath);
 		readVersionInfo(decodedFolderPath, appInfo);
 		preflight.put("app", appInfo);
+		// With another app's package nothing fails at once: the launch finds no activity and the
+		// explorer ends up tapping the launcher. Say what is wrong while it is cheap.
+		String realPackage = String.valueOf(appInfo.get("package"));
+		if (!realPackage.isEmpty() && !realPackage.equals(appName)) {
+			throw new ITDroidException("PREFLIGHT: the package given is '" + appName + "' but the package of this APK is '"
+					+ realPackage + "'. Pass the APK's own package (appPackage in the config file).");
+		}
 
 		// Hardcoded strings: one scan of the app's smali plus its XML, shared by hcs.txt, the inventory
 		// and the patcher.
@@ -344,7 +362,8 @@ public class ITDroid {
 		// Identify translated and notTranslated languages
 		String[] lngs = lngBundle.getSelectedLanguagesAsArray();
 		String[] stringFiles = buildStringPaths(lngs);
-		XMLComparator xmlc = new XMLComparator(stringFiles, alpha, langsDir);
+		StringInventory.AppName appNameInfo = StringInventory.appName(decodedFolderPath);
+		XMLComparator xmlc = new XMLComparator(stringFiles, alpha, langsDir, appNameInfo.resources);
 
 		ArrayList<String> translatedFiles = xmlc.getUsefull();
 		System.out.println("Your application is translated to the following languages:");
@@ -378,17 +397,42 @@ public class ITDroid {
 		// Every string of the app, with where it came from. Translations are recorded into it as
 		// they happen; a previous inventory in the same output folder seeds the memory.
 		NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(langsDir);
-		StringInventory inventory = StringInventory.collect(decodedFolderPath, appName, dictionary, hits, xmlLiterals);
-		inventory.setSourceLanguage(sourceLang);
-		Path inventoryFile = Paths.get(outputPath, "strings_inventory.json");
-		if (reuseInventory) {
-			int reused = inventory.loadPreviousTranslations(inventoryFile);
-			if (reused > 0) {
-				System.out.println("Reusing " + reused + " translations from the previous " + inventoryFile.getFileName());
-			}
+		// The text written in the XML moves to string resources (the app shows the same text in its
+		// source language), so it is translated like any other resource. Done after the languages
+		// were compared: the new strings are ITDroid's, not strings a language lacks.
+		XmlLiteralExtractor.Extraction extraction = XmlLiteralExtractor.extract(decodedFolderPath, xmlLiterals, appNameInfo.texts);
+		if (!extraction.names().isEmpty()) {
+			System.out.println("Moved " + extraction.names().size() + " literals of the XML (" + extraction.attributes
+					+ " attributes) to string resources named " + XmlLiteralExtractor.PREFIX + "N");
 		}
-		inventory.save(inventoryFile);
-		report.put("inventory", inventory.summary());
+		for (String problem : extraction.problems) {
+			System.out.println("WARNING: XML literals not extracted from " + problem);
+		}
+		// The literals of the code that are translated move to resources as well. Each one stays in
+		// the code and is handed to a small class added to the app, which returns its resource in
+		// the language the app runs in; so the single internationalized APK shows them translated.
+		// What cannot be moved is patched per language.
+		CodeLiteralExtractor.Extraction codeExtraction = CodeLiteralExtractor.none();
+		JSONObject codeExtractionInfo = new JSONObject();
+		codeExtractionInfo.put("enabled", extractCode);
+		if (extractCode) {
+			codeExtraction = CodeLiteralExtractor.extract(decodedFolderPath,
+					StringInventory.placesToTranslate(decodedFolderPath, hits, hardcodedPolicy),
+					CodeLiteralExtractor.fullDexFolders(apkPath));
+			if (codeExtraction.active()) {
+				System.out.println("Moved " + codeExtraction.names().size() + " literals of the code (" + codeExtraction.places.size()
+						+ " places) to string resources named " + CodeLiteralExtractor.PREFIX + "<hash>");
+			}
+			for (String problem : codeExtraction.problems) {
+				System.out.println("NOTE: code literal not moved to a resource: " + problem);
+			}
+			codeExtractionInfo.put("literals", (long) codeExtraction.names().size());
+			codeExtractionInfo.put("places", (long) codeExtraction.places.size());
+		}
+		report.put("codeExtraction", codeExtractionInfo);
+		Path inventoryFile = Paths.get(outputPath, "strings_inventory.json");
+		StringInventory inventory = collectInventory(decodedFolderPath, appName, dictionary, hits, xmlLiterals, extraction,
+				codeExtraction, sourceLang, inventoryFile);
 		if (sourceLang != null && !sourceLang.isEmpty()) {
 			report.put("dfltLang", sourceLang);
 		}
@@ -436,7 +480,7 @@ public class ITDroid {
 		LLMTranslator llm = new LLMTranslator(langsDir, inventory);
 		explorerOptions.llm = llm;
 		explorerOptions.language = sourceLang;
-		SmaliPatcher patcher = new SmaliPatcher(scan);
+		SmaliPatcher patcher = new SmaliPatcher(decodedFolderPath);
 
 		// Static facts of this run for the report: host, device, translation engine, configuration.
 		JSONObject config = new JSONObject();
@@ -454,15 +498,44 @@ public class ITDroid {
 		config.put("launchTest", launchTest);
 		config.put("reuseInventory", reuseInventory);
 		config.put("graphDumps", graphDumps);
+		config.put("hardcodedTranslate", hardcodedPolicy.key);
 		config.put("emulator", emulatorName);
 		report.put("environment", RunMetrics.environment(device, llm.settings(), config));
 		writeReport();
 
 		// ------------------------------------------------------------------ source build + exploration
-		// Built from the pristine decode (no translations, no patches). If apktool cannot rebuild the
-		// app, nothing else can work: stop here with the reason.
+		// Built from the decode with no translation in it: the code as it was, except that the
+		// literals moved to resources are read through the class ITDroid added. If apktool cannot
+		// rebuild the app, nothing else can work: stop here with the reason.
 		metrics.begin("build:" + sourceLang);
 		String sourceApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+		if (codeExtraction.active()) {
+			// The app now runs code ITDroid added to it. If it does not build or does not start like
+			// that, the literals go back to the code and are patched per language instead.
+			String problem = null;
+			if (sourceApk == null || sourceApk.isEmpty()) {
+				problem = "apktool could not rebuild the app";
+			} else {
+				String reason = AdbExplorer.checkLaunch(serial, appName, sourceApk, "the app with its code literals read from resources");
+				if (reason != null) {
+					problem = reason;
+				}
+			}
+			if (problem != null) {
+				System.out.println("WARNING: with the literals of the code moved to resources, " + problem
+						+ ". Putting them back in the code; they will be patched per language.");
+				codeExtraction.revert();
+				codeExtraction = CodeLiteralExtractor.none();
+				codeExtractionInfo.put("reverted", problem);
+				codeExtractionInfo.put("literals", 0L);
+				codeExtractionInfo.put("places", 0L);
+				inventory = collectInventory(decodedFolderPath, appName, dictionary, hits, xmlLiterals, extraction,
+						codeExtraction, sourceLang, inventoryFile);
+				llm = new LLMTranslator(langsDir, inventory);
+				explorerOptions.llm = llm;
+				sourceApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+			}
+		}
 		metrics.end("build:" + sourceLang);
 		if (sourceApk == null || sourceApk.isEmpty()) {
 			throw new ITDroidException("apktool could not rebuild the app, so ITDroid cannot process it "
@@ -487,6 +560,11 @@ public class ITDroid {
 		lngsResults.put(deftLanguage, dfltLangJSON);
 		graphs.put(deftLanguage, defltGraph);
 		String scriptPath = resultFolderPath + File.separator + AdbExplorer.SCRIPT_FILE;
+		List<String> sourceCrashes = crashesIn(Paths.get(scriptPath));
+		if (!sourceCrashes.isEmpty()) {
+			dfltLangJSON.put("crashes", jsonArray(sourceCrashes));
+			System.out.println("NOTE: the original app crashed while it was explored: " + sourceCrashes);
+		}
 		writeReport();
 
 		// Truncate any ipfs.csv from a previous run and write a fresh header. The per-language
@@ -504,7 +582,7 @@ public class ITDroid {
 				continue;
 			}
 			processLanguage(lang, true, sourceLang, stringFiles[0], llm, inventory, inventoryFile, patcher, extraPath, appName,
-					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath);
+					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction);
 		}
 		System.out.println("Inspecting non translated versions");
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
@@ -514,15 +592,43 @@ public class ITDroid {
 				continue;
 			}
 			processLanguage(lang, false, sourceLang, stringFiles[0], llm, inventory, inventoryFile, patcher, extraPath, appName,
-					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath);
+					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction);
 		}
 
 		// ------------------------------------------------------------------ close
-		// The per-language builds overwrote the default-named APK. Restore it from the source build
-		// (a plain copy, cannot fail like a rebuild) and leave the decoded smali pristine.
+		// The per-language builds overwrote the default-named APK. It becomes the internationalized
+		// APK: one build of the decoded app as it is now, with the pristine code, the resources of
+		// every language processed and the literals moved out of the XML. It follows the language of
+		// the device (or the per-app language) like any app; the hardcoded strings of the code are
+		// only translated in the per-language APKs. If it cannot be built, the source build is kept.
 		metrics.begin("close");
 		patcher.restoreOriginal();
-		Files.copy(sourceApkCopy, Paths.get(sourceApk), StandardCopyOption.REPLACE_EXISTING);
+		JSONObject i18nApk = new JSONObject();
+		JSONArray i18nLanguages = new JSONArray();
+		for (String code : lngs) {
+			if (Paths.get(decodedFolderPath, "res", "values-" + code, "strings.xml").toFile().isFile()) {
+				i18nLanguages.add(code);
+			}
+		}
+		i18nApk.put("languages", i18nLanguages);
+		String allLanguagesApk = null;
+		metrics.begin("build:all");
+		try {
+			allLanguagesApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+		} catch (Exception e) {
+			System.out.println("WARNING: building the internationalized APK failed: " + e.getMessage());
+		}
+		metrics.end("build:all");
+		if (allLanguagesApk == null || allLanguagesApk.isEmpty()) {
+			System.out.println("WARNING: the APK with every language could not be built; the default-named APK is the source build.");
+			Files.copy(sourceApkCopy, Paths.get(sourceApk), StandardCopyOption.REPLACE_EXISTING);
+			i18nApk.put("built", false);
+		} else {
+			i18nApk.put("built", true);
+			i18nApk.put("file", new File(allLanguagesApk).getName());
+			System.out.println("Internationalized APK (" + i18nLanguages + " besides " + sourceLang + "): " + allLanguagesApk);
+		}
+		report.put("internationalizedApk", i18nApk);
 
 		// Leave the device on the ORIGINAL app (the exact APK passed on the command line), never on a
 		// translated build.
@@ -543,7 +649,7 @@ public class ITDroid {
 	private static void processLanguage(String lang, boolean translated, String sourceLang, String defaultStringsXml,
 			LLMTranslator llm, StringInventory inventory, Path inventoryFile, SmaliPatcher patcher, String extraPath,
 			String appName, LanguageBundle lngBundle, JSONObject lngsResults, String deftLanguage, LayoutGraph defltGraph,
-			String scriptPath) {
+			String scriptPath, List<String> sourceCrashes, CodeLiteralExtractor.Extraction codeExtraction) {
 		System.out.println("Processing " + lang + " app version");
 		JSONObject langJson = new JSONObject();
 		langJson.put("lang", lngBundle.isLanguageSelected(lang) ? lngBundle.getBundle().getString(lang) : lang);
@@ -554,24 +660,35 @@ public class ITDroid {
 		RunMetrics metrics = RunMetrics.get();
 		try {
 			metrics.begin("translate:" + lang);
-			// 1. Resources: only when the developer did not ship this language.
-			if (!translated && !new File(defaultStringsXml).isFile()) {
+			// 1. Resources. A language the app does not ship is translated whole. One it ships is
+			// evaluated as the developer left it: only the strings ITDroid added to the app (the
+			// literals moved out of the XML) are filled in.
+			if (!new File(defaultStringsXml).isFile()) {
 				System.out.println("The app has no default strings.xml: there are no resources to translate, only hardcoded strings.");
 			} else if (!translated) {
 				System.out.println("We are going to translate your strings...");
 				new Translator(defaultStringsXml, sourceLang, lang).translate(llm);
 			} else {
 				System.out.println("Resources for " + lang + " already shipped by the app; only hardcoded strings are translated.");
+				if (!inventory.extractedResources().isEmpty()) {
+					llm.translate(defaultStringsXml, sourceLang, lang, inventory.extractedResources());
+				}
 			}
-			// 2. Hardcoded literals: translated from the inventory and patched into the smali.
+			// 2. Hardcoded literals of the code: translated from the inventory and patched place by
+			// place (only where the policy says the text is shown).
 			List<String> hardcoded = inventory.hardcodedTexts();
-			if (!hardcoded.isEmpty()) {
-				Map<String, String> translations = llm.translateUiLabels(hardcoded, sourceLang, lang);
-				writeHardcodedLog(outputPath, lang, translations);
-				patched = patcher.patch(translations);
-				System.out.println("Patched " + patched + " hardcoded strings for " + lang);
-			}
+			Map<String, String> translations = hardcoded.isEmpty() ? new LinkedHashMap<>()
+					: llm.translateUiLabels(hardcoded, sourceLang, lang);
+			List<SmaliPatcher.Patch> applied = patcher.patch(inventory.hardcodedPlaces(), translations, codeExtraction::currentLine);
+			patched = applied.size();
+			int moved = codeExtraction.places.size();
+			Path hardcodedCsv = Paths.get(outputPath, "hardcoded_" + lang + ".csv");
+			HardcodedLog.write(hardcodedCsv, inventory, lang, translations, applied, null);
+			System.out.println("Hardcoded strings of the code for " + lang + ": " + moved + " places read from resources, "
+					+ patched + " places patched");
 			langJson.put("patchedHardcoded", patched);
+			langJson.put("extractedCodeLiterals", (long) codeExtraction.names().size());
+			langJson.put("extractedXmlLiterals", (long) (inventory.extractedResources().size() - codeExtraction.names().size()));
 			inventory.save(inventoryFile);
 
 			// 3. Rebuild and sign this language's APK; the smali goes back to pristine either way.
@@ -593,25 +710,55 @@ public class ITDroid {
 
 			metrics.end("build:" + lang);
 			metrics.begin("replay:" + lang);
-			// 4. Install, replay the source path, uninstall. The hardcoded-string detector is heuristic:
-			// if the patched build crashes on launch (a translated literal was data after all), rebuild
-			// this language from the pristine smali, with the translated resources only, and replay that.
-			String resultFolder;
+			// 4. Install, replay the source path, uninstall. What is patched is chosen by a static scan:
+			// if the patched build does not start, or crashes where the original app did not, a
+			// translated literal was data after all. The language is then rebuilt from the pristine
+			// smali, with the translated resources only, and replayed again; report.json and the CSV
+			// say which literals were reverted and why.
+			String resultFolder = null;
+			String patchProblem = null;
 			try {
 				resultFolder = ExplorationHelper.replayLanguage(lang, outputPath, translated, apkForLang.toString(), appName, scriptPath, explorerOptions);
+				List<String> crashes = newCrashes(resultFolder, sourceCrashes);
+				if (!crashes.isEmpty()) {
+					langJson.put("crashes", jsonArray(crashes));
+					if (patched > 0 || moved > 0) {
+						patchProblem = "the app crashed during the replay: " + crashes.get(0);
+					}
+				}
 			} catch (ExplorationException e) {
-				if (patched == 0 || e.getMessage() == null || !e.getMessage().contains("did not reach the foreground")) {
+				if ((patched == 0 && moved == 0) || e.getMessage() == null || !e.getMessage().contains("did not reach the foreground")) {
 					throw e;
 				}
-				System.out.println("WARNING: the " + lang + " build with " + patched + " translated hardcoded strings did not start ("
-						+ e.getMessage() + "). Rebuilding it with the translated resources only.");
-				langJson.put("hardcodedFallback", "the build with translated hardcoded strings crashed on launch; evaluated with translated resources only: " + e.getMessage());
+				patchProblem = e.getMessage();
+			}
+			if (patchProblem != null) {
+				System.out.println("WARNING: the " + lang + " build with " + (patched + moved) + " translated places of hardcoded strings failed ("
+						+ patchProblem + "). Rebuilding it with the translated resources only.");
+				langJson.put("hardcodedFallback", "the build with translated hardcoded strings failed and was evaluated with translated resources only: " + patchProblem);
+				langJson.put("revertedHardcoded", patched + moved);
+				langJson.put("patchedHardcoded", 0);
+				HardcodedLog.write(hardcodedCsv, inventory, lang, translations, applied, patchProblem);
+				if (moved > 0) {
+					// the literals read from resources go back to the source text for this language only
+					File languageStrings = new File(new File(defaultStringsXml).getParentFile().getParentFile(),
+							"values-" + lang + File.separator + "strings.xml");
+					CodeLiteralExtractor.removeTranslations(languageStrings);
+				}
 				String plain = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
 				if (plain == null || plain.isEmpty()) {
 					throw new ExplorationException("apktool could not rebuild the " + lang + " version without hardcoded patches");
 				}
 				Files.copy(Paths.get(plain), apkForLang, StandardCopyOption.REPLACE_EXISTING);
 				resultFolder = ExplorationHelper.replayLanguage(lang, outputPath, translated, apkForLang.toString(), appName, scriptPath, explorerOptions);
+				List<String> again = newCrashes(resultFolder, sourceCrashes);
+				if (again.isEmpty()) {
+					langJson.remove("crashes");
+				} else {
+					// it crashes without the patches too: they were not the cause, and the crash stays on record
+					langJson.put("crashes", jsonArray(again));
+					langJson.put("hardcodedFallbackNote", "the build without the patches crashed as well: " + again.get(0));
+				}
 			}
 			System.out.println("The app has been inspected");
 			langJson.put("replay", readJson(Paths.get(resultFolder, AdbExplorer.REPLAY_REPORT_FILE)));
@@ -690,20 +837,53 @@ public class ITDroid {
 		System.out.println("  java -jar ITDroid.jar --reanalyze <folder> [--out <folder>]              recompute the comparison of stored evaluations");
 	}
 
-	/** Writes a reviewable CSV of the hardcoded strings and how they were translated. */
-	private static void writeHardcodedLog(String outputPath, String lang, Map<String, String> translations) throws IOException {
-		try (BufferedWriter w = new BufferedWriter(new FileWriter(outputPath + File.separator + "hardcoded_" + lang + ".csv"))) {
-			w.write("original;translated;changed");
-			w.newLine();
-			for (Map.Entry<String, String> e : translations.entrySet()) {
-				w.write(csv(e.getKey()) + ";" + csv(e.getValue()) + ";" + (!e.getKey().equals(e.getValue())));
-				w.newLine();
+	/**
+	 * Builds the inventory from the decoded app as it is now, seeds it with the translations of a
+	 * previous run, writes it and puts its counts in the report.
+	 */
+	@SuppressWarnings("unchecked")
+	private static StringInventory collectInventory(String decodedFolderPath, String appName, NotTranslatableStringsDictionary dictionary,
+			List<HardcodedStringFinder.Hit> hits, List<XmlLiteralFinder.Literal> xmlLiterals, XmlLiteralExtractor.Extraction extraction,
+			CodeLiteralExtractor.Extraction codeExtraction, String sourceLang, Path inventoryFile) throws IOException {
+		StringInventory inventory = StringInventory.collect(decodedFolderPath, appName, dictionary, hits, xmlLiterals,
+				hardcodedPolicy, extraction, codeExtraction);
+		inventory.setSourceLanguage(sourceLang);
+		if (reuseInventory) {
+			int reused = inventory.loadPreviousTranslations(inventoryFile);
+			if (reused > 0) {
+				System.out.println("Reusing " + reused + " translations from the previous " + inventoryFile.getFileName());
 			}
 		}
+		inventory.save(inventoryFile);
+		report.put("inventory", inventory.summary());
+		return inventory;
 	}
 
-	private static String csv(String s) {
-		return "\"" + s.replace("\"", "\"\"") + "\"";
+	/** The crashes recorded in an exploration script or a replay report (their "crashes" list); empty when none. */
+	private static List<String> crashesIn(Path jsonFile) {
+		List<String> out = new ArrayList<>();
+		Object parsed = readJson(jsonFile);
+		Object list = parsed instanceof JSONObject ? ((JSONObject) parsed).get("crashes") : null;
+		if (list instanceof JSONArray) {
+			for (Object o : (JSONArray) list) {
+				out.add(String.valueOf(o));
+			}
+		}
+		return out;
+	}
+
+	/** The crashes of a replay that the original app did not have while it was explored. */
+	private static List<String> newCrashes(String resultFolder, List<String> sourceCrashes) {
+		List<String> out = crashesIn(Paths.get(resultFolder, AdbExplorer.REPLAY_REPORT_FILE));
+		out.removeAll(sourceCrashes);
+		return out;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static JSONArray jsonArray(List<String> values) {
+		JSONArray a = new JSONArray();
+		a.addAll(values);
+		return a;
 	}
 
 	private static String[] buildStringPaths(String[] lngs) throws UnsupportedEncodingException {

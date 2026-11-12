@@ -54,7 +54,7 @@ public final class XmlLiteralFinder {
         }
     }
 
-    /** Attributes whose value is text for the user, whatever their namespace (android: or app:). */
+    /** Attributes whose value is text for the user, in the android: or app: namespace. */
     private static final Set<String> TEXT_ATTRIBUTES = Set.of("text", "hint", "contentDescription", "title", "subtitle",
             "summary", "summaryOn", "summaryOff", "label", "description", "dialogTitle", "dialogMessage",
             "positiveButtonText", "negativeButtonText", "textOn", "textOff", "queryHint", "tooltipText", "helperText",
@@ -70,9 +70,12 @@ public final class XmlLiteralFinder {
     private static final String[] LIBRARY_PREFIXES = {"abc_", "mtrl_", "m3_", "material_", "design_", "notification_template_",
             "notification_action", "select_dialog_", "support_simple_", "browser_actions_", "custom_dialog", "ime_",
             "preference_", "expand_button", "image_frame", "test_", "text_view_with_", "md_", "exo_", "leak_", "ucrop_",
-            "zxing_", "fingerprint_dialog_", "splits", "standalone_badge", "tooltip", "androidx_", "com_google_android_"};
+            "zxing_", "fingerprint_dialog_", "splits", "standalone_badge", "tooltip", "androidx_", "com_google_android_",
+            "glance_", "invalid_list_item", "bonuspack_"};
 
-    private static final String TOOLS_NAMESPACE = "http://schemas.android.com/tools";
+    /** The namespaces whose attributes the framework reads as text: android: and app: (res-auto). */
+    private static final Set<String> TEXT_NAMESPACES = Set.of("http://schemas.android.com/apk/res/android",
+            "http://schemas.android.com/apk/res-auto");
     private static final Pattern FORMAT_SPECIFIER = Pattern.compile("%(\\d+\\$)?[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z]");
 
     private XmlLiteralFinder() {
@@ -132,7 +135,8 @@ public final class XmlLiteralFinder {
 
     private static void walk(Element element, String relativePath, List<Literal> out) {
         for (Attribute attribute : element.getAttributes()) {
-            if (!TEXT_ATTRIBUTES.contains(attribute.getName()) || TOOLS_NAMESPACE.equals(attribute.getNamespaceURI())) {
+            // tools: is design-time only, and other namespaces (appfn:description...) are metadata, not interface
+            if (!TEXT_ATTRIBUTES.contains(attribute.getName()) || !TEXT_NAMESPACES.contains(attribute.getNamespaceURI())) {
                 continue;
             }
             String text = literalOf(attribute.getValue());

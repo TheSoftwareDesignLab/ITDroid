@@ -269,6 +269,10 @@
         ['Resource strings', num(inv.resources) + ' (' + num(inv.resourcesTranslatable) + ' translatable)'],
         ['Hardcoded strings', num(inv.hardcoded) + ' (' + num(inv.hardcodedTranslatable) + ' translatable)'],
         ['Hardcoded strings by use', hardcodedByUse(inv)],
+        ['Hardcoded translation policy', inv.hardcodedPolicy],
+        ['Code literals moved to resources', isNum(inv.hardcodedCodeExtracted) ? num(inv.hardcodedCodeExtracted) + ' (' + num(inv.hardcodedPlacesExtracted) + ' places)' + (r.codeExtraction && r.codeExtraction.reverted ? ', put back: ' + r.codeExtraction.reverted : '') : null],
+        ['Code literals patched per language', isNum(inv.hardcodedPlacesToPatch) ? num(inv.hardcodedPlacesToPatch) + ' places' : null],
+        ['XML literals moved to resources', isNum(inv.hardcodedXmlExtracted) ? num(inv.hardcodedXmlExtracted) : null],
         ['Unique texts sent to the translator', num(inv.uniqueTranslatableTexts)]])));
     }
   }
@@ -318,10 +322,12 @@
         badge(num(l.pairedStates) + ' paired', 'secondary'),
         rep.actions != null ? badge('replay ' + rep.reproduced + '/' + rep.actions, rep.reproduced === rep.actions ? 'success' : 'warning') : null,
         l.patchedHardcoded != null ? badge(l.patchedHardcoded + ' hardcoded patched', 'secondary') : null,
+        l.extractedCodeLiterals ? badge(l.extractedCodeLiterals + ' hardcoded read from resources', 'secondary') : null,
         l.error ? badge('error', 'danger') : null);
       const body = el('div');
       if (l.error) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, l.error));
-      if (l.hardcodedFallback) body.appendChild(el('div', { class: 'alert alert-warning py-2' }, l.hardcodedFallback));
+      if (l.hardcodedFallback) body.appendChild(el('div', { class: 'alert alert-warning py-2' }, l.hardcodedFallback + (isNum(l.revertedHardcoded) ? ' (' + l.revertedHardcoded + ' patched places reverted)' : '')));
+      if (Array.isArray(l.crashes) && l.crashes.length) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, 'The app crashed during the replay: ' + l.crashes.join(' | ')));
       if (rep.divergences && rep.divergences.length) {
         const ul = el('ul', { class: 'small mb-2' });
         for (const d of rep.divergences.slice(0, 12)) ul.appendChild(el('li', null, d));
@@ -579,10 +585,12 @@
     ul.appendChild(link('strings_inventory.json', 'strings_inventory.json (every string with its origin and translations)'));
     ul.appendChild(link('ipfs.csv', 'ipfs.csv (one row per IPF)'));
     ul.appendChild(link('hcs.txt', 'hcs.txt (hardcoded strings by class and method)'));
-    for (const c of targets) ul.appendChild(link('hardcoded_' + c + '.csv', 'hardcoded_' + c + '.csv (how each hardcoded string was translated)'));
+    for (const c of targets) ul.appendChild(link('hardcoded_' + c + '.csv', 'hardcoded_' + c + '.csv (what was done with each hardcoded string, place by place)'));
     root.appendChild(card('Reports', ul));
     const apks = el('ul', { class: 'mb-0' });
-    apks.appendChild(link(r.appName + '-aligned-debugSigned.apk', 'Default build (source language)'));
+    const i18n = r.internationalizedApk;
+    apks.appendChild(link(r.appName + '-aligned-debugSigned.apk', i18n && i18n.built
+      ? 'Internationalized build (one APK for the source language and ' + (i18n.languages || []).join(', ') + ')' : 'Default build (source language)'));
     for (const c of codes) apks.appendChild(link(r.appName + '-' + c + '-aligned-debugSigned.apk', c === dflt ? 'Source build (' + c + ')' : 'Translated build (' + c + ')'));
     root.appendChild(card('APKs built by ITDroid', apks));
     const ex = el('ul', { class: 'mb-0' });

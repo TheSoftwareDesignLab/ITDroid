@@ -1,85 +1,115 @@
 package uniandes.tsdl.itdroid.helper;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.ToIntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Rewrites hardcoded {@code const-string} literals in the app's smali so a per-language APK can
- * show translated hardcoded text. Caches the original files once and re-patches from that cache,
- * so it can be applied for each language independently. {@link #restoreOriginal()} undoes it.
+ * show translated hardcoded text. It patches places, not texts: the same literal can be a label in
+ * one method and a key in another, and only the places chosen for translation are touched. The
+ * files it changes are remembered, so each language starts from the original code and
+ * {@link #restoreOriginal()} puts everything back.
  */
 public class SmaliPatcher {
+
+	/** One literal rewritten: where, and what it was replaced with. */
+	public static final class Patch {
+		public final SmaliScan.Occurrence place;
+		public final String translation;
+
+		Patch(SmaliScan.Occurrence place, String translation) {
+			this.place = place;
+			this.translation = translation;
+		}
+	}
 
 	/** Captures (indent + const-string + register + opening quote) and the raw literal. */
 	private static final Pattern CONST_STRING =
 			Pattern.compile("^(\\s*const-string(?:/jumbo)?\\s+[vp]\\d+,\\s*\")(.*)\"$");
 
-	/** Original content of every file that may be patched, in the order of the scan. */
+	private final Path decoded;
+	/** Original content of the files patched so far, by file. Only files that were changed are here. */
 	private final Map<Path, List<String>> originals = new LinkedHashMap<>();
 
-	/** Locates the code of the app (see {@link AppCode}) and caches every smali file that contains a const-string. */
-	public SmaliPatcher(String decodedFolderPath, String packageName) throws IOException {
-		this(AppCode.smaliFiles(decodedFolderPath, packageName));
+	/** @param decodedFolderPath the decoded app the places of a {@link SmaliScan} refer to */
+	public SmaliPatcher(String decodedFolderPath) {
+		this.decoded = Paths.get(decodedFolderPath);
 	}
 
-	/** The same over the files of a scan already made, so detector and patcher see the same code. */
-	public SmaliPatcher(SmaliScan scan) throws IOException {
-		this(scan.files());
+	/**
+	 * Replaces the literal at each of the given places with the translation of its text. A place
+	 * whose text has no translation, or whose translation equals the source, is left alone, and so
+	 * is one whose line no longer holds that literal. The code is first put back as it was, so a
+	 * second call does not build on the patches of the previous language.
+	 *
+	 * @param places where to patch (file and line, from the scan)
+	 * @param translations source text to translated text
+	 * @return the patches applied, in the order of the places
+	 */
+	public List<Patch> patch(List<SmaliScan.Occurrence> places, Map<String, String> translations) throws IOException {
+		return patch(places, translations, place -> place.line);
 	}
 
-	private SmaliPatcher(List<File> smaliFiles) throws IOException {
-		for (File file : smaliFiles) {
-			List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
-			for (String l : lines) {
-				if (l.contains("const-string")) {
-					originals.put(file.toPath(), lines);
-					break;
-				}
+	/**
+	 * The same when the files changed since the scan in a known way (literals moved to resources
+	 * add lines): {@code currentLine} gives the line each place is on now.
+	 */
+	public List<Patch> patch(List<SmaliScan.Occurrence> places, Map<String, String> translations,
+			ToIntFunction<SmaliScan.Occurrence> currentLine) throws IOException {
+		restoreOriginal();
+		Map<String, List<SmaliScan.Occurrence>> byFile = new LinkedHashMap<>();
+		for (SmaliScan.Occurrence place : places) {
+			String translated = translations.get(place.text);
+			if (translated != null && !translated.equals(place.text)) {
+				byFile.computeIfAbsent(place.file, k -> new ArrayList<>()).add(place);
 			}
 		}
-	}
-
-	/** Replaces const-string literals found in {@code translations} (keyed by unescaped value). Returns the count. */
-	public int patch(Map<String, String> translations) throws IOException {
-		int count = 0;
-		for (Map.Entry<Path, List<String>> entry : originals.entrySet()) {
-			List<String> original = entry.getValue();
-			List<String> patched = new ArrayList<>(original.size());
+		List<Patch> applied = new ArrayList<>();
+		for (Map.Entry<String, List<SmaliScan.Occurrence>> f : byFile.entrySet()) {
+			Path file = decoded.resolve(f.getKey());
+			List<String> original = Files.readAllLines(file, StandardCharsets.UTF_8);
+			List<String> patched = new ArrayList<>(original);
 			boolean changed = false;
-			for (String line : original) {
-				Matcher m = CONST_STRING.matcher(line);
-				if (m.matches()) {
-					String literal = SmaliText.unescape(m.group(2));
-					String translated = translations.get(literal);
-					if (translated != null && !translated.equals(literal)) {
-						patched.add(m.group(1) + SmaliText.escape(translated) + "\"");
-						changed = true;
-						count++;
-						continue;
-					}
+			for (SmaliScan.Occurrence place : f.getValue()) {
+				int index = currentLine.applyAsInt(place) - 1;
+				Matcher m = index >= 0 && index < patched.size() ? CONST_STRING.matcher(patched.get(index)) : null;
+				if (m == null || !m.matches() || !SmaliText.unescape(m.group(2)).equals(place.text)) {
+					System.out.println("  WARNING: " + place.origin() + " no longer holds the literal found by the scan; not patched");
+					continue;
 				}
-				patched.add(line);
+				String translated = translations.get(place.text);
+				patched.set(index, m.group(1) + SmaliText.escape(translated) + "\"");
+				applied.add(new Patch(place, translated));
+				changed = true;
 			}
 			if (changed) {
-				Files.write(entry.getKey(), patched, StandardCharsets.UTF_8);
+				originals.put(file, original);
+				Files.write(file, patched, StandardCharsets.UTF_8);
 			}
 		}
-		return count;
+		return applied;
 	}
 
-	/** Restores every cached file to its original content. */
+	/** Puts back every file that was patched. */
 	public void restoreOriginal() throws IOException {
 		for (Map.Entry<Path, List<String>> entry : originals.entrySet()) {
 			Files.write(entry.getKey(), entry.getValue(), StandardCharsets.UTF_8);
 		}
+		originals.clear();
+	}
+
+	/** The files currently patched (empty after {@link #restoreOriginal()}). */
+	public List<Path> patchedFiles() {
+		return new ArrayList<>(originals.keySet());
 	}
 }

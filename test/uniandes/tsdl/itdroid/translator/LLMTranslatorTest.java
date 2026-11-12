@@ -248,18 +248,135 @@ class LLMTranslatorTest {
     }
 
     /**
-     * KNOWN GAP (TODO 2.3): the answer is trimmed, so a literal that is one piece of a concatenation
-     * loses the space that separated it from its neighbour ("Items: 2" + " of 3" becomes "2de 3").
-     * Expected after 2.3: " de 3 en tu carrito", with the leading space of the source.
+     * A literal is often one piece of a sentence built in the code ("Items: " + n + " of 3"): the
+     * translation takes the edge whitespace of the source, whatever the model returned, or the
+     * pieces would run together ("2de 3").
      */
     @Test
-    void knownGap_theEdgeSpacesOfTheSourceAreLost() {
+    void theEdgeSpacesOfTheSourceAreKept() {
         useTemplateStyle(true);
-        server.responder = r -> " de 3 en tu carrito";
+        server.responder = r -> r.text.contains("of 3") ? "de 3 en tu carrito" : "  Art\u00edculos:";
 
-        Map<String, String> out = translator().translateUiLabels(List.of(" of 3 in your cart"), "en", "es");
+        Map<String, String> out = translator().translateUiLabels(List.of(" of 3 in your cart", "Items: "), "en", "es");
 
-        assertEquals("de 3 en tu carrito", out.get(" of 3 in your cart"));
+        assertEquals(" de 3 en tu carrito", out.get(" of 3 in your cart"));
+        assertEquals("Art\u00edculos: ", out.get("Items: "), "the model's own edge whitespace is dropped");
+    }
+
+    @Test
+    void theBatchedStyleKeepsTheEdgeSpacesToo() {
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v.trim());
+
+        Map<String, String> out = translator().translateUiLabels(List.of(" of 3 in your cart", "Saved\n"), "en", "es");
+
+        assertEquals(" ES of 3 in your cart", out.get(" of 3 in your cart"));
+        assertEquals("ES Saved\n", out.get("Saved\n"));
+    }
+
+    @Test
+    void withEdgesPutsTheWhitespaceOfTheSourceAroundTheTranslation() {
+        assertEquals(" de 3 ", LLMTranslator.withEdges(" of 3 ", "de 3"));
+        assertEquals("Guardado", LLMTranslator.withEdges("Saved", "  Guardado \n"));
+        assertEquals("\n\tTexto", LLMTranslator.withEdges("\n\tText", "Texto"));
+        assertEquals("", LLMTranslator.withEdges(" x ", "   "), "an empty answer stays empty: it means no answer");
+        assertEquals("hola", LLMTranslator.withEdges("   ", "hola"), "a source that is only whitespace gives no edges");
+    }
+
+    // ------------------------------------------------------------------ values wrapped in quotes
+
+    /**
+     * The quotes around a whole resource value are Android syntax ("keep the whitespace inside";
+     * apktool also writes that way every string with an apostrophe), not text. The model gets what
+     * is inside and the answer is wrapped again; sent as they were, the quotes came back as part
+     * of the translation and the app showed them.
+     */
+    @Test
+    void aValueWrappedInQuotesIsTranslatedWithoutThem() {
+        useTemplateStyle(true);
+        server.responder = r -> r.text.replace("Here you can switch to", "Aqu\u00ed puedes cambiar a").replace("calendar", "calendario");
+
+        String source = "\"Here you can switch to %1$s's calendar.\"";
+        Map<String, String> out = translator().translateResourceTexts(List.of(source, "\" of 3 in your cart\""), "en", "es");
+
+        // the two requests travel in parallel: either may arrive first
+        List<String> sent = server.requests.stream().map(r -> r.text.trim()).toList();
+        assertTrue(sent.contains("Here you can switch to <ph0>'s calendar."), "no quotes in what the model sees: " + sent);
+        assertTrue(sent.stream().noneMatch(t -> t.contains("\"")), sent.toString());
+        assertEquals("\"Aqu\u00ed puedes cambiar a %1$s's calendario.\"", out.get(source));
+        assertEquals("\" of 3 in your cart\"", out.get("\" of 3 in your cart\""), "the edge space inside the quotes is kept");
+    }
+
+    @Test
+    void theBatchedStyleAlsoSendsWhatIsInsideTheQuotes() {
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> v.equals("Items: ") ? "\"Art\u00edculos:\"" : "ES " + v);
+
+        Map<String, String> out = translator().translateResourceTexts(List.of("\"Items: \"", "\"It's here\""), "en", "es");
+
+        assertEquals(List.of("Items: ", "It's here"), List.copyOf(server.requests.get(0).items.values()));
+        assertEquals("\"Art\u00edculos: \"", out.get("\"Items: \""), "quotes the model added on its own are not doubled");
+        assertEquals("\"ES It's here\"", out.get("\"It's here\""));
+    }
+
+    @Test
+    void isQuotedTellsAWrappedValueFromQuotedWords() {
+        assertTrue(LLMTranslator.isQuoted("\"It's here\""));
+        assertTrue(LLMTranslator.isQuoted("\" padded \""));
+        assertFalse(LLMTranslator.isQuoted("\"Yes\" or \"No\""), "two quoted words, not one wrapped value");
+        assertFalse(LLMTranslator.isQuoted("He said \"hi\""));
+        assertFalse(LLMTranslator.isQuoted("\"escaped end\\\""));
+        assertFalse(LLMTranslator.isQuoted("\""));
+        assertFalse(LLMTranslator.isQuoted("plain"));
+    }
+
+    @Test
+    void translateWritesAWrappedValueWithItsQuotesUnescaped() throws Exception {
+        Path app = tmp.resolve("shop");
+        FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
+        Path strings = app.resolve("res/values/strings.xml");
+        Files.writeString(strings, Files.readString(strings).replace("</resources>",
+                "    <string name=\"hint\">\"It's here\"</string>\n</resources>"));
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
+        StringInventory inventory = StringInventory.collect(app.toString(), "",
+                new NotTranslatableStringsDictionary(settingsDir.toString()));
+
+        new LLMTranslator(settingsDir.toString(), inventory).translate(strings.toString(), "en", "es");
+
+        String written = Files.readString(app.resolve("res/values-es/strings.xml"));
+        assertTrue(written.contains(">\"ES It\\'s here\"<"), written);
+    }
+
+    // ------------------------------------------------------------------ PLaMo Translate
+
+    @Test
+    void thePlamoStyleSendsTheOptionsAsTheSystemMessageAndTheBareText() {
+        System.setProperty("ITDROID_LLM_STYLE", "plamo");
+        System.clearProperty("ITDROID_LLM_MASK_PLACEHOLDERS");
+        server.responder = r -> r.user.replace("Hello", "Hola").replace("you have", "tienes").replace("items", "art\u00edculos");
+
+        Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s, you have %2$d items "), "en", "pt-rBR");
+
+        FakeLlmServer.Request request = server.requests.get(0);
+        assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=pt", request.system, "the bare language code, without Android's region suffix");
+        assertEquals("Hello <ph0>, you have <ph1> items", request.user, "masked by default, and without the edge space");
+        assertEquals(List.of("<|plamo:tag|>", "<|plamo:bos|>"), request.body.get("stop"));
+        assertEquals(1024L, request.body.get("max_tokens"));
+        assertEquals("Hola %1$s, tienes %2$d art\u00edculos ", out.get("Hello %1$s, you have %2$d items "));
+    }
+
+    @Test
+    void aModelCalledPlamoGetsThePlamoStyleWithoutBeingAsked() {
+        System.setProperty("ITDROID_LLM_STYLE", "auto");
+        System.setProperty("ITDROID_LLM_MODEL", "hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M");
+        System.clearProperty("ITDROID_LLM_MASK_PLACEHOLDERS");
+        server.responder = r -> "Guardado";
+
+        LLMTranslator translator = translator();
+        Map<String, String> out = translator.translateUiLabels(List.of("Saved"), "en", "es");
+
+        assertEquals("plamo", translator.settings().get("style"));
+        assertEquals(true, translator.settings().get("maskPlaceholders"));
+        assertEquals("Guardado", out.get("Saved"));
+        assertEquals("Saved", server.requests.get(0).user);
     }
 
     /**
@@ -348,7 +465,8 @@ class LLMTranslatorTest {
         for (Element e : root.getChildren()) {
             byName.put(e.getAttributeValue("name"), e);
         }
-        assertEquals("ES Shop", byName.get("app_name").getText());
+        assertNull(byName.get("app_name"), "the name of the app is not translated");
+        assertTrue(server.requests.stream().noneMatch(r -> r.items.containsValue("Shop")));
         assertEquals("ES Hello %1$s", byName.get("greeting").getText());
         assertEquals("Terms", byName.get("terms").getChild("b").getText(), "inline markup survives as markup");
         // plurals and arrays that lived in other files end up here too, item by item
@@ -367,7 +485,7 @@ class LLMTranslatorTest {
         FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
         Path values = Files.createDirectories(app.resolve("res/values-es"));
         Files.writeString(values.resolve("strings.xml"),
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <string name=\"app_name\">Tienda</string>\n</resources>\n");
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <string name=\"cart_title\">Tu carrito</string>\n</resources>\n");
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
         StringInventory inventory = StringInventory.collect(app.toString(), "com.example.shop.free",
                 new NotTranslatableStringsDictionary(settingsDir.toString()));
@@ -376,9 +494,35 @@ class LLMTranslatorTest {
                 .translate(app.resolve("res/values/strings.xml").toString(), "en", "es");
 
         Element root = new SAXBuilder().build(values.resolve("strings.xml").toFile()).getRootElement();
-        List<Element> appNames = root.getChildren().stream().filter(e -> "app_name".equals(e.getAttributeValue("name"))).toList();
-        assertEquals(1, appNames.size(), "a resource must not be defined twice");
-        assertEquals("Tienda", appNames.get(0).getText());
-        assertTrue(server.requests.stream().noneMatch(r -> r.items.containsValue("Shop")), "the developer's translation is not sent again");
+        List<Element> titles = root.getChildren().stream().filter(e -> "cart_title".equals(e.getAttributeValue("name"))).toList();
+        assertEquals(1, titles.size(), "a resource must not be defined twice");
+        assertEquals("Tu carrito", titles.get(0).getText());
+        assertTrue(server.requests.stream().noneMatch(r -> r.items.containsValue("Your cart")), "the developer's translation is not sent again");
+    }
+
+    /**
+     * A language the app already ships is evaluated as the developer left it: only the strings
+     * ITDroid added (the literals moved out of the XML) are written, never the ones it lacks.
+     */
+    @Test
+    void translateCanBeRestrictedToTheResourcesItdroidAdded() throws Exception {
+        Path app = tmp.resolve("shop");
+        FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
+        Path values = Files.createDirectories(app.resolve("res/values-es"));
+        Files.writeString(values.resolve("strings.xml"),
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <string name=\"cart_title\">Tu carrito</string>\n</resources>\n");
+        uniandes.tsdl.itdroid.helper.XmlLiteralExtractor.Extraction extraction = uniandes.tsdl.itdroid.helper.XmlLiteralExtractor.extract(
+                app.toString(), uniandes.tsdl.itdroid.helper.XmlLiteralFinder.find(app.toString()), java.util.Set.of("Shop"));
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
+        StringInventory inventory = StringInventory.collect(app.toString(), "",
+                new NotTranslatableStringsDictionary(settingsDir.toString()));
+
+        new LLMTranslator(settingsDir.toString(), inventory)
+                .translate(app.resolve("res/values/strings.xml").toString(), "en", "es", extraction.names());
+
+        Element root = new SAXBuilder().build(values.resolve("strings.xml").toFile()).getRootElement();
+        assertEquals(List.of("cart_title", "itdroid_hc_1", "itdroid_hc_2", "itdroid_hc_3"),
+                root.getChildren().stream().map(e -> e.getAttributeValue("name")).toList(), "greeting and terms stay missing, as the developer left them");
+        assertEquals("ES Add to cart", root.getChildren().get(1).getText());
     }
 }

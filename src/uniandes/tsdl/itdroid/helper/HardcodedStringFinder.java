@@ -40,7 +40,10 @@ public class HardcodedStringFinder {
 			return places.size();
 		}
 
-		/** True when at least one place hands the text to something that shows it. */
+		/**
+		 * True when at least one place hands the text to a call known to show it. A composable
+		 * function the rules do not know does not count: it may take the name of an icon or a key.
+		 */
 		public boolean shown() {
 			for (SmaliScan.Occurrence o : places) {
 				if (o.consumer == SmaliScan.Consumer.UI) {
@@ -60,7 +63,7 @@ public class HardcodedStringFinder {
 			return true;
 		}
 
-		/** What the literal is for: the interface when any place shows it, else its most frequent use. */
+		/** What the literal is for: the interface when any place shows it, a composable when one takes it, else its most frequent use. */
 		public SmaliScan.Consumer consumer() {
 			Map<SmaliScan.Consumer, Integer> count = new EnumMap<>(SmaliScan.Consumer.class);
 			for (SmaliScan.Occurrence o : places) {
@@ -68,6 +71,9 @@ public class HardcodedStringFinder {
 			}
 			if (count.containsKey(SmaliScan.Consumer.UI)) {
 				return SmaliScan.Consumer.UI;
+			}
+			if (count.containsKey(SmaliScan.Consumer.COMPOSABLE)) {
+				return SmaliScan.Consumer.COMPOSABLE;
 			}
 			SmaliScan.Consumer best = places.get(0).consumer;
 			for (Map.Entry<SmaliScan.Consumer, Integer> e : count.entrySet()) {   // enum order: stable on ties

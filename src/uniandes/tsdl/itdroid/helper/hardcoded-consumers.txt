@@ -12,6 +12,9 @@
 #
 # Categories
 #   ui           the text is shown (or spoken) to the user
+#   composable   the text goes to a composable function the table does not know: most likely
+#                drawn, but it can also be the name of an icon or a key, so a bare identifier
+#                ("search", "arrow_back") is not taken for text
 #   log          the text goes to a log
 #   exception    the text is the message of an exception
 #   data         the text is a key, a query, a pattern, a path, a comparison operand...
@@ -140,5 +143,5 @@ ui          ^Landroidx/compose/ui/text/AnnotatedString
 ui          ^Landroidx/compose/(material3?|foundation/text|ui/semantics)/
 ui          ;->set(Text|Hint|Error|Title|Subtitle|Message|Summary|SummaryOn|SummaryOff|ContentDescription|TooltipText|Label|PositiveButton|NegativeButton|NeutralButton|ContentTitle|ContentText|ContentInfo|Ticker|SubText|BigContentTitle|SummaryText|QueryHint|TextOn|TextOff|HelperText|PlaceholderText|PrefixText|SuffixText|DialogTitle|DialogMessage|PositiveButtonText|NegativeButtonText|Description|Header|Footer|EmptyText|StateDescription|PaneTitle|AccessibilityPaneTitle|ShortLabel|LongLabel|DisabledMessage)\(
 ui          ;->(bigText|setBigContentTitle|addAction|addLine|showText|showMessage|showToast|showSnackbar|showError|showDialog|toast|snackbar)\(
-# a composable function that receives the text: it draws it or passes it down to one that does
-ui          \([^)]*Landroidx/compose/runtime/Composer;[^)]*\)
+# any other composable function that receives the text: it draws it or passes it down to one that does
+composable  \([^)]*Landroidx/compose/runtime/Composer;[^)]*\)

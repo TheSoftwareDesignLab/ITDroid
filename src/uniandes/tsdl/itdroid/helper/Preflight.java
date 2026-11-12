@@ -86,8 +86,8 @@ public class Preflight {
     }
 
     /**
-     * Facts of the decoded app, read without a device: minSdk and targetSdk, whether it has a
-     * launchable activity, whether it is a Trusted Web Activity, whether it has a default
+     * Facts of the decoded app, read without a device: its package, minSdk and targetSdk, whether
+     * it has a launchable activity, whether it is a Trusted Web Activity, whether it has a default
      * strings.xml. Rejects nothing: the static analysis runs on any app that decodes.
      */
     @SuppressWarnings("unchecked")
@@ -101,6 +101,8 @@ public class Preflight {
         o.put("trustedWebActivity", manifestText.contains("android.support.customtabs.trusted")
                 || manifestText.contains("com.google.androidbrowserhelper"));
         o.put("launchable", hasLauncher(manifestText));
+        Matcher pkg = Pattern.compile("<manifest[^>]*\\spackage=\"([^\"]+)\"").matcher(manifestText);
+        o.put("package", pkg.find() ? pkg.group(1) : "");
 
         File strings = new File(decodedPath, "res" + File.separator + "values" + File.separator + "strings.xml");
         o.put("hasStrings", strings.isFile());

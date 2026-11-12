@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -96,9 +97,22 @@ class HardcodedDetectionTest {
     /** The launcher activity lives in {@code com.example.shop.ui}, outside the folder of the applicationId. */
     @Test
     void findsTheCodeOutsideTheApplicationIdFolder() {
-        assertTranslatable("Shop");
         assertTranslatable("Add to cart");
+        assertEquals("smali/com/example/shop/ui/MainActivity.smali:22", CODE.get("Add to cart").origin);
         assertEquals("smali/com/example/shop/ui/MainActivity.smali:16", CODE.get("Shop").origin);
+    }
+
+    /** "Shop" is the app's name (the label of the application): shown as a title, found, and left as written. */
+    @Test
+    void theNameOfTheAppIsNeverTranslated() {
+        assertKeptVerbatim("Shop", "application name");
+        assertEquals("ui", CODE.get("Shop").consumer);
+        StringInventory.Entry appName = inventory.resourceEntries().stream().filter(e -> e.name.equals("app_name")).findFirst().get();
+        assertEquals("application name", appName.skipReason);
+
+        StringInventory.AppName name = StringInventory.appName(Fixtures.decodedApp().toString());
+        assertEquals(java.util.Set.of("app_name"), name.resources);
+        assertEquals(java.util.Set.of("Shop"), name.texts);
     }
 
     @Test
@@ -120,6 +134,8 @@ class HardcodedDetectionTest {
                 premium.codePlaces.stream().map(p -> p.method).toList());
         assertEquals(List.of("return", "ui", "data"),
                 premium.codePlaces.stream().map(p -> p.consumer.label).toList());
+        // translated only where it is shown: the returned value and the operand of equals() stay
+        assertEquals(List.of("showPlan"), premium.patchPlaces.stream().map(p -> p.method).toList());
     }
 
     @Test
@@ -144,16 +160,53 @@ class HardcodedDetectionTest {
     }
 
     /**
-     * KNOWN GAP (TODO 2.1): a literal whose use the scan cannot tell is still translated. " LIMIT 0"
-     * is appended to a StringBuilder the method received; "Bearer " ends in a returned string.
-     * Expected after 2.1: neither is translated.
+     * By default only what the code is seen showing is translated. " LIMIT 0" is appended to a
+     * StringBuilder the method received and "Bearer " ends in a returned string: the scan cannot
+     * tell where they go, and translating either would change what the app does.
      */
     @Test
-    void knownGap_literalsOfUnknownUseAreStillTranslated() {
-        assertTranslatable(" LIMIT 0");
-        assertTranslatable("Bearer ");
-        assertEquals("concatenation", CODE.get(" LIMIT 0").consumer);
-        assertEquals("return", CODE.get("Bearer ").consumer);
+    void literalsOfUnknownUseAreNotTranslatedByDefault() {
+        assertEquals(HardcodedPolicy.UI, inventory.policy());
+        assertKeptVerbatim(" LIMIT 0", "use not known: part of a text whose destination is not known");
+        assertKeptVerbatim("Bearer ", "use not known: returned by the method");
+        assertEquals(List.of("Premium", "Welcome back", "Checkout now", "Saved", "Items: ", " of 3 in your cart", "Add to cart",
+                "Your cart is empty"), inventory.hardcodedTexts());
+        assertEquals(8, inventory.hardcodedPlaces().size(), "one place each: Premium only where it is shown");
+        assertTrue(inventory.hardcodedPlaces().stream().allMatch(p -> p.consumer == SmaliScan.Consumer.UI));
+    }
+
+    /** {@code hardcoded.translate=ui+unknown} also takes the places the scan cannot decide; never logs or data. */
+    @Test
+    void thePolicyCanIncludeTheLiteralsOfUnknownUse() throws Exception {
+        StringInventory wider = collect(HardcodedPolicy.UI_AND_UNKNOWN);
+
+        assertTrue(wider.hardcodedTexts().containsAll(List.of(" LIMIT 0", "Bearer ", "Welcome back")));
+        assertFalse(wider.hardcodedTexts().contains("onCreate called with saved state"), "a log message");
+        assertFalse(wider.hardcodedTexts().contains("Last Sync"), "a preference key");
+        assertFalse(wider.hardcodedTexts().contains("Shop"), "the app's name, whatever the policy");
+        StringInventory.Entry premium = wider.entries().stream().filter(e -> e.text.equals("Premium")).findFirst().get();
+        assertEquals(List.of("planName", "showPlan"), premium.patchPlaces.stream().map(p -> p.method).toList(),
+                "the returned value and the label, not the operand of equals()");
+    }
+
+    /** {@code hardcoded.translate=all} is what ITDroid did before uses were looked at; the shapes of data still apply. */
+    @Test
+    void thePolicyAllTranslatesEveryUseButNotWhatHasTheShapeOfData() throws Exception {
+        StringInventory all = collect(HardcodedPolicy.ALL);
+
+        assertTrue(all.hardcodedTexts().containsAll(List.of("onCreate called with saved state", "Cart must not be empty", "Last Sync")));
+        assertFalse(all.hardcodedTexts().contains("SELECT * FROM cart WHERE id = ?"));
+        assertFalse(all.hardcodedTexts().contains("FreeActivity"));
+        assertEquals(HardcodedPolicy.ALL, HardcodedPolicy.parse(" ALL "));
+        assertEquals(HardcodedPolicy.UI_AND_UNKNOWN, HardcodedPolicy.parse("ui+unknown"));
+        assertEquals(HardcodedPolicy.UI, HardcodedPolicy.parse(""));
+        assertThrows(IllegalArgumentException.class, () -> HardcodedPolicy.parse("everything"));
+    }
+
+    private static StringInventory collect(HardcodedPolicy policy) throws Exception {
+        String app = Fixtures.decodedApp().toString();
+        return StringInventory.collect(app, APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
+                HardcodedStringFinder.hits(SmaliScan.scan(app, APPLICATION_ID)), XmlLiteralFinder.find(app), policy, null);
     }
 
     // ------------------------------------------------------------------ the XML
@@ -169,11 +222,11 @@ class HardcodedDetectionTest {
     }
 
     /**
-     * KNOWN GAP (TODO 2.4): the literals of the XML are listed but not translated; they will be once
-     * they are extracted to resources. Expected after 2.4: translatable.
+     * A literal of the XML is translated through the resource it is moved to (see
+     * {@code XmlLiteralExtractorTest}); in an inventory made without extracting, it is only listed.
      */
     @Test
-    void knownGap_textWrittenInLayoutsIsListedButNotTranslated() {
+    void textWrittenInLayoutsIsOnlyListedUntilItIsExtracted() {
         assertFalse(XML.get("Coupon code").translatable);
         assertEquals("XML literal (not extracted to a resource)", XML.get("Coupon code").skipReason);
         assertFalse(inventory.hardcodedTexts().contains("Coupon code"));
@@ -192,7 +245,10 @@ class HardcodedDetectionTest {
         assertEquals(17L, summary.get("hardcodedCode"));
         assertEquals(3L, summary.get("hardcodedXml"));
         assertEquals(22L, summary.get("hardcodedOccurrences"), "Premium is in three places");
-        assertEquals(11L, summary.get("hardcodedTranslatable"));
+        assertEquals(8L, summary.get("hardcodedTranslatable"));
+        assertEquals(8L, summary.get("hardcodedPlacesToPatch"));
+        assertEquals(0L, summary.get("hardcodedXmlExtracted"));
+        assertEquals("ui", summary.get("hardcodedPolicy"));
         assertEquals(CODE.size() + XML.size(), reported);
 
         JSONObject byConsumer = (JSONObject) summary.get("hardcodedByConsumer");
@@ -264,6 +320,8 @@ class HardcodedDetectionTest {
         assertEquals("showPlan", shown.get("method"));
         assertEquals("ui", shown.get("consumer"));
         assertEquals("Landroid/widget/TextView;->setText", shown.get("via"));
+        assertEquals(true, shown.get("translated"));
+        assertEquals(false, ((JSONObject) ((JSONArray) premium.get("places")).get(2)).get("translated"), "the operand of equals()");
 
         assertEquals("hardcoded-xml", coupon.get("kind"));
         JSONObject place = (JSONObject) ((JSONArray) coupon.get("places")).get(0);
@@ -305,9 +363,11 @@ class HardcodedDetectionTest {
         assertTrue(Files.size(results.resolve("hcs.txt")) > 0);
         assertEquals(0L, withoutResources.summary().get("resources"));
         assertEquals(20L, withoutResources.summary().get("hardcoded"));
-        assertEquals(inventory.hardcodedTexts(), withoutResources.hardcodedTexts());
+        // without resources the label of the application cannot be resolved, so "Shop" is one more label
+        assertTrue(withoutResources.hardcodedTexts().containsAll(inventory.hardcodedTexts()));
 
         JSONObject facts = Preflight.describeDecodedApp(app.toString());
+        assertEquals("com.example.shop.free", facts.get("package"), "the package the run is checked against");
         assertEquals(false, facts.get("hasStrings"));
         assertEquals(true, facts.get("launchable"));
         Preflight.checkDecodedApp(facts, 34);   // accepted: no exception

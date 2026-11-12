@@ -103,6 +103,9 @@ class XmlLiteralFinderTest {
                 + "  <TextView android:text=\"@{viewModel.title}\" />\n"
                 + "  <TextView tools:text=\"Preview only\" />\n"
                 + "  <TextView android:tag=\"not text\" android:text=\"\\@home\" />\n</LinearLayout>\n");
+        write("res/xml/app_metadata.xml", "<AppFunctionAppMetadata xmlns:appfn=\"http://schemas.android.com/apk/res-appfn\" "
+                + "appfn:description=\"Notes for an assistant, not interface text\" />\n");
+        write("res/layout/glance_invalid_list_item.xml", "<LinearLayout " + ANDROID + "><TextView android:text=\"Invalid list item requested\" /></LinearLayout>\n");
         write("res/layout/abc_action_menu_item_layout.xml", "<LinearLayout " + ANDROID + "><TextView android:text=\"From AppCompat\" /></LinearLayout>\n");
         write("res/layout/mtrl_picker_header_dialog.xml", "<LinearLayout " + ANDROID + "><TextView android:text=\"From Material\" /></LinearLayout>\n");
         write("res/drawable/shape.xml", "<shape " + ANDROID + " android:label=\"Not a screen\" />\n");

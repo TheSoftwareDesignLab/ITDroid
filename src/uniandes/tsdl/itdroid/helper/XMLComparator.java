@@ -73,6 +73,14 @@ public class XMLComparator {
 	 * @param directory settings folder, where the dictionary of not-translatable strings is
 	 */
 	public XMLComparator(String[] xmls, Integer alpha, String directory) {
+		this(xmls, alpha, directory, Set.of());
+	}
+
+	/**
+	 * @param neverMissing names of default strings no language is expected to define: the name of
+	 *        the app, which is not translated
+	 */
+	public XMLComparator(String[] xmls, Integer alpha, String directory, Set<String> neverMissing) {
 		if (xmls == null || xmls.length == 0) {
 			return;
 		}
@@ -84,6 +92,7 @@ public class XMLComparator {
 			File defaultFile = new File(xmls[0]);
 			hasDefault = defaultFile.isFile();
 			Set<String> originalStrings = hasDefault ? names(defaultFile, dictionary, true) : new LinkedHashSet<>();
+			originalStrings.removeAll(neverMissing);
 			defaultStrings = originalStrings.size();
 			for (int i = 1; i < xmls.length; i++) {
 				File file = new File(xmls[i]);

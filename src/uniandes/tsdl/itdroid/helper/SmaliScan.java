@@ -29,6 +29,7 @@ public final class SmaliScan {
     /** What becomes of a literal. */
     public enum Consumer {
         UI("ui", "shown to the user"),
+        COMPOSABLE("composable", "passed to a composable function"),
         LOG("log", "log message"),
         EXCEPTION("exception", "exception message"),
         DATA("data", "used as data (key, query, pattern, comparison)"),

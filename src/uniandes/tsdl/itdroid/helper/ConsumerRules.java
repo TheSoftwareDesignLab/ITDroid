@@ -25,7 +25,7 @@ public final class ConsumerRules {
 
     /** What a rule says about a callee. */
     public enum Kind {
-        UI, LOG, EXCEPTION, DATA, COMPILER, BUILDER, PASSTHROUGH
+        UI, COMPOSABLE, LOG, EXCEPTION, DATA, COMPILER, BUILDER, PASSTHROUGH
     }
 
     private static final class Rule {
