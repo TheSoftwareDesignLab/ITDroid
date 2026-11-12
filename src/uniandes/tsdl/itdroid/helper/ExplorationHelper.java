@@ -8,53 +8,59 @@ import org.apache.commons.io.FileUtils;
 
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 
-/** Runs the modern adb explorer per app version and returns its result folder. */
+/** Runs the adb explorer per app version and returns its result folder. */
 public class ExplorationHelper {
 
-	/** UI states captured per app version. */
-	private static final int MAX_STATES = 5;
-
-	/** Installs, sets the per-app locale, explores via adb and writes {@code result.json}. */
-	private static void explore(String appName, String apkLocation, String outputFolder, String language) throws ExplorationException {
+	/** Explores the SOURCE-language build with the recording DFS; writes result.json and the replay script. */
+	public static String exploreSource(String language, String outputFolder, boolean translated, String apkLocation,
+			String appName, AdbExplorer.Options options) throws ExplorationException {
 		try {
+			File folder = stateFolder(outputFolder, translated, language);
 			String serial = AdbExplorer.resolveSerial();
 			System.out.println("Exploring '" + appName + "' on device " + serial + " with locale '" + language + "'");
-			new AdbExplorer(serial, appName, apkLocation, outputFolder, language, MAX_STATES).explore();
+			new AdbExplorer(serial, appName, apkLocation, folder.getAbsolutePath(), language, options).explore();
+			return folder.getCanonicalPath();
 		} catch (Exception e) {
-			// Wrap every failure in ExplorationException so the caller can record it per language and
-			// keep going, instead of letting an IOException abort the whole multi-language run.
-			// Fall back to the exception type when there is no message (e.g. a bare NPE) so the log
-			// never reads "Exploration failed: null".
-			String detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-			throw new ExplorationException("Exploration failed: " + detail, e);
+			throw wrap(language, e);
 		}
 	}
 
-	/** Explores the app in its default (source) language. */
-	public static String exploreDefaultLanguage(String language, String outputFolder, boolean translated, String apkLocation, String appName) throws ExplorationException {
-		return runExploration(language, outputFolder, translated, apkLocation, appName);
-	}
-
-	/** Explores a translated language version of the app. */
-	public static String exploreLanguageVersion(String language, String outputFolder, boolean translated, String apkLocation, String appName) throws ExplorationException {
-		return runExploration(language, outputFolder, translated, apkLocation, appName);
-	}
-
-	private static String runExploration(String language, String outputFolder, boolean translated, String apkLocation, String appName) throws ExplorationException {
+	/** Explores a translated build by replaying the source script, so its states pair 1:1 with the source graph. */
+	public static String replayLanguage(String language, String outputFolder, boolean translated, String apkLocation,
+			String appName, String scriptPath, AdbExplorer.Options options) throws ExplorationException {
 		try {
-			File tempFolder = stateFolder(outputFolder, translated, language);
-			explore(appName, apkLocation, tempFolder.getAbsolutePath(), language);
-			return tempFolder.getCanonicalPath();
-		} catch (IOException e) {
-			throw new ExplorationException("Could not prepare the exploration output folder for '" + language + "': " + e.getMessage(), e);
+			File folder = stateFolder(outputFolder, translated, language);
+			String serial = AdbExplorer.resolveSerial();
+			System.out.println("Exploring '" + appName + "' on device " + serial + " with locale '" + language + "' (replaying the source path)");
+			new AdbExplorer(serial, appName, apkLocation, folder.getAbsolutePath(), language, options).replay(scriptPath);
+			return folder.getCanonicalPath();
+		} catch (Exception e) {
+			throw wrap(language, e);
 		}
+	}
+
+	/**
+	 * Wraps every failure in ExplorationException so the caller can record it per language and keep
+	 * going, instead of letting an IOException abort the whole multi-language run. Falls back to the
+	 * exception type when there is no message (e.g. a bare NPE) so the log never reads "null".
+	 */
+	private static ExplorationException wrap(String language, Exception e) {
+		if (e instanceof ExplorationException) {
+			return (ExplorationException) e;
+		}
+		String detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+		return new ExplorationException("Exploration failed for '" + language + "': " + detail, e);
 	}
 
 	/** Fresh per-language output folder under the run's results directory. */
 	private static File stateFolder(String outputFolder, boolean translated, String language) throws IOException {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
-		File tempFolder = new File(Paths.get(decodedPath, outputFolder,
-				translated ? "trnsResults" : "noTrnsResults", language).toAbsolutePath().toString());
+		// resolve(), not Paths.get(a, b): Paths.get JOINS its arguments, so an ABSOLUTE outputFolder
+		// would be appended to the working directory ("C:\work\C:/out") and throw InvalidPathException
+		// on Windows. Path.resolve returns the operand unchanged when it is already absolute.
+		File tempFolder = new File(Paths.get(decodedPath).resolve(outputFolder)
+				.resolve(translated ? "trnsResults" : "noTrnsResults").resolve(language)
+				.toAbsolutePath().toString());
 		if (tempFolder.exists()) {
 			// File.delete() cannot remove a non-empty directory; wipe stale results recursively.
 			FileUtils.deleteDirectory(tempFolder);
