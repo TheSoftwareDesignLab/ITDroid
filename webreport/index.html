@@ -1,135 +1,63 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="">
-  <meta name="author" content="{{ site.authors }}">
-  <meta name="generator" content="Jekyll v{{ jekyll.version }}">
+  <meta name="description" content="ITDroid web report: results of the internationalization evaluations found in the results folder">
   <title>ITDroid Report</title>
-
-  <link rel="canonical" href="{{ site.url | append: page.url }}">
-
   <link rel="stylesheet" href="css/bootstrap.css">
   <link rel="stylesheet" href="css/style.css">
-
-  <style>
-    .bd-placeholder-img {
-      font-size: 1.125rem;
-      text-anchor: middle;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-    }
-
-    @media (min-width: 768px) {
-      .bd-placeholder-img-lg {
-        font-size: 3.5rem;
-      }
-    }
-  </style>
 </head>
-
 <body>
 
   <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
     <a class="navbar-brand" href="#">ITDroid Report</a>
-    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarsExampleDefault"
-      aria-controls="navbarsExampleDefault" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
-    <!-- <div class="collapse navbar-collapse" id="navbarsExampleDefault">
-    <ul class="navbar-nav mr-auto">
-      <li class="nav-item active">
-        <a class="nav-link" href="#">Home <span class="sr-only">(current)</span></a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="#">Link</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link disabled" href="#" tabindex="-1" aria-disabled="true">Disabled</a>
-      </li>
-      <li class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle" href="#" id="dropdown01" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Dropdown</a>
-        <div class="dropdown-menu" aria-labelledby="dropdown01">
-          <a class="dropdown-item" href="#">Action</a>
-          <a class="dropdown-item" href="#">Another action</a>
-          <a class="dropdown-item" href="#">Something else here</a>
-        </div>
-      </li>
-    </ul>
-    <form class="form-inline my-2 my-lg-0">
-      <input class="form-control mr-sm-2" type="text" placeholder="Search" aria-label="Search">
-      <button class="btn btn-secondary my-2 my-sm-0" type="submit">Search</button>
-    </form>
-  </div> -->
+    <span class="navbar-text small text-light" id="rootInfo"></span>
   </nav>
 
-  <main role="main" class="container" id="container">
+  <main role="main" class="container-fluid" id="container">
+    <div class="row">
 
-    <div class="row card">
-      <div class="card-header">
-        <h2>App Name: <span id="appName"></span></h2>
-      </div>
-      <div class="card-body">
-        <form>
-          <div class="form-group row">
-            <label for="staticNameAPK" class="col-sm-2 col-form-label">APK Name</label>
-            <div class="col-sm-4">
-              <input type="text" readonly class="form-control" id="staticNameAPK">
-            </div>
-            <label for="outputFolder" class="col-sm-2 col-form-label">Output Folder</label>
-            <div class="col-sm-4">
-              <input type="text" readonly class="form-control" id="outputFolder">
-            </div>
+      <aside class="col-md-3 col-lg-3 sidebar" id="sidebar">
+        <div class="input-group input-group-sm mb-2">
+          <input type="text" class="form-control" id="filter" placeholder="Filter apps" aria-label="Filter apps">
+          <div class="input-group-append">
+            <button class="btn btn-outline-secondary" type="button" id="reload" title="Reload the results folder">Reload</button>
           </div>
-          <div class="form-group row">
-            <label for="emulatorName" class="col-sm-2 col-form-label">Emulator Name</label>
-            <div class="col-sm-4">
-              <input type="text" readonly class="form-control" id="emulatorName">
-            </div>
-            <label for="alpha" class="col-sm-2 col-form-label">Alpha</label>
-            <div class="col-sm-4">
-              <input type="text" readonly class="form-control" id="alpha">
-            </div>
+        </div>
+        <div class="list-group" id="appList"></div>
+        <p class="text-muted small mt-2" id="appCount"></p>
+      </aside>
+
+      <section class="col-md-9 col-lg-9" id="detail">
+        <div id="welcome" class="card">
+          <div class="card-body">
+            <h4 class="card-title">Evaluated applications</h4>
+            <p class="card-text">Pick an application on the left to see its results: internationalization presentation
+              failures (IPFs) per language with the screens where they appear, the hardcoded strings found in the code,
+              how long each phase took and what the machine was doing, and the static facts of the run (APK, device,
+              translation model, configuration).</p>
+            <p class="card-text text-muted small">The list comes from the results folder served by
+              <code>java -jar target/ITDroid-1.0.0.jar --report [folder]</code>; every sub-folder with a
+              <code>report.json</code> is one evaluation.</p>
           </div>
-          <div class="form-group row">
-            <label for="dfltLang" class="col-sm-2 col-form-label">Default Language</label>
-            <div class="col-sm-4">
-              <input type="text" readonly class="form-control" id="dfltLang">
-            </div>
-          </div>
-        </form>
-      </div>
+        </div>
+        <div id="noServer" class="alert alert-warning d-none" role="alert">
+          <strong>This page needs the ITDroid report server.</strong> Browsers do not let a page opened from disk read the
+          results, so start it from the ITDroid folder and open the address it prints:
+          <pre class="mb-0 mt-2">java -jar target/ITDroid-1.0.0.jar --report           # serves results/
+java -jar target/ITDroid-1.0.0.jar --report path/to/folder   # any folder with evaluations</pre>
+        </div>
+        <div id="app" class="d-none">
+          <div class="d-flex flex-wrap align-items-baseline" id="appHeader"></div>
+          <ul class="nav nav-tabs mt-2" id="tabs" role="tablist"></ul>
+          <div class="tab-content pt-3" id="tabContent"></div>
+        </div>
+      </section>
+
     </div>
-    <div class="row card">
-        <div class="card-header">
-          <h2>Results</h2>
-        </div>
-        <div class="card-body">
-          <form>
-            <div class="form-group row">
-                <label for="hardcodedStrings" class="col-sm-2 col-form-label">Hardcoded Strings</label>
-                <div class="col-sm-4">
-                  <h3><input type="text" readonly class="form-control-plaintext" id="hardcodedStrings"></h3>
-                </div>
-                <label for="amIPFS" class="col-sm-2 col-form-label">Amount IPFs</label>
-              <div class="col-sm-4">
-                <h3><input type="text" readonly class="form-control-plaintext" id="amIPFS"></h3>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-</main><!-- /.container -->
-  <script src="https://code.jquery.com/jquery-3.4.1.min.js"
-    integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+  </main>
 
-  <script src="js/bootstrap.bundle.js"></script>
   <script src="js/main.js"></script>
 </body>
-
 </html>

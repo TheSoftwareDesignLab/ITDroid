@@ -1,7 +1,107 @@
 body {
-  padding-top: 5rem;
+  padding-top: 4.5rem;
+  background: #f5f6f8;
 }
-.starter-template {
-  padding: 3rem 1.5rem;
-  text-align: center;
+.sidebar {
+  position: sticky;
+  top: 4.5rem;
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+}
+.list-group-item.app-item {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+}
+.list-group-item.app-item .app-name {
+  font-weight: 600;
+}
+.list-group-item.app-item .app-meta {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+.list-group-item.active .app-meta {
+  color: #e9ecef;
+}
+#appHeader h3 {
+  margin-right: 0.75rem;
+  margin-bottom: 0;
+}
+.card {
+  margin-bottom: 1rem;
+}
+.kv th {
+  width: 32%;
+  color: #495057;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.kv td {
+  word-break: break-word;
+}
+.number {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.phase-bar {
+  height: 0.6rem;
+  background: #007bff;
+  border-radius: 0.2rem;
+}
+.phase-row td {
+  vertical-align: middle;
+}
+.shot-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.shot {
+  position: relative;
+  display: inline-block;
+  max-width: 320px;
+  border: 1px solid #dee2e6;
+  background: #fff;
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shot .box {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.shot .box.ipf {
+  border: 2px solid #dc3545;
+  background: rgba(220, 53, 69, 0.12);
+}
+.shot .box.rel {
+  border: 1px dashed #007bff;
+}
+.shot .box.missing {
+  border: 2px dotted #6c757d;
+}
+.shot-caption {
+  font-size: 0.8rem;
+  color: #495057;
+  padding: 0.25rem 0.5rem;
+  border-top: 1px solid #dee2e6;
+}
+.node-text {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: bottom;
+}
+.state-toggle {
+  cursor: pointer;
+}
+pre.small {
+  white-space: pre-wrap;
+}
+.badge-lang {
+  font-size: 0.75rem;
 }
