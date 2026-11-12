@@ -165,9 +165,10 @@ Los 19 IPFs son nodos cuyas relaciones espaciales cambian por el texto en españ
 
 # 8. Limitaciones y trabajo futuro (no bloqueante)
 
-- `State.compareTo` aún empareja estados por distancia de texto (funciona por umbral, pero un emparejamiento estructural sería más robusto).
-- Calidad de traducción: un modelo 3B comete deslices ocasionales (traduce nombres propios). Un modelo 7B o un ajuste de prompt lo mejora.
-- `MAX_STATES` (en `ExplorationHelper`) limita la cobertura por app; se puede subir.
+- El emparejamiento posicional con distancia de texto (`State.compareTo`) solo se usa cuando el grafo del idioma no viene de un replay; con replay el emparejamiento es por id reproducido.
+- Calidad de traducción: un modelo pequeño comete deslices ocasionales (traduce nombres propios). Un modelo mayor o un ajuste de prompt lo mejora.
+- `exploration.maxStates` limita la cobertura por app; se puede subir en el archivo de config.
+- Apps cuyas pantallas cambian entre arranques (diálogos de primer uso, avisos) pueden divergir en el replay; las divergencias quedan en `replay_report.json`.
 
 # 9. Cómo ejecutar
 
@@ -177,3 +178,61 @@ Los 19 IPFs son nodos cuyas relaciones espaciales cambian por el texto en españ
 4. `java -jar target/ITDroid-1.0.0.jar <APK> <paquete> extra/ . <alpha> <salida> <emulador> ["comando-de-arranque-del-LLM"]`. El 8º argumento es opcional: si se pasa, ITDroid arranca el servidor LLM y lo apaga al final; si se omite, el servidor debe estar ya corriendo.
 
 Ver README.md para el detalle de argumentos.
+
+# 10. Flujo de trabajo revisado tras la evaluación con apps reales
+
+Tras evaluar ITDroid sobre 30 apps open source de F-Droid (15 completaron, 15 no) se rediseñó el flujo. Ver ARCHITECTURE.md para el detalle de cada fase.
+
+# Preflight dentro de ITDroid
+
+Antes se descubría a mitad de la corrida que una app no se podía procesar (solo ARM, TWA, crash del original, sin `strings.xml`, apktool sin poder reconstruir). Ahora `Preflight` y `AdbExplorer.checkLaunch` lo comprueban al principio: dispositivo API 33+ y ABIs, código nativo del APK, manifiesto (actividad lanzable, no TWA, minSdk), `strings.xml`, y una prueba de arranque del APK original con permisos concedidos. Cada rechazo lleva el motivo con prefijo `PREFLIGHT:`, queda en `report.json` y el proceso sale con código 1. Si apktool no reconstruye la app intacta, se aborta con ese motivo en vez de seguir sin APK.
+
+# Inventario de strings con origen
+
+Nueva clase `StringInventory`: recorre `res/values/*.xml` y el smali y produce `strings_inventory.json` con cada texto, su origen (archivo, y línea en el smali), si se traduce y por qué no. Reglas de exclusión unificadas para recursos y hardcodeados: `translatable="false"`, diccionario, referencias `@`/`?`, sin letras, solo números y símbolos, texto no humano, contenedores de datos por nombre (`*_values`, `*_keys`, `*_ids`, `*_urls`...). El texto se guarda como XML interno, así se conservan `<b>` y `<xliff:g>` que antes se perdían. El inventario es memoria de traducción: el mismo texto se traduce una vez, y una corrida posterior en la misma carpeta de salida reutiliza lo ya traducido (`translation.reuseInventory`).
+
+# Traducción en lotes globales
+
+Bugs corregidos del traductor: los ítems de `<string-array>` que eran referencias `@string/x` se enviaban al LLM, que las "traducía" y aapt2 no compilaba (birthdayadapter, fossify.clock); cada `<plurals>`/`<string-array>` generaba una llamada al LLM por contenedor (suntimeswidget: cientos de llamadas y timeout). Ahora `LLMTranslator.translate` toma las entradas del inventario, traduce los textos únicos en lotes de 25 sin distinguir contenedores, copia los ítems no traducibles tal cual y omite los contenedores sin nada que traducir. Mide y registra cada tanda (`LLM: N resource texts -> es in X s (R requests, M reused)`).
+
+# Modelos de traducción especializados
+
+Los modelos entrenados solo para traducir (TranslateGemma de Google, Hy-MT2 de Tencent) no siguen instrucciones de formato: ignoran el JSON por lotes y traducen todo lo que reciben, incluidos los literales de datos. Para ellos `LLMTranslator` tiene dos estilos de un texto por petición, elegidos con `translation.style` (o por el nombre del modelo con `auto`): `translategemma`, con el prompt fijo con el que Google entrenó esos modelos, y `template`, con el prompt de `translation.promptTemplate` (`{source}`, `{target}`, `{text}`; por defecto el prompt de traducción de Hy-MT2). Van cuatro peticiones en paralelo y cada respuesta pasa por la comprobación de placeholders.
+
+Como estos modelos traducen también lo que hay dentro de los placeholders (`{name}` a `{nombre}`) o los convierten (`&amp;` a "y"), los dos estilos enmascaran por defecto (`translation.maskPlaceholders`): cada `%1$s`, `{name}`, etiqueta o entidad se sustituye por un token `<phN>` antes de la petición y se restaura después, y el escape literal `\n` viaja como salto de línea real. Con Hy-MT2-1.8B sobre 42 textos de prueba el modelo conservó 35 placeholders sin enmascarar, 38 pidiéndoselo en el prompt y 41 enmascarando. Es la misma idea que el ITDroid original aplicaba con IBM Watson.
+
+Nota práctica: Ollama sirve un GGUF del Hub de Hugging Face directamente (`translation.model=hf.co/<repo>:<cuantización>`), pero la plantilla de chat que extrae del archivo puede salir corrupta (con Hy-MT2-1.8B el modelo respondía "onse" a todo). Conviene revisar `ollama show <modelo> --template` y, si hace falta, crear un modelo derivado con un Modelfile que lleve la plantilla oficial del repositorio (`eval/Modelfile.hy-mt2`).
+
+# La app fuera del dispositivo mientras se traduce
+
+Cada exploración termina con `am force-stop` y `pm uninstall`: la app solo está instalada mientras se explora. La traducción, el parcheo y la reconstrucción de cada idioma ocurren con el dispositivo limpio. El servidor LLM se mantiene activo durante toda la corrida.
+
+# Grabar y reproducir
+
+El problema principal de la evaluación: el explorador no es determinista (pantallas transitorias al arrancar, listas que cambian), así que dos exploraciones independientes del mismo app tomaban caminos distintos y los grafos no emparejaban (4 de las 15 apps). Ahora la exploración del idioma origen graba cada acción (tap, atrás, reinicio con su camino) en `exploration_script.json`, y cada versión traducida, una vez reconstruida e instalada, la reproduce (`AdbExplorer.replay`) guardando cada pantalla con el id del estado origen. `LayoutGraphComparision` empareja por ese id (misma actividad, número de nodos similar), y las divergencias se reportan en `replay_report.json` y en `report.json` sin abortar. `LayoutGraph` lee los estados por id, así que un estado no alcanzado deja un hueco en vez de descolocar los demás.
+
+Las versiones traducidas se reconstruyen, instalan y evalúan de verdad; el replay solo fija el camino, la comparación se hace sobre lo que muestra cada APK traducido.
+
+# Ventana de asentamiento y firma de estado
+
+Tras cada arranque se espera `exploration.settleSeconds` y hasta que la estructura no cambie durante 1,5 s (antes bastaban dos volcados iguales a 0,6 s). La firma de estado incluye ahora `content-desc` (dígitos plegados) y si el nodo muestra texto, ignorando los nodos del teclado, para que las apps Compose sin `resource-id` distingan sus pantallas; la estructura solo `resource-id`+clase se conserva para comparar entre idiomas. Los campos de texto ya no se tocan como clickables (solo abrían el teclado y producían estados falsos).
+
+# Formularios (opcional)
+
+`exploration.fillForms=true` pide al LLM un valor por campo de texto de cada pantalla nueva, lo teclea (`adb shell input text`, cerrando el teclado) y lo graba; el replay teclea los mismos valores. Desactivado por defecto porque añade llamadas al LLM en mitad de la exploración.
+
+# Otros
+
+- `report.json` se reescribe tras el preflight, tras el inventario, tras la exploración origen y tras cada idioma; un timeout externo ya no pierde todo.
+- `report.json` incluye `preflight`, `inventory`, y por idioma `pairedStates`, `pairing`, `patchedHardcoded`, `replay` y `error`.
+- Nuevas claves de config: `preflight.launchTest`, `translation.reuseInventory`, `translation.style`, `translation.promptTemplate`, `translation.maskPlaceholders`, `exploration.maxStates`, `exploration.maxClickables`, `exploration.settleSeconds`, `exploration.fillForms`.
+- Instalación con `-g` (permisos concedidos) además de la concesión tras cada `pm clear`.
+- `AdbExplorer.dumpHierarchy` borra el volcado remoto antes de cada captura y comprueba la respuesta de uiautomator, con un tope mayor que su espera de "idle": un volcado fallido ya no se confunde con la pantalla anterior (en el lote 4 un reloj con segundos, cuya interfaz nunca está quieta, heredaba las pantallas de la app anterior). Las apps con interfaz en movimiento continuo se reportan ahora como no capturables.
+
+# 11. Carpeta de resultados e informe web
+
+ITDroid está pensado para que un desarrollador descargue el repositorio y evalúe sus propias apps; el informe web es la cara visible de esa evaluación. Antes, `webreport/` era una página de 2019 que leía un `report.json` copiado a mano y solo mostraba conteos.
+
+Ahora cada evaluación va a `results/<paquete>/` (clave `resultsDir`, por defecto `results`; `output=` sigue valiendo como carpeta explícita, que es lo que usa el harness), y `java -jar ITDroid.jar --report [carpeta]` arranca `ReportServer` (el `HttpServer` del JDK en 127.0.0.1, sin dependencias) que sirve `webreport/`, la carpeta de resultados y un índice `/api/results` con una entrada por subcarpeta que tenga `report.json`. La página (`webreport/`, JavaScript sin frameworks ni red, Bootstrap local) lista las apps evaluadas y muestra la elegida en pestañas: resumen (APK, versión, SDK, dispositivo, modelo, duración, totales), idiomas e IPFs (por pantalla, con la captura origen y la traducida lado a lado y los nodos afectados recuadrados a partir de los `bounds` del volcado), hardcodeados (desde `strings_inventory.json`, con su origen, si se tradujeron y cómo), rendimiento, entorno y artefactos. Sirve igual para los lotes del harness (`--report eval/results/<lote>`), que además aportan la telemetría de `meta.json`.
+
+Para alimentarlo, `report.json` ganó tres secciones: `itdroid` (versión, inicio, fin, estado), `environment` (host, dispositivo con modelo y versión de Android, motor de traducción con modelo y estilo, configuración de la corrida) y `performance` (segundos por fase: preflight, decode, inventory, build/explore del origen y translate/build/replay/compare por idioma; totales del LLM: peticiones, latencia, textos enviados, reutilizados y dejados en origen; CPU y heap de ITDroid; carga de CPU y memoria del host muestreadas cada 2 s). Lo recoge `RunMetrics`; el servidor LLM y el emulador son procesos aparte, así que su consumo aparece en las cifras del host, no en las del proceso.

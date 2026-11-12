@@ -28,3 +28,9 @@ extra/*.jar
 
 # Avoid ignoring Maven wrapper jar file (.jar files are usually ignored)
 !/.mvn/wrapper/maven-wrapper.jar
+
+# Throwaway evaluation harness (APKs, results, script). Delete eval/ before merging.
+eval/
+
+# Evaluations written by ITDroid (served by: java -jar target/ITDroid-1.0.0.jar --report)
+results/

@@ -3,11 +3,12 @@
 ITDroid is a testing framework for Android apps oriented to internationalization (i18n).
 Given an APK in one language, ITDroid:
 
-1. Decodes it with apktool and reports hardcoded strings.
-2. Translates the missing `strings.xml` resources into the selected languages using a local LLM.
-3. Rebuilds and signs a multi-language APK.
-4. Drives an emulator or a physical device via `adb` to explore the app in every language and detects Internationalization Presentation Failures (IPF): text that overflows, overlaps or shifts the layout when translated.
-5. Produces `report.json` and a web report.
+1. Checks that the app can be processed at all (preflight): device on Android 13+, compatible ABIs, launchable activity, not a Trusted Web Activity, `strings.xml` present, and the original app actually starts on the device.
+2. Decodes it with apktool and builds an inventory of every string (resources, plurals, arrays and hardcoded literals in the smali) with the file and line each one came from: `strings_inventory.json`.
+3. Rebuilds the untouched app and explores it on the device in its source language, recording every tap as a script.
+4. For each target language, with the app removed from the device: translates the inventory with a local LLM (in global batches, reusing earlier translations), patches the hardcoded strings, rebuilds and signs a per-language APK.
+5. Installs each translated APK, replays the recorded script so it visits the same screens, uninstalls it, and compares the layouts state by state to detect Internationalization Presentation Failures (IPF): text that overflows, overlaps or shifts the layout when translated.
+6. Writes `report.json` after every language (a run cut short keeps the finished ones) plus a web report.
 
 The repository contains only source code. The external tools and the LLM model are not committed; install them as described below.
 
@@ -100,6 +101,16 @@ The file holds every run parameter (APK, package, folders, emulator) and the tra
 
 Values set here take precedence over `.env` and environment variables. The real `itdroid.config.properties` is git-ignored (it may contain a token), so only the `.example` is committed. See itdroid.config.example.properties for the documented template.
 
+Optional keys, all with sensible defaults:
+
+- `preflight.launchTest` (true): install and launch the original app once before processing it; set false to skip.
+- `translation.reuseInventory` (true): reuse the translations of a previous `strings_inventory.json` found in the output folder, so a re-run only asks the LLM for new texts.
+- `translation.style` (auto): how texts are sent to the model. `json` batches 25 texts in a JSON object (general chat models); `translategemma` and `template` send one text per request in the model's own prompt (Google's TranslateGemma prompt, or `translation.promptTemplate` with `{source}`, `{target}` and `{text}`, by default Tencent Hy-MT2's prompt). `auto` picks by model name.
+- `translation.maskPlaceholders` (true for the one-text styles): replace `%1$s`, `{name}`, tags and entities with `<phN>` tokens around each request and restore them afterwards, so translation-only models cannot alter them.
+- `exploration.maxStates` (5) and `exploration.maxClickables` (8): size of the source-language exploration; the translated versions replay it.
+- `exploration.settleSeconds` (3): extra wait after each launch before the first capture, on top of the automatic "UI stopped changing" check.
+- `exploration.fillForms` (false): ask the LLM for a value for each text field and type it before tapping, so screens behind forms become reachable; the same values are typed in every language.
+
 # Option B, positional arguments
 
 ```
@@ -158,6 +169,26 @@ The input app may have any `minSdk`; only the test device must be Android 13+ fo
 
 # Output
 
-The output directory contains the results and intermediate steps, including `report.json`. Open the dashboard in `webreport/` (it reads `report/report.json`) to browse the IPF findings visually.
+The output directory contains the results and intermediate steps:
+
+- `report.json`: preflight results, inventory counts, and per language the states, the pairing with the source graph, the replay summary and the IPFs. Rewritten after each language.
+- `strings_inventory.json`: every string of the app with its origin (`res/values/strings.xml`, `smali_classes2/.../Foo.smali:123`), whether it is translated and why not, and its translations. Review or correct it by hand; the next run reuses it.
+- `trnsResults/<lang>/` and `noTrnsResults/<lang>/`: `result.json`, `graph.json`, screenshots; the source language also has `exploration_script.json` (the recorded path) and each translated language `replay_report.json` (what could be reproduced and where it diverged).
+- `<package>-<lang>-aligned-debugSigned.apk`: the APK built for each language; `hardcoded_<lang>.csv` lists how each hardcoded string was translated.
+- `ipfs.csv` and `hcs.txt`: the IPFs and the hardcoded strings as flat lists.
+
+ITDroid exits with code 1 when it rejects or aborts an app; the reason is in the `error` field of `report.json`. Besides the findings, `report.json` records the run itself: `itdroid` (version, start/end, status), `environment` (host, device model and API, translation model and style, configuration) and `performance` (seconds per phase, translation requests, ITDroid's CPU time and heap, the host's CPU load and memory in use).
+
+# Web report
+
+Every evaluation goes to `results/<package>/` unless the config sets `output=`. To browse them, start the local report server from the ITDroid folder; it prints the address and opens your browser:
+
+```
+java -jar target/ITDroid-1.0.0.jar --report                        # serves results/
+java -jar target/ITDroid-1.0.0.jar --report path/to/folder         # any folder whose sub-folders hold a report.json
+java -jar target/ITDroid-1.0.0.jar --report --port 9000 --no-browser
+```
+
+The page (`webreport/`) lists the evaluated apps and shows, for the selected one: the IPFs of each language with the source and translated screens side by side and the affected nodes outlined, the hardcoded strings and how they were translated, the time of every phase and the machine usage, the static facts of the run (APK, version, device, Android API, translation model, configuration) and links to every artifact. A local server is needed because browsers do not let a page opened from disk read other files; the server only listens on 127.0.0.1 and only serves `webreport/` and the results folder.
 
 See ARCHITECTURE.md for how the code is organized and REFACTOR.md for the modernization change log.
