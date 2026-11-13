@@ -113,7 +113,7 @@ public class RunMetrics {
             host.put("totalMemoryMB", round(os.getTotalMemorySize() / 1048576.0));
         }
         host.put("java", System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")");
-        host.put("user", System.getProperty("user.name"));
+        // No user name and no host name: the results folder is meant to be shared.
         o.put("host", host);
         o.put("itdroidVersion", VERSION);
         if (device != null) {

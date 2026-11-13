@@ -1,0 +1,15 @@
+language;state;nodePos;ipfScore;langNodePos;kind
+Arabic;1;5;1;5;relations
+Arabic;1;6;1;6;relations
+Spanish;1;5;1;5;relations
+Spanish;1;6;1;6;relations
+Spanish;1;8;1;-1;componentLost
+Spanish;3;12;1;12;relations
+Spanish;3;13;1;13;relations
+Russian;1;5;4;5;relations
+Russian;1;6;4;6;relations
+Russian;1;8;2;8;relations
+Russian;1;2;1;2;relations
+Russian;1;3;1;3;relations
+Russian;1;10;1;10;relations
+Russian;1;12;1;12;relations

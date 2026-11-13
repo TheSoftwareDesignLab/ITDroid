@@ -1,0 +1,693 @@
+{
+ "appName": "org.example.shop",
+ "apkName": "shop-release.apk",
+ "apkPath": "shop-release.apk",
+ "apkSha256": "9f2c1d0a9f2c1d0a9f2c1d0a9f2c1d0a9f2c1d0a9f2c1d0a9f2c1d0a9f2c1d0a",
+ "apkSizeKB": 4210.5,
+ "alpha": 0,
+ "outputFolder": "org.example.shop",
+ "emulatorName": "Pixel_API_33",
+ "dfltLang": "en",
+ "hardcoded": 7,
+ "inventory": {
+  "resources": 7,
+  "resourcesTranslatable": 6,
+  "hardcoded": 7,
+  "hardcodedCode": 6,
+  "hardcodedXml": 1,
+  "hardcodedOccurrences": 9,
+  "hardcodedTranslatable": 4,
+  "hardcodedPolicy": "ui",
+  "hardcodedCodeExtracted": 2,
+  "hardcodedPlacesExtracted": 3,
+  "hardcodedPlacesToPatch": 1,
+  "hardcodedXmlExtracted": 1,
+  "hardcodedByConsumer": {
+   "ui": 3,
+   "data": 2,
+   "log": 1,
+   "xml": 1
+  },
+  "uniqueTranslatableTexts": 10,
+  "translationsPerLanguage": {
+   "es": 10,
+   "ru": 10
+  }
+ },
+ "codePackages": [
+  "org.example.shop"
+ ],
+ "codeExtraction": {
+  "enabled": true,
+  "literals": 2,
+  "places": 3
+ },
+ "internationalizedApk": {
+  "built": true,
+  "file": "org.example.shop-aligned-debugSigned.apk",
+  "languages": [
+   "ar",
+   "es",
+   "ru"
+  ]
+ },
+ "itdroid": {
+  "version": "1.0.0",
+  "status": "finished",
+  "startedAt": "2026-11-13T15:00:00Z",
+  "finishedAt": "2026-11-13T15:12:30Z",
+  "durationSec": 750.0,
+  "pid": 4242,
+  "processStartedAt": "2026-11-13T14:59:59Z"
+ },
+ "preflight": {
+  "apkAbis": "",
+  "launchTest": "ok",
+  "app": {
+   "package": "org.example.shop",
+   "versionName": "2.4.1",
+   "versionCode": 241,
+   "minSdk": 26,
+   "targetSdk": 35,
+   "launchable": true,
+   "hasStrings": true
+  },
+  "device": {
+   "serial": "emulator-5554",
+   "sdk": 33,
+   "abis": [
+    "x86_64"
+   ]
+  }
+ },
+ "environment": {
+  "itdroidVersion": "1.0.0",
+  "host": {
+   "os": "Linux 6.8",
+   "arch": "amd64",
+   "cores": 8,
+   "totalMemoryMB": 16000.0,
+   "java": "21.0.4 (Eclipse Adoptium)"
+  },
+  "device": {
+   "serial": "emulator-5554",
+   "manufacturer": "Google",
+   "model": "sdk_gphone64_x86_64",
+   "androidVersion": "13",
+   "sdk": 33,
+   "abis": [
+    "x86_64"
+   ]
+  },
+  "llm": {
+   "model": "hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M",
+   "style": "plamo",
+   "endpoint": "http://localhost:11434/v1/chat/completions"
+  },
+  "config": {
+   "sourceLanguage": "en",
+   "languages": {
+    "es": "Spanish",
+    "ar": "Arabic",
+    "ru": "Russian",
+    "pt": "Portuguese"
+   },
+   "alpha": 0,
+   "maxStates": 5,
+   "maxClickables": 8,
+   "settleSeconds": 3,
+   "fillForms": false,
+   "launchTest": true,
+   "reuseInventory": true,
+   "graphDumps": false,
+   "minSimilarity": 0.5,
+   "hardcodedTranslate": "ui",
+   "emulator": "Pixel_API_33"
+  }
+ },
+ "performance": {
+  "totalSec": 750.0,
+  "phases": {
+   "preflight": 12.0,
+   "decode": 41.5,
+   "inventory": 3.2,
+   "build:en": 38.0,
+   "explore:en": 120.4,
+   "translate:es": 4.1,
+   "build:es": 36.2,
+   "replay:es": 98.7,
+   "compare:es": 0.1,
+   "build:ar": 35.9,
+   "replay:ar": 97.5,
+   "compare:ar": 0.1,
+   "translate:ru": 4.4,
+   "build:ru": 36.8,
+   "replay:ru": 61.0,
+   "compare:ru": 0.1,
+   "build:all": 40.3,
+   "close": 18.9
+  },
+  "llm": {
+   "requests": 20,
+   "wallSeconds": 8.5,
+   "requestSeconds": 8.1,
+   "textsSent": 20,
+   "textsReused": 0,
+   "textsKeptInSource": 0,
+   "answersRejected": 1
+  },
+  "jvm": {
+   "cpuSeconds": 31.2,
+   "peakHeapMB": 412.0,
+   "samples": 375,
+   "sampleIntervalSec": 2.0
+  },
+  "host": {
+   "cpuLoadMeanPct": 34.1,
+   "cpuLoadPeakPct": 97.0,
+   "memoryUsedMeanMB": 9800.0,
+   "memoryUsedPeakMB": 11200.0
+  },
+  "note": "jvm = the ITDroid process; host = the whole machine (includes the emulator and the LLM server, which run as separate processes)"
+ },
+ "nonInternationalized": {
+  "alpha": 0,
+  "defaultStrings": 6,
+  "defaultStringsFile": true,
+  "languages": {
+   "es": {
+    "shippedByApp": false,
+    "stringsFile": false,
+    "missing": 6,
+    "missingNames": [
+     "app_title",
+     "buy",
+     "cancel",
+     "total_items",
+     "add_to_cart",
+     "check_out"
+    ]
+   },
+   "ru": {
+    "shippedByApp": false,
+    "stringsFile": false,
+    "missing": 6,
+    "missingNames": [
+     "app_title",
+     "buy",
+     "cancel",
+     "total_items",
+     "add_to_cart",
+     "check_out"
+    ]
+   },
+   "pt": {
+    "shippedByApp": false,
+    "stringsFile": false,
+    "missing": 6,
+    "missingNames": [
+     "app_title",
+     "buy",
+     "cancel",
+     "total_items",
+     "add_to_cart",
+     "check_out"
+    ]
+   },
+   "ar": {
+    "shippedByApp": true,
+    "stringsFile": true,
+    "missing": 0,
+    "missingNames": []
+   }
+  }
+ },
+ "langsReport": {
+  "en": {
+   "dflt": true,
+   "lang": "English",
+   "amStates": 3,
+   "amTrans": 2
+  },
+  "es": {
+   "lang": "Spanish",
+   "shippedByApp": false,
+   "resultsFolder": "noTrnsResults",
+   "replay": {
+    "actions": 2,
+    "reproduced": 2,
+    "statesCaptured": 3,
+    "divergences": [],
+    "crashes": []
+   },
+   "patchedHardcoded": 1,
+   "extractedCodeLiterals": 2,
+   "extractedXmlLiterals": 1,
+   "amIPFs": 5,
+   "pairedStates": 3,
+   "ipfSummary": {
+    "nodesAffected": 2,
+    "componentsAdded": 0,
+    "nodesChanged": 2,
+    "nodesCompared": 32,
+    "byType": {
+     "alignmentAdded": 0,
+     "componentLost": 1,
+     "overlapAdded": 2,
+     "positionLost": 4,
+     "positionAdded": 2,
+     "missingMirroring": 0,
+     "componentAdded": 0,
+     "alignmentLost": 0,
+     "overlapRemoved": 0
+    },
+    "mirrorExpected": false,
+    "componentsLost": 1
+   },
+   "amStates": 3,
+   "pairing": "replay",
+   "ipfs": [
+    {
+     "score": 1,
+     "types": [
+      "positionLost",
+      "overlapAdded"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 5,
+     "geometry": "resized",
+     "relations": [
+      {
+       "langRelNode": 6,
+       "removed": "LEFT;",
+       "added": "INTERSECTS;",
+       "relNode": 6
+      }
+     ],
+     "nodeID": 5
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost",
+      "overlapAdded"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 6,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 5,
+       "removed": "RIGHT;",
+       "added": "INTERSECTS;",
+       "relNode": 5
+      }
+     ],
+     "nodeID": 6
+    },
+    {
+     "score": 1,
+     "types": [
+      "componentLost"
+     ],
+     "kind": "componentLost",
+     "stateID": 1,
+     "langNodeID": -1,
+     "relations": [],
+     "nodeID": 8
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost",
+      "positionAdded"
+     ],
+     "kind": "relations",
+     "stateID": 3,
+     "langNodeID": 12,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 13,
+       "removed": "LEFT;",
+       "added": "ABOVE;",
+       "relNode": 13
+      }
+     ],
+     "nodeID": 12
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost",
+      "positionAdded"
+     ],
+     "kind": "relations",
+     "stateID": 3,
+     "langNodeID": 13,
+     "geometry": "moved+resized",
+     "relations": [
+      {
+       "langRelNode": 12,
+       "removed": "RIGHT;",
+       "added": "BELOW;",
+       "relNode": 12
+      }
+     ],
+     "nodeID": 13
+    }
+   ],
+   "missingLangStates": 0,
+   "missingDfltStates": 0,
+   "statesNotCompared": [],
+   "amTrans": 0
+  },
+  "ar": {
+   "lang": "Arabic",
+   "shippedByApp": true,
+   "resultsFolder": "trnsResults",
+   "replay": {
+    "actions": 2,
+    "reproduced": 2,
+    "statesCaptured": 3,
+    "divergences": [],
+    "crashes": []
+   },
+   "patchedHardcoded": 1,
+   "extractedCodeLiterals": 2,
+   "extractedXmlLiterals": 1,
+   "amIPFs": 2,
+   "pairedStates": 3,
+   "ipfSummary": {
+    "nodesAffected": 2,
+    "siblingPairsNotMirrored": 1,
+    "siblingPairsChecked": 10,
+    "componentsAdded": 0,
+    "nodesChanged": 0,
+    "nodesCompared": 33,
+    "byType": {
+     "alignmentAdded": 0,
+     "componentLost": 0,
+     "overlapAdded": 0,
+     "positionLost": 0,
+     "positionAdded": 0,
+     "missingMirroring": 2,
+     "componentAdded": 0,
+     "alignmentLost": 0,
+     "overlapRemoved": 0
+    },
+    "mirrorExpected": true,
+    "componentsLost": 0
+   },
+   "amStates": 3,
+   "pairing": "replay",
+   "ipfs": [
+    {
+     "score": 1,
+     "types": [
+      "missingMirroring"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 5,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 6,
+       "removed": "",
+       "added": "",
+       "missing": "RIGHT;",
+       "relNode": 6
+      }
+     ],
+     "nodeID": 5
+    },
+    {
+     "score": 1,
+     "types": [
+      "missingMirroring"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 6,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 5,
+       "removed": "",
+       "added": "",
+       "missing": "LEFT;",
+       "relNode": 5
+      }
+     ],
+     "nodeID": 6
+    }
+   ],
+   "missingLangStates": 0,
+   "missingDfltStates": 0,
+   "statesNotCompared": [],
+   "amTrans": 0
+  },
+  "ru": {
+   "lang": "Russian",
+   "shippedByApp": false,
+   "resultsFolder": "noTrnsResults",
+   "replay": {
+    "actions": 2,
+    "reproduced": 1,
+    "statesCaptured": 2,
+    "divergences": [
+     "after tapping buy the screen was not the recorded one (an error dialog); the next action was skipped"
+    ],
+    "crashes": []
+   },
+   "patchedHardcoded": 1,
+   "extractedCodeLiterals": 2,
+   "extractedXmlLiterals": 1,
+   "amIPFs": 7,
+   "pairedStates": 1,
+   "ipfSummary": {
+    "nodesAffected": 5,
+    "componentsAdded": 0,
+    "nodesChanged": 2,
+    "nodesCompared": 13,
+    "byType": {
+     "alignmentAdded": 4,
+     "componentLost": 0,
+     "overlapAdded": 0,
+     "positionLost": 6,
+     "positionAdded": 2,
+     "missingMirroring": 0,
+     "componentAdded": 0,
+     "alignmentLost": 2,
+     "overlapRemoved": 0
+    },
+    "mirrorExpected": false,
+    "componentsLost": 0
+   },
+   "amStates": 2,
+   "pairing": "replay",
+   "ipfs": [
+    {
+     "score": 4,
+     "types": [
+      "positionLost",
+      "positionAdded",
+      "alignmentLost",
+      "alignmentAdded"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 5,
+     "geometry": "resized",
+     "relations": [
+      {
+       "langRelNode": 3,
+       "removed": "LEFT;",
+       "added": "RIGHT_ALIGNED;",
+       "relNode": 3
+      },
+      {
+       "langRelNode": 6,
+       "removed": "LEFT;TOP_ALIGNED;BOTTOM_ALIGNED;",
+       "added": "ABOVE;RIGHT_ALIGNED;LEFT_ALIGNED;",
+       "relNode": 6
+      },
+      {
+       "langRelNode": 8,
+       "removed": "",
+       "added": "RIGHT_ALIGNED;",
+       "relNode": 8
+      },
+      {
+       "langRelNode": 12,
+       "removed": "LEFT;",
+       "added": "",
+       "relNode": 12
+      }
+     ],
+     "nodeID": 5
+    },
+    {
+     "score": 4,
+     "types": [
+      "positionLost",
+      "positionAdded",
+      "alignmentLost",
+      "alignmentAdded"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 6,
+     "geometry": "moved+resized",
+     "relations": [
+      {
+       "langRelNode": 2,
+       "removed": "RIGHT;",
+       "added": "",
+       "relNode": 2
+      },
+      {
+       "langRelNode": 5,
+       "removed": "RIGHT;TOP_ALIGNED;BOTTOM_ALIGNED;",
+       "added": "BELOW;RIGHT_ALIGNED;LEFT_ALIGNED;",
+       "relNode": 5
+      },
+      {
+       "langRelNode": 8,
+       "removed": "",
+       "added": "LEFT_ALIGNED;",
+       "relNode": 8
+      },
+      {
+       "langRelNode": 10,
+       "removed": "RIGHT;",
+       "added": "",
+       "relNode": 10
+      }
+     ],
+     "nodeID": 6
+    },
+    {
+     "score": 2,
+     "types": [
+      "alignmentAdded"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 8,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 5,
+       "removed": "",
+       "added": "RIGHT_ALIGNED;",
+       "relNode": 5
+      },
+      {
+       "langRelNode": 6,
+       "removed": "",
+       "added": "LEFT_ALIGNED;",
+       "relNode": 6
+      }
+     ],
+     "nodeID": 8
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 2,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 6,
+       "removed": "LEFT;",
+       "added": "",
+       "relNode": 6
+      }
+     ],
+     "nodeID": 2
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost",
+      "alignmentAdded"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 3,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 5,
+       "removed": "RIGHT;",
+       "added": "RIGHT_ALIGNED;",
+       "relNode": 5
+      }
+     ],
+     "nodeID": 3
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 10,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 6,
+       "removed": "LEFT;",
+       "added": "",
+       "relNode": 6
+      }
+     ],
+     "nodeID": 10
+    },
+    {
+     "score": 1,
+     "types": [
+      "positionLost"
+     ],
+     "kind": "relations",
+     "stateID": 1,
+     "langNodeID": 12,
+     "geometry": "same",
+     "relations": [
+      {
+       "langRelNode": 5,
+       "removed": "RIGHT;",
+       "added": "",
+       "relNode": 5
+      }
+     ],
+     "nodeID": 12
+    }
+   ],
+   "missingLangStates": 1,
+   "missingDfltStates": 2,
+   "statesNotCompared": [
+    {
+     "reason": "shows a different screen (only 1 of its 4 elements match the 6 of the source)",
+     "stateID": 2
+    }
+   ],
+   "amTrans": 0
+  },
+  "pt": {
+   "lang": "Portuguese",
+   "shippedByApp": false,
+   "resultsFolder": "noTrnsResults",
+   "error": "the translation model (PLaMo Translate) does not support the language 'pt': this language was not evaluated"
+  }
+ }
+}

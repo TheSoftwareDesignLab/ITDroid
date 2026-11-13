@@ -1,0 +1,7 @@
+org.example.shop.ui.CartAdapter
+	onBindViewHolder
+		Remove [ui]
+org.example.shop.data.CartDao
+	items
+		SELECT * FROM cart WHERE user = ? [data]
+		Cart loaded in  [log]

@@ -201,6 +201,10 @@ Some apps cannot be rebuilt by apktool exactly as decoded. Two known cases are a
 
 ITDroid exits with code 1 when it rejects or aborts an app; the reason is in the `error` field of `report.json`. Besides the findings, `report.json` records the run itself: `itdroid` (version, start/end, status), `environment` (host, device model and API, translation model and style, configuration) and `performance` (seconds per phase, translation requests, ITDroid's CPU time and heap, the host's CPU load and memory in use).
 
+`report.json` is written from the first second of a run, with `itdroid.status` set to `running`, and rewritten after every step. A run ends as `finished` or `aborted`; one stopped from outside (Ctrl+C, the terminal closed) ends as `interrupted`. A process killed outright cannot write anything, so its report keeps saying `running`: the web report tells from the process id the report carries (`itdroid.pid`) that the run is gone and shows it as interrupted.
+
+A results folder can be moved to another place or published. Nothing in it names the user or a folder of the machine it was made on: files of the evaluation are named by their path from the results folder (`apkPath` in `report.json`, `screenShot` in each `result.json`), the APK that was evaluated is identified by its SHA-256 (`apkSha256`), and an absolute path that ends up in a text, such as the message of an error, has its start replaced by `<output>` (the results folder), `<itdroid>` (the folder ITDroid ran in) or `~` (the home of the user).
+
 # Web report
 
 Every evaluation goes to `results/<package>/` unless the config sets `output=`. To browse them, start the local report server from the ITDroid folder; it prints the address and opens your browser:
@@ -211,7 +215,25 @@ java -jar target/ITDroid-1.0.0.jar --report path/to/folder         # any folder 
 java -jar target/ITDroid-1.0.0.jar --report --port 9000 --no-browser
 ```
 
-The page (`webreport/`) lists the evaluated apps and shows, for the selected one: the IPFs of each language with the source and translated screens side by side and the affected nodes outlined, the hardcoded strings and how they were translated, the time of every phase and the machine usage, the static facts of the run (APK, version, device, Android API, translation model, configuration) and links to every artifact. A local server is needed because browsers do not let a page opened from disk read other files; the server only listens on 127.0.0.1 and only serves `webreport/` and the results folder.
+The page (`webreport/`) lists the evaluated apps, each with the status of its run (a run still going shows as `running`, one that was killed as `interrupted`), and shows the selected one in tabs:
+
+- Overview: the app, the run, and one row per language with its findings.
+- Languages & IPFs: for each language, how many elements were compared, how many moved or changed size, how many only have a neighbour that changed, and what is missing or extra, with one button per kind of change that narrows the screens to it. Each screen opens with the source and the translated screenshots side by side and the affected elements outlined, an element only one of the two screens has in its own colour. For a right-to-left language a third image draws where each element that was not mirrored would be in a mirrored screen. The last image is the visual difference between the two screenshots: the source in grey and, in magenta, every pixel that is not the same (for a right-to-left language the translated screenshot is flipped first, so a layout that mirrored well lines up). "Every screen" lists all the screens of the source exploration, also the ones compared without findings, the ones reached but not compared, with the reason, and the ones the replay did not reach. `#<evaluation>/languages/<language>/<screen>` in the address opens that screen.
+- Hardcoded strings: the ones extracted from the code into resources, the ones extracted from the XML, the ones patched in each language build and the ones not translated with the reason, each with its class, method, use and resource; what was applied in each language build; a search box, a filter by use and pages of 50 rows.
+- Non-internationalized strings: per language, whether the app shipped it and which default strings it lacks, with their text and ITDroid's translation.
+- Performance and Environment: the time of every phase, the machine usage and the static facts of the run (device, Android API, translation model, configuration).
+- Artifacts: a link to every file of the evaluation that exists, each exploration in the folder it is in (`trnsResults/` for a language the app shipped, `noTrnsResults/` for one ITDroid translated).
+
+A local server is needed because browsers do not let a page opened from disk read other files; the server only listens on 127.0.0.1 and only serves `webreport/` and the results folder.
+
+The page can be checked without a browser. With Node 18 or later and the jar built, this starts the report server on a small sample of results (`webreport/test/sample`, one made-up app that shows every case of the report), runs the page against it and checks what every tab shows; `--url` checks the folder a server already running serves instead:
+
+```
+node webreport/test/smoke.js
+node webreport/test/smoke.js --url http://127.0.0.1:8585
+```
+
+The sample is also a quick way to see the report before evaluating anything: `java -jar target/ITDroid-1.0.0.jar --report webreport/test/sample`.
 
 # Static analysis without a device
 

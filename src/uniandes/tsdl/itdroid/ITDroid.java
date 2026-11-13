@@ -41,6 +41,7 @@ import uniandes.tsdl.itdroid.helper.Preflight;
 import uniandes.tsdl.itdroid.helper.Reanalysis;
 import uniandes.tsdl.itdroid.helper.ReportServer;
 import uniandes.tsdl.itdroid.helper.RunConfig;
+import uniandes.tsdl.itdroid.helper.PortablePaths;
 import uniandes.tsdl.itdroid.helper.RunMetrics;
 import uniandes.tsdl.itdroid.helper.SmaliPatcher;
 import uniandes.tsdl.itdroid.helper.SmaliScan;
@@ -151,16 +152,56 @@ public class ITDroid {
 		}
 	}
 
-	/** Writes report.json with everything known so far (called after each milestone, not only at the end). */
+	/**
+	 * Writes report.json with everything known so far (called after each milestone, not only at the
+	 * end). What is written carries no path of this machine: see {@link PortablePaths}.
+	 */
 	static synchronized void writeReport() {
 		if (outputPath == null || report == null) {
 			return;
 		}
+		Object portable = new PortablePaths(Paths.get(outputPath)).scrub(report);
 		try (FileWriter file = new FileWriter(outputPath + File.separator + "report.json")) {
-			file.write(report.toJSONString());
+			file.write(((JSONObject) portable).toJSONString());
 			file.flush();
 		} catch (IOException e) {
 			e.printStackTrace();
+		}
+	}
+
+	/**
+	 * Runs when the JVM is shutting down. A run that was still going (Ctrl+C, the terminal closed,
+	 * the process asked to stop) leaves its report saying so, instead of "running" for ever. A
+	 * process killed outright never gets here; the report server tells that case from the process
+	 * id the report carries.
+	 */
+	@SuppressWarnings("unchecked")
+	static void markInterrupted() {
+		for (int attempt = 0; attempt < 3; attempt++) {
+			try {
+				synchronized (ITDroid.class) {
+					if (report == null || outputPath == null || !(report.get("itdroid") instanceof JSONObject)) {
+						return;
+					}
+					JSONObject info = (JSONObject) report.get("itdroid");
+					if (!"running".equals(info.get("status"))) {
+						return;
+					}
+					info.put("status", "interrupted");
+					info.put("finishedAt", Instant.now().toString());
+					RunMetrics metrics = RunMetrics.get();
+					if (metrics != null) {
+						info.put("durationSec", Math.round(metrics.elapsedSec() * 10.0) / 10.0);
+					}
+					writeReport();
+				}
+				return;
+			} catch (RuntimeException e) {
+				// the run was adding to the report at that very moment: once more
+				if (report != null && report.get("itdroid") instanceof JSONObject) {
+					((JSONObject) report.get("itdroid")).put("status", "running");
+				}
+			}
 		}
 	}
 
@@ -273,17 +314,30 @@ public class ITDroid {
 		RunMetrics metrics = RunMetrics.start();
 		report = new JSONObject();
 		report.put("apkName", apkName);
-		report.put("apkPath", new File(apkPath).getAbsolutePath());
+		// Paths are written relative to the results folder (the name alone for a file outside it), so
+		// the folder can be moved or published; the hash says which APK it was.
+		report.put("apkPath", new PortablePaths(Paths.get(outputPath)).relative(apkPath));
+		if (new File(apkPath).isFile()) {
+			report.put("apkSha256", PortablePaths.sha256(Paths.get(apkPath)));
+		}
 		report.put("apkSizeKB", Math.round(new File(apkPath).length() / 102.4) / 10.0);
 		report.put("appName", appName);
 		report.put("alpha", alpha);
-		report.put("outputFolder", outputPath);
+		report.put("outputFolder", Paths.get(outputPath).toAbsolutePath().normalize().getFileName().toString());
 		report.put("emulatorName", emulatorName);
 		JSONObject itdroidInfo = new JSONObject();
 		itdroidInfo.put("version", RunMetrics.VERSION);
 		itdroidInfo.put("startedAt", metrics.startedAtIso());
 		itdroidInfo.put("status", "running");
+		// The process that is writing this report: with it, whoever reads a report that still says
+		// "running" can tell whether the run is alive or was killed.
+		itdroidInfo.put("pid", ProcessHandle.current().pid());
+		ProcessHandle.current().info().startInstant().ifPresent(t -> itdroidInfo.put("processStartedAt", t.toString()));
 		report.put("itdroid", itdroidInfo);
+		Runtime.getRuntime().addShutdownHook(new Thread(ITDroid::markInterrupted, "itdroid-interrupted"));
+		// Written at once, so the run shows in the web report from its first second and a run that
+		// dies while decoding the APK leaves a trace.
+		writeReport();
 		JSONObject lngsResults = new JSONObject();
 		report.put("langsReport", lngsResults);
 

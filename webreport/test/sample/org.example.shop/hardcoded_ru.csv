@@ -1,0 +1,2 @@
+kind;text;translation;action;reason;file;line;class;method;use;via
+hardcoded;Remove;Удалить;extracted;;smali/org/example/shop/ui/CartAdapter.smali;88;org.example.shop.ui.CartAdapter;onBindViewHolder;ui;Landroid/widget/Button;->setText

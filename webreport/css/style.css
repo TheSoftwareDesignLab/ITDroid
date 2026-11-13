@@ -82,6 +82,58 @@ body {
 .shot .box.missing {
   border: 2px dotted #6c757d;
 }
+/* where an element that was not mirrored would be in a mirrored screen (estimated) */
+.shot .box.mirror {
+  border: 2px dashed #7d26bf;
+  background: rgba(125, 38, 191, 0.18);
+}
+/* an element only one of the two screens has: missing in the other */
+.shot .box.only {
+  border: 3px solid #fd7e14;
+  background: rgba(253, 126, 20, 0.22);
+}
+.shot canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.legend.only {
+  border: 3px solid #fd7e14;
+  background: rgba(253, 126, 20, 0.22);
+}
+.legend.diff {
+  background: #d6249f;
+}
+.legend {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin: 0 0.3rem 0 0.1rem;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+.legend.ipf {
+  border: 2px solid #dc3545;
+  background: rgba(220, 53, 69, 0.12);
+}
+.legend.rel {
+  border: 1px dashed #007bff;
+}
+.legend.mirror {
+  border: 2px dashed #7d26bf;
+  background: rgba(125, 38, 191, 0.18);
+}
+/* the reason a hardcoded string was not translated: a sentence, not a column of single words */
+.why {
+  display: inline-block;
+  min-width: 14rem;
+}
+.ipf-summary .card {
+  margin-bottom: 0.5rem;
+}
+.ipf-summary .h3 {
+  font-size: 1.4rem;
+}
 .shot-caption {
   font-size: 0.8rem;
   color: #495057;

@@ -9,11 +9,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
@@ -56,6 +58,8 @@ public class ReportServer {
         Path web = findWebReport();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         server.createContext("/api/results", ex -> sendJson(ex, scan(results)));
+        server.createContext("/api/files/", ex -> sendJson(ex, listFiles(results,
+                URLDecoder.decode(ex.getRequestURI().getRawPath().substring("/api/files/".length()), StandardCharsets.UTF_8))));
         server.createContext("/results/", ex -> serveFile(ex, results, "/results/"));
         server.createContext("/", ex -> serveFile(ex, web, "/"));
         server.setExecutor(Executors.newFixedThreadPool(4));
@@ -129,18 +133,129 @@ public class ReportServer {
             if (!Files.isRegularFile(reportFile)) {
                 continue;
             }
-            apps.add(summarize(dir, reportFile));
+            apps.add(summarize(dir, reportFile, LIVE));
         }
         out.put("apps", apps);
         return out;
     }
 
+    // ------------------------------------------------------------------ runs that never finished
+
+    /**
+     * A report that says "running" and carries no process id (it was written by an older ITDroid)
+     * is taken for an interrupted run when it has not been rewritten for this long. A run rewrites
+     * its report after every step, and no step takes hours.
+     */
+    static final long STALE_HOURS = 3;
+
+    /** Tells whether the process that was writing a report is still there. */
+    interface Processes {
+        /** True when a process with that id is alive and, if both start times are known, it started then. */
+        boolean alive(long pid, Instant startedAt);
+    }
+
+    static final Processes LIVE = (pid, startedAt) -> {
+        Optional<ProcessHandle> handle = ProcessHandle.of(pid);
+        if (handle.isEmpty() || !handle.get().isAlive()) {
+            return false;
+        }
+        // the system gives the id of a dead process to a new one: the run is the one that started then
+        Optional<Instant> start = handle.get().info().startInstant();
+        return startedAt == null || start.isEmpty() || Math.abs(Duration.between(start.get(), startedAt).toMillis()) < 2000;
+    };
+
+    /**
+     * The status to show for a run, and why when it is not the one its report states. A run that
+     * was killed could not write that it stopped, so its report says "running" for ever: it is
+     * shown as "interrupted" when the process that was writing it is gone.
+     *
+     * @return the status and a note, the note null when the status is the one of the report
+     */
+    static String[] effectiveStatus(JSONObject itdroid, boolean hasError, Instant reportModified, Instant now, Processes processes) {
+        String status = itdroid != null && itdroid.get("status") != null ? String.valueOf(itdroid.get("status"))
+                : (hasError ? "aborted" : "finished");
+        if (!"running".equals(status)) {
+            return new String[] {status, null};
+        }
+        if (itdroid.get("pid") instanceof Number) {
+            Instant started = null;
+            try {
+                started = itdroid.get("processStartedAt") == null ? null : Instant.parse(String.valueOf(itdroid.get("processStartedAt")));
+            } catch (RuntimeException ignored) {
+                // an unreadable start time only means the process id is trusted alone
+            }
+            return processes.alive(((Number) itdroid.get("pid")).longValue(), started) ? new String[] {"running", null}
+                    : new String[] {"interrupted", "the process that was running it is gone"};
+        }
+        if (reportModified != null && Duration.between(reportModified, now).toHours() >= STALE_HOURS) {
+            return new String[] {"interrupted", "its report was last written on " + reportModified + " and never said how the run ended"};
+        }
+        return new String[] {status, null};
+    }
+
+    // ------------------------------------------------------------------ the files of one evaluation
+
+    /** Files listed for one evaluation; an evaluation has a few dozen. */
+    static final int MAX_LISTED_FILES = 500;
+
+    /**
+     * The files of one evaluation, each with its path from the evaluation folder and its size, so
+     * the page links only to what is there. Screenshots are counted per folder, not listed.
+     */
     @SuppressWarnings("unchecked")
-    private static JSONObject summarize(Path dir, Path reportFile) {
+    static JSONObject listFiles(Path results, String dirName) {
+        JSONObject out = new JSONObject();
+        JSONArray files = new JSONArray();
+        JSONObject screenshots = new JSONObject();
+        out.put("dir", dirName);
+        out.put("files", files);
+        out.put("screenshots", screenshots);
+        Path base = results.toAbsolutePath().normalize();
+        Path dir = base.resolve(dirName).normalize();
+        // only a direct sub-folder of the results folder: no "..", no nested path
+        if (dirName.isEmpty() || !base.equals(dir.getParent()) || !Files.isDirectory(dir)) {
+            out.put("error", "not an evaluation of this results folder");
+            return out;
+        }
+        List<Path> all = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(dir, 4)) {
+            walk.filter(Files::isRegularFile).forEach(all::add);
+        } catch (IOException | RuntimeException e) {
+            out.put("error", "cannot list the folder: " + e.getMessage());
+            return out;
+        }
+        all.sort((a, b) -> dir.relativize(a).toString().compareToIgnoreCase(dir.relativize(b).toString()));
+        for (Path file : all) {
+            Path parent = file.getParent();
+            if (parent.getFileName().toString().equals("screenshots")) {
+                String folder = dir.relativize(parent).toString().replace('\\', '/');
+                Object count = screenshots.get(folder);
+                screenshots.put(folder, count instanceof Long ? (Long) count + 1 : 1L);
+                continue;
+            }
+            if (files.size() >= MAX_LISTED_FILES) {
+                out.put("truncated", true);
+                break;
+            }
+            JSONObject entry = new JSONObject();
+            entry.put("path", dir.relativize(file).toString().replace('\\', '/'));
+            try {
+                entry.put("size", Files.size(file));
+            } catch (IOException e) {
+                entry.put("size", -1L);
+            }
+            files.add(entry);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    static JSONObject summarize(Path dir, Path reportFile, Processes processes) {
         JSONObject entry = new JSONObject();
         entry.put("dir", dir.getFileName().toString());
         try {
-            entry.put("reportModified", Instant.ofEpochMilli(Files.getLastModifiedTime(reportFile).toMillis()).toString());
+            Instant modified = Instant.ofEpochMilli(Files.getLastModifiedTime(reportFile).toMillis());
+            entry.put("reportModified", modified.toString());
             JSONObject r = (JSONObject) new JSONParser().parse(Files.readString(reportFile, StandardCharsets.UTF_8));
             entry.put("appName", r.get("appName"));
             entry.put("apkName", r.get("apkName"));
@@ -148,9 +263,11 @@ public class ReportServer {
             entry.put("hardcoded", r.get("hardcoded"));
             entry.put("error", r.get("error"));
             JSONObject it = (JSONObject) r.get("itdroid");
-            String status = it != null && it.get("status") != null ? String.valueOf(it.get("status"))
-                    : (r.get("error") != null ? "aborted" : "finished");
-            entry.put("status", status);
+            String[] status = effectiveStatus(it, r.get("error") != null, modified, Instant.now(), processes);
+            entry.put("status", status[0]);
+            if (status[1] != null) {
+                entry.put("statusNote", status[1]);
+            }
             if (it != null) {
                 entry.put("startedAt", it.get("startedAt"));
                 entry.put("finishedAt", it.get("finishedAt"));
@@ -187,6 +304,13 @@ public class ReportServer {
                     l.put("ipfs", v.get("amIPFs"));
                     l.put("paired", v.get("pairedStates"));
                     l.put("error", v.get("error"));
+                    // Where the exploration of the language is: under trnsResults when the app shipped
+                    // the language, under noTrnsResults when ITDroid translated it. Read from the disk,
+                    // so it also holds for reports that do not say it.
+                    Path folder = Reanalysis.resultFolder(dir, String.valueOf(k), Boolean.TRUE.equals(v.get("dflt")));
+                    if (folder != null) {
+                        l.put("folder", folder.getParent().getFileName().toString());
+                    }
                     JSONObject rep = v.get("replay") instanceof JSONObject ? (JSONObject) v.get("replay") : null;
                     if (rep != null) {
                         l.put("replayReproduced", rep.get("reproduced"));

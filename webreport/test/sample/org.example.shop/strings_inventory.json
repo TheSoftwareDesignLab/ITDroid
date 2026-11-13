@@ -1,0 +1,290 @@
+{
+ "package": "org.example.shop",
+ "sourceLanguage": "en",
+ "generatedAt": "2026-11-13T15:00:00",
+ "counts": {
+  "resources": 7,
+  "resourcesTranslatable": 6,
+  "hardcoded": 7,
+  "hardcodedCode": 6,
+  "hardcodedXml": 1,
+  "hardcodedOccurrences": 9,
+  "hardcodedTranslatable": 4,
+  "hardcodedPolicy": "ui",
+  "hardcodedCodeExtracted": 2,
+  "hardcodedPlacesExtracted": 3,
+  "hardcodedPlacesToPatch": 1,
+  "hardcodedXmlExtracted": 1,
+  "hardcodedByConsumer": {
+   "ui": 3,
+   "data": 2,
+   "log": 1,
+   "xml": 1
+  },
+  "uniqueTranslatableTexts": 10,
+  "translationsPerLanguage": {
+   "es": 10,
+   "ru": 10
+  }
+ },
+ "entries": [
+  {
+   "id": "r1",
+   "kind": "string",
+   "name": "app_title",
+   "origin": "res/values/strings.xml",
+   "text": "Shop",
+   "translatable": true,
+   "translations": {
+    "es": "Tienda",
+    "ru": "Магазин"
+   }
+  },
+  {
+   "id": "r2",
+   "kind": "string",
+   "name": "buy",
+   "origin": "res/values/strings.xml",
+   "text": "Buy",
+   "translatable": true,
+   "translations": {
+    "es": "Comprar ahora",
+    "ru": "Купить"
+   }
+  },
+  {
+   "id": "r3",
+   "kind": "string",
+   "name": "cancel",
+   "origin": "res/values/strings.xml",
+   "text": "Cancel",
+   "translatable": true,
+   "translations": {
+    "es": "Cancelar",
+    "ru": "Отмена"
+   }
+  },
+  {
+   "id": "r4",
+   "kind": "string",
+   "name": "total_items",
+   "origin": "res/values/strings.xml",
+   "text": "Total: %1$d items",
+   "translatable": true,
+   "translations": {
+    "es": "Total: %1$d artículos",
+    "ru": "Итого: %1$d товара"
+   }
+  },
+  {
+   "id": "r5",
+   "kind": "string",
+   "name": "add_to_cart",
+   "origin": "res/values/strings.xml",
+   "text": "Add to cart",
+   "translatable": true,
+   "translations": {
+    "es": "Añadir al carrito",
+    "ru": "Добавить в корзину"
+   }
+  },
+  {
+   "id": "r6",
+   "kind": "string",
+   "name": "check_out",
+   "origin": "res/values/strings.xml",
+   "text": "Check out",
+   "translatable": true,
+   "translations": {
+    "es": "Finalizar la compra",
+    "ru": "Оформить заказ"
+   }
+  },
+  {
+   "id": "r7",
+   "kind": "string",
+   "name": "default_currency",
+   "origin": "res/values/strings.xml",
+   "text": "USD",
+   "translatable": false,
+   "skipReason": "constant"
+  },
+  {
+   "id": "h1",
+   "kind": "hardcoded",
+   "text": "Remove",
+   "consumer": "ui",
+   "occurrences": 2,
+   "translatable": true,
+   "extractedTo": "@string/itdroid_code_91f0a3c2",
+   "origin": "smali/org/example/shop/ui/CartAdapter.smali:88 (+1 more)",
+   "translations": {
+    "es": "Quitar",
+    "ru": "Удалить"
+   },
+   "places": [
+    {
+     "class": "org.example.shop.ui.CartAdapter",
+     "method": "onBindViewHolder",
+     "origin": "smali/org/example/shop/ui/CartAdapter.smali:88",
+     "consumer": "ui",
+     "via": "Landroid/widget/Button;->setText",
+     "translated": true,
+     "extracted": true
+    },
+    {
+     "class": "org.example.shop.ui.CartActivity",
+     "method": "confirmRemoval",
+     "origin": "smali/org/example/shop/ui/CartActivity.smali:142",
+     "consumer": "ui",
+     "via": "Landroid/app/AlertDialog$Builder;->setPositiveButton",
+     "translated": true,
+     "extracted": true
+    }
+   ]
+  },
+  {
+   "id": "h2",
+   "kind": "hardcoded",
+   "text": "Could not load the product",
+   "consumer": "ui",
+   "occurrences": 1,
+   "translatable": true,
+   "extractedTo": "@string/itdroid_code_5b7d1e09",
+   "origin": "smali/org/example/shop/ui/DetailActivity.smali:210",
+   "translations": {
+    "es": "No se pudo cargar el producto",
+    "ru": "Не удалось загрузить товар"
+   },
+   "places": [
+    {
+     "class": "org.example.shop.ui.DetailActivity",
+     "method": "onError",
+     "origin": "smali/org/example/shop/ui/DetailActivity.smali:210",
+     "consumer": "ui",
+     "via": "Landroid/widget/Toast;->makeText",
+     "translated": true,
+     "extracted": true
+    }
+   ]
+  },
+  {
+   "id": "h3",
+   "kind": "hardcoded",
+   "text": "Premium",
+   "consumer": "ui",
+   "occurrences": 2,
+   "translatable": true,
+   "origin": "smali_classes2/org/example/shop/billing/Plans.smali:57 (+1 more)",
+   "translations": {
+    "es": "Premium",
+    "ru": "Премиум"
+   },
+   "places": [
+    {
+     "class": "org.example.shop.billing.Plans",
+     "method": "label",
+     "origin": "smali/org/example/shop/billing/Plans.smali:57",
+     "consumer": "ui",
+     "via": "Landroid/widget/TextView;->setText",
+     "translated": true,
+     "extracted": false
+    },
+    {
+     "class": "org.example.shop.billing.Plans",
+     "method": "isPremium",
+     "origin": "smali/org/example/shop/billing/Plans.smali:96",
+     "consumer": "data",
+     "via": "Ljava/lang/String;->equals",
+     "translated": false,
+     "extracted": false
+    }
+   ]
+  },
+  {
+   "id": "h4",
+   "kind": "hardcoded",
+   "text": "SELECT * FROM cart WHERE user = ?",
+   "consumer": "data",
+   "occurrences": 1,
+   "translatable": false,
+   "skipReason": "SQL statement",
+   "origin": "smali/org/example/shop/data/CartDao.smali:31",
+   "places": [
+    {
+     "class": "org.example.shop.data.CartDao",
+     "method": "items",
+     "origin": "smali/org/example/shop/data/CartDao.smali:31",
+     "consumer": "data",
+     "via": "Landroid/database/sqlite/SQLiteDatabase;->rawQuery",
+     "translated": false,
+     "extracted": false
+    }
+   ]
+  },
+  {
+   "id": "h5",
+   "kind": "hardcoded",
+   "text": "Cart loaded in ",
+   "consumer": "log",
+   "occurrences": 1,
+   "translatable": false,
+   "skipReason": "runtime message",
+   "origin": "smali/org/example/shop/data/CartDao.smali:64",
+   "places": [
+    {
+     "class": "org.example.shop.data.CartDao",
+     "method": "items",
+     "origin": "smali/org/example/shop/data/CartDao.smali:64",
+     "consumer": "log",
+     "via": "Landroid/util/Log;->d",
+     "translated": false,
+     "extracted": false
+    }
+   ]
+  },
+  {
+   "id": "h6",
+   "kind": "hardcoded",
+   "text": "pref_last_order",
+   "consumer": "data",
+   "occurrences": 1,
+   "translatable": false,
+   "skipReason": "identifier",
+   "origin": "smali/org/example/shop/Settings.smali:19",
+   "places": [
+    {
+     "class": "org.example.shop.Settings",
+     "method": "lastOrder",
+     "origin": "smali/org/example/shop/Settings.smali:19",
+     "consumer": "data",
+     "via": "Landroid/content/SharedPreferences;->getString",
+     "translated": false,
+     "extracted": false
+    }
+   ]
+  },
+  {
+   "id": "x1",
+   "kind": "hardcoded-xml",
+   "text": "Search products",
+   "consumer": "xml",
+   "occurrences": 1,
+   "translatable": true,
+   "extractedTo": "@string/itdroid_hc_1",
+   "origin": "res/layout/activity_main.xml:14",
+   "translations": {
+    "es": "Buscar productos",
+    "ru": "Поиск товаров"
+   },
+   "places": [
+    {
+     "origin": "res/layout/activity_main.xml:14",
+     "element": "ImageButton",
+     "attribute": "android:contentDescription",
+     "id": "@id/search"
+    }
+   ]
+  }
+ ]
+}

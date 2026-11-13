@@ -28,6 +28,7 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 import uniandes.tsdl.itdroid.helper.ExplorationException;
+import uniandes.tsdl.itdroid.helper.PortablePaths;
 import uniandes.tsdl.itdroid.translator.LLMTranslator;
 
 /**
@@ -1336,6 +1337,9 @@ public class AdbExplorer {
         root.put("amountTransitions", (long) transitions.size());
 
         JSONObject statesJson = new JSONObject();
+        // A screenshot is named by its path from the folder of this result.json
+        // ("screenshots/state_1a2b.png"), so the results can be moved to another place.
+        PortablePaths portable = new PortablePaths(Paths.get(outputFolder));
         for (StateRec s : states) {
             JSONObject sj = new JSONObject();
             sj.put("id", (long) s.id);
@@ -1344,7 +1348,7 @@ public class AdbExplorer {
             }
             sj.put("activityName", s.activity == null ? "" : s.activity);
             sj.put("rawXML", s.rawXML);
-            sj.put("screenShot", s.screenShot == null ? "" : s.screenShot);
+            sj.put("screenShot", portable.relative(s.screenShot));
             statesJson.put(String.valueOf(s.id), sj);
         }
         root.put("states", statesJson);

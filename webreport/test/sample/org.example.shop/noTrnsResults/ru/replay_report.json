@@ -1,0 +1,9 @@
+{
+ "actions": 2,
+ "reproduced": 1,
+ "statesCaptured": 2,
+ "divergences": [
+  "after tapping buy the screen was not the recorded one (an error dialog); the next action was skipped"
+ ],
+ "crashes": []
+}

@@ -1,0 +1,17 @@
+{
+ "package": "org.example.shop",
+ "states": 3,
+ "actions": [
+  {
+   "from": 1,
+   "to": 2,
+   "tap": "org.example.shop:id/buy"
+  },
+  {
+   "from": 2,
+   "to": 3,
+   "tap": "org.example.shop:id/add"
+  }
+ ],
+ "crashes": []
+}
