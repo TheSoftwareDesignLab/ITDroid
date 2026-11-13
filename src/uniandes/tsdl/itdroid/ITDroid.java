@@ -95,6 +95,8 @@ public class ITDroid {
 	static HardcodedPolicy hardcodedPolicy = HardcodedPolicy.DEFAULT;
 	/** Move the translated literals of the code to string resources (config key hardcoded.extractCode). */
 	static boolean extractCode = true;
+	/** Keep the APK built for each language after it was evaluated (config key output.keepLanguageApks). */
+	static boolean keepLanguageApks = true;
 
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
@@ -258,6 +260,7 @@ public class ITDroid {
 			AppCode.setExtraRoots(cfg.getCodePackages());
 			hardcodedPolicy = cfg.getHardcodedPolicy();
 			extractCode = cfg.isExtractCode();
+			keepLanguageApks = cfg.isKeepLanguageApks();
 		} else if (staticOnly && args.length == 5) {
 			// --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>
 			apkPath = args[0];
@@ -569,6 +572,7 @@ public class ITDroid {
 		config.put("launchTest", launchTest);
 		config.put("reuseInventory", reuseInventory);
 		config.put("graphDumps", graphDumps);
+		config.put("keepLanguageApks", keepLanguageApks);
 		config.put("minSimilarity", LayoutGraphComparision.getMinSimilarity());
 		config.put("hardcodedTranslate", hardcodedPolicy.key);
 		config.put("emulator", emulatorName);
@@ -697,9 +701,14 @@ public class ITDroid {
 		}
 		metrics.end("build:all");
 		if (allLanguagesApk == null || allLanguagesApk.isEmpty()) {
-			System.out.println("WARNING: the APK with every language could not be built; the default-named APK is the source build.");
-			Files.copy(sourceApkCopy, Paths.get(sourceApk), StandardCopyOption.REPLACE_EXISTING);
+			// No second copy of the source build under the default name: there is no internationalized
+			// APK, and what is left under that name (the build of the last language) is removed so it
+			// is not taken for one.
+			System.out.println("WARNING: the APK with every language could not be built; the source build is " + sourceApkCopy.getFileName() + ".");
+			Files.deleteIfExists(Paths.get(sourceApk));
+			Files.deleteIfExists(Paths.get(sourceApk + ".idsig"));
 			i18nApk.put("built", false);
+			i18nApk.put("sourceBuild", sourceApkCopy.getFileName().toString());
 		} else {
 			i18nApk.put("built", true);
 			i18nApk.put("file", new File(allLanguagesApk).getName());
@@ -735,6 +744,7 @@ public class ITDroid {
 		lngsResults.put(lang, langJson);
 		int patched = 0;
 		RunMetrics metrics = RunMetrics.get();
+		Path apkForLang = Paths.get(outputPath, appName + "-" + lang + "-aligned-debugSigned.apk").toAbsolutePath();
 		try {
 			String unsupported = llm.unsupportedLanguage(lang);
 			if (unsupported != null) {
@@ -786,7 +796,6 @@ public class ITDroid {
 			if (built == null || built.isEmpty()) {
 				throw new ExplorationException("apktool could not rebuild the " + lang + " version of the app");
 			}
-			Path apkForLang = Paths.get(outputPath, appName + "-" + lang + "-aligned-debugSigned.apk").toAbsolutePath();
 			Files.copy(Paths.get(built), apkForLang, StandardCopyOption.REPLACE_EXISTING);
 
 			metrics.end("build:" + lang);
@@ -863,6 +872,18 @@ public class ITDroid {
 		}
 		for (String phase : new String[] {"translate:", "build:", "replay:", "compare:"}) {
 			metrics.end(phase + lang);   // a phase cut short by an error still gets its time
+		}
+		if (!keepLanguageApks) {
+			// It was only needed to be installed and replayed. The internationalized APK built at the
+			// end has the resources of every language; what only this file had is the hardcoded
+			// strings patched into its code, which hardcoded_<lang>.csv lists.
+			try {
+				if (Files.deleteIfExists(apkForLang)) {
+					langJson.put("apkKept", false);
+				}
+			} catch (IOException e) {
+				System.out.println("WARNING: could not remove " + apkForLang.getFileName() + ": " + e.getMessage());
+			}
 		}
 		writeReport();
 	}

@@ -34,6 +34,7 @@ class RunConfigTest {
         assertTrue(cfg.isLaunchTest());
         assertTrue(cfg.isReuseInventory());
         assertEquals(false, cfg.isGraphDumps());
+        assertTrue(cfg.isKeepLanguageApks());
         assertEquals(0.5, cfg.getMinSimilarity());
         assertEquals(5, cfg.getMaxStates());
         assertEquals(8, cfg.getMaxClickables());
@@ -44,6 +45,13 @@ class RunConfigTest {
         assertEquals(0.35, config("comparison.minSimilarity=0.35").getMinSimilarity());
         assertEquals(1.0, config("comparison.minSimilarity = 1").getMinSimilarity());
         assertEquals(0.0, config("comparison.minSimilarity=0").getMinSimilarity());
+    }
+
+    @Test
+    void theApksOfTheLanguagesCanBeLeftOutOfTheResults() throws Exception {
+        assertEquals(false, config("output.keepLanguageApks=false").isKeepLanguageApks());
+        assertEquals(false, config("output.keepLanguageApks = no").isKeepLanguageApks());
+        assertEquals(true, config("output.keepLanguageApks=true").isKeepLanguageApks());
     }
 
     @Test

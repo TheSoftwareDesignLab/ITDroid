@@ -1222,7 +1222,12 @@
       }
       apks.push(link(f, label));
     }
-    section('APKs built by ITDroid', apks);
+    // why an APK one would look for is not there
+    const config = (r.environment || {}).config || {};
+    const apkNotes = [];
+    if (i18n && i18n.built === false) apkNotes.push('The internationalized APK could not be built' + (i18n.sourceBuild ? '; the source build is ' + i18n.sourceBuild : '') + '.');
+    if (config.keepLanguageApks === false) apkNotes.push('The APKs of the target languages were removed once each language was evaluated (output.keepLanguageApks=false).');
+    section('APKs built by ITDroid', apks, apkNotes.join(' ') || null);
 
     // Explorations: one line per language, in the folder that language really is in.
     const explorations = [];

@@ -124,4 +124,47 @@ class APKToolWrapperTest {
         assertEquals(before, Files.readString(manifest, StandardCharsets.UTF_8));
         assertTrue(Files.readString(outside).contains("pageSizeCompat"));
     }
+
+    // ------------------------------------------------------------------ the APK files of a build
+
+    @Test
+    void theUnsignedApkIsRemovedOnceTheSignedOneIsThere() throws Exception {
+        Path unsigned = Files.writeString(tmp.resolve("org.foo.apk"), "unsigned");
+        Path signed = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk"), "signed");
+
+        assertTrue(APKToolWrapper.keepOnlySigned(unsigned.toFile(), signed.toFile()));
+
+        assertFalse(Files.exists(unsigned), "the unsigned APK was as large as the signed one and nothing used it again");
+        assertTrue(Files.exists(signed));
+    }
+
+    @Test
+    void theUnsignedApkStaysWhenSigningFailed() throws Exception {
+        Path unsigned = Files.writeString(tmp.resolve("org.foo.apk"), "unsigned");
+        Path signed = tmp.resolve("org.foo-aligned-debugSigned.apk");
+
+        assertFalse(APKToolWrapper.keepOnlySigned(unsigned.toFile(), signed.toFile()));
+
+        assertTrue(Files.exists(unsigned), "it is what there is to look at");
+    }
+
+    @Test
+    void theSignedApkOfThePreviousBuildCannotBeTakenForTheNextOne() throws Exception {
+        // every build of a run is signed into the same name: if signing the Spanish build failed
+        // with the English one still there, the English build would be evaluated as Spanish
+        Path signed = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk"), "the build before");
+        Path signature = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk.idsig"), "its v4 signature");
+        Path unsigned = Files.writeString(tmp.resolve("org.foo.apk"), "the new build, not signed");
+
+        APKToolWrapper.forgetPreviousBuild(signed.toFile());
+
+        assertFalse(Files.exists(signed));
+        assertFalse(Files.exists(signature));
+        assertFalse(APKToolWrapper.keepOnlySigned(unsigned.toFile(), signed.toFile()), "no signed APK: the build failed, and says so");
+    }
+
+    @Test
+    void forgettingABuildThatIsNotThereIsNotAnError() throws Exception {
+        APKToolWrapper.forgetPreviousBuild(tmp.resolve("never-built-aligned-debugSigned.apk").toFile());
+    }
 }

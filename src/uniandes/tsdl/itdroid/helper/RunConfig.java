@@ -183,6 +183,16 @@ public class RunConfig {
     }
 
     /**
+     * Keep the APK built for each language in the results folder after it was evaluated (key
+     * output.keepLanguageApks, default true). With false each one is removed once its language is
+     * done: the results keep the source build and the internationalized APK, and take a fraction
+     * of the disk.
+     */
+    public boolean isKeepLanguageApks() {
+        return boolOptional("output.keepLanguageApks", true);
+    }
+
+    /**
      * Also write {@code graph.txt} and {@code graph.json} next to each {@code result.json} (default
      * false). They list every relation of every pair of nodes: useful to debug the comparison by
      * hand, large, and not read by anything else.

@@ -121,15 +121,39 @@ public class APKToolWrapper {
 		}
 
 		System.out.println("Signing the APK...");
+		File signed = Paths.get(decodedPath).resolve(outputPath).resolve(appName + "-aligned-debugSigned.apk").toAbsolutePath().toFile();
+		// Every build of a run is signed into this same name. The one of the build before goes
+		// first, so the file being there afterwards means this build was signed.
+		forgetPreviousBuild(signed);
 		run("java", "-jar", signer, "-a", unsigned, "-o", outDir);
 
-		File signed = Paths.get(decodedPath).resolve(outputPath).resolve(appName + "-aligned-debugSigned.apk").toAbsolutePath().toFile();
-		if (signed.exists()) {
+		if (keepOnlySigned(new File(unsigned), signed)) {
 			System.out.println("SUCCESS: the APK has been generated.");
 			return signed.toString();
 		}
 		System.out.println("ERROR: the signed APK was not generated.");
 		return "";
+	}
+
+	/** Removes the signed APK a previous build left under the name the next one is signed into, and its v4 signature file. */
+	static void forgetPreviousBuild(File signed) throws IOException {
+		Files.deleteIfExists(signed.toPath());
+		Files.deleteIfExists(Paths.get(signed.getPath() + ".idsig"));
+	}
+
+	/**
+	 * After signing: when the signed APK is there, the unsigned one apktool wrote has done its job
+	 * and is removed (it was as large as the signed one and nothing used it again). When signing
+	 * failed it is kept, it is what there is to look at.
+	 *
+	 * @return true when the signed APK exists
+	 */
+	static boolean keepOnlySigned(File unsigned, File signed) throws IOException {
+		if (!signed.isFile()) {
+			return false;
+		}
+		Files.deleteIfExists(unsigned.toPath());
+		return true;
 	}
 
 	/** What was changed in the decoded app of this run so that it builds, as "file: what"; empty when nothing. */
