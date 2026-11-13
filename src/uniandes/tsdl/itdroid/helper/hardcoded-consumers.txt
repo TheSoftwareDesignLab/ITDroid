@@ -128,6 +128,13 @@ data        ^Landroidx/work/
 data        ^Land(roid|roidx/core)/app/Notification(Compat)?\$Builder;-><init>\(
 data        ^Ldagger/
 data        ^Ljavax/inject/
+# credentials and what a login needs are never text for the user, whoever receives them
+data        ;->(set|with|put|add)(Password|Passwd|Passphrase|Token|AccessToken|AuthToken|ApiKey|Secret|ClientSecret|ClientId|Credential|Credentials|Username|UserName|Login)\(
+data        ;->(login|logIn|signIn|authenticate|authorize)\(
+data        ^Lokhttp3/Credentials;->
+data        ^Landroid/security/
+data        ^Landroidx/security/
+data        ^Landroidx/credentials/
 
 # ---------------------------------------------------------------- shown to the user
 ui          ^Landroid/widget/Toast;->makeText\(

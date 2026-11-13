@@ -250,6 +250,33 @@ class SmaliScanTest {
         assertEquals(Consumer.UI, of(scan, "Share with").consumer);
     }
 
+    /** What a login needs is never text for the user, whoever receives it; the label of the field is. */
+    @Test
+    void credentialsAreDataWhateverClassReceivesThem() throws IOException {
+        SmaliScan scan = scanMethods(method("auth(Lcom/acme/app/Session;Landroid/widget/EditText;)V",
+                "const-string v0, \"demo account\"",
+                "invoke-virtual {p1, v0}, Lcom/acme/app/Session;->setUsername(Ljava/lang/String;)V",
+                "const-string v1, \"correct horse battery\"",
+                "invoke-virtual {p1, v1}, Lcom/acme/app/Session;->setPassword(Ljava/lang/String;)V",
+                "const-string v2, \"guest pass\"",
+                "invoke-virtual {p1, v2}, Lcom/acme/app/Session;->login(Ljava/lang/String;)V",
+                "const-string v3, \"Your password\"",
+                "invoke-virtual {p2, v3}, Landroid/widget/EditText;->setHint(Ljava/lang/CharSequence;)V",
+                "const-string v4, \"Password rules\"",
+                "invoke-virtual {p1, v4}, Lcom/acme/app/Session;->setPasswordHelp(Ljava/lang/String;)V",
+                "return-void"));
+
+        assertEquals(Consumer.DATA, of(scan, "demo account").consumer);
+        assertEquals(Consumer.DATA, of(scan, "correct horse battery").consumer);
+        assertEquals(Consumer.DATA, of(scan, "guest pass").consumer);
+        assertEquals(Consumer.UI, of(scan, "Your password").consumer, "the hint of the field is shown");
+        assertEquals(Consumer.APP_CALL, of(scan, "Password rules").consumer, "only the exact setters are credentials");
+        assertEquals("key or token", StringInventory.textSkipReason("AIzaSyD4xk29fQpL0b7mN3vW8zR1tY6uH5cE2jA"));
+        assertEquals("key or token", StringInventory.textSkipReason("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));
+        assertNull(StringInventory.textSkipReason("Internationalization"), "a long word is still a word");
+        assertNull(StringInventory.textSkipReason("Enter the 24 digits of your activation code"));
+    }
+
     @Test
     void recognisesLoggersTheTableDoesNotName() throws IOException {
         SmaliScan scan = scanMethods(method("log(Lorg/vendor/alogger/ILogger;)V",

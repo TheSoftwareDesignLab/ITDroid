@@ -247,6 +247,7 @@
       ['Device', [dev.manufacturer, dev.model].filter(Boolean).join(' ') + (dev.sdk != null ? ' · Android ' + (dev.androidVersion || '') + ' (API ' + dev.sdk + ')' : '') + (dev.serial ? ' · ' + dev.serial : '')],
       ['Emulator', r.emulatorName],
       ['Translation model', llm.model ? llm.model + (llm.style ? ' (' + llm.style + ')' : '') : null],
+      ['Adjusted to build', Array.isArray(r.buildAdjustments) && r.buildAdjustments.length ? r.buildAdjustments.join('; ') : null],
       ['ITDroid', it.version || env.itdroidVersion]]))));
     root.appendChild(row);
 
@@ -531,7 +532,8 @@
         ['Mean latency per request', isNum(llm.requests) && llm.requests > 0 ? (llm.requestSeconds / llm.requests).toFixed(2) + ' s' : '–'],
         ['Texts sent', num(llm.textsSent)],
         ['Texts reused from a previous run', num(llm.textsReused)],
-        ['Texts kept in the source language', num(llm.textsKeptInSource)]])));
+        ['Texts kept in the source language', num(llm.textsKeptInSource)],
+        ['Answers rejected (not a translation)', isNum(llm.answersRejected) ? num(llm.answersRejected) : null]])));
       col.appendChild(card('Machine', kvTable([
         ['ITDroid process CPU time', sec(jvm.cpuSeconds)],
         ['ITDroid peak heap', mb(jvm.peakHeapMB)],

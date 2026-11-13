@@ -35,7 +35,8 @@ import uniandes.tsdl.itdroid.helper.StringInventory;
 class LLMTranslatorTest {
 
     private static final String[] KEYS = {"ITDROID_LLM_ENDPOINT", "ITDROID_LLM_MODEL", "ITDROID_LLM_TIMEOUT",
-            "ITDROID_LLM_TEMPERATURE", "ITDROID_LLM_STYLE", "ITDROID_LLM_MASK_PLACEHOLDERS", "ITDROID_LLM_PROMPT_TEMPLATE"};
+            "ITDROID_LLM_TEMPERATURE", "ITDROID_LLM_STYLE", "ITDROID_LLM_MASK_PLACEHOLDERS", "ITDROID_LLM_PROMPT_TEMPLATE",
+            "ITDROID_LLM_CONTEXT"};
 
     @TempDir
     Path tmp;
@@ -197,17 +198,20 @@ class LLMTranslatorTest {
     }
 
     /**
-     * KNOWN GAP (TODO 3.1): in the batched style nothing checks that the placeholders survived, so a
-     * translation without its {@code %1$s} is accepted and the app crashes when it formats it.
-     * Expected after 3.1: the answer is rejected, retried and finally kept in the source language.
+     * A translation without the {@code %1$s} of its source makes the app crash when it formats it.
+     * In the batched style, as in the others, such an answer is rejected, asked for again and
+     * finally the source text is kept.
      */
     @Test
-    void knownGap_theBatchedStyleAcceptsATranslationThatLostItsPlaceholder() {
-        server.responder = r -> FakeLlmServer.translateItems(r, v -> "Hola");
+    void theBatchedStyleRejectsATranslationThatLostItsPlaceholder() {
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> v.startsWith("Hello") ? "Hola" : "ES " + v);
 
-        Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s"), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s", "Saved"), "en", "es");
 
-        assertEquals("Hola", out.get("Hello %1$s"));
+        assertEquals("Hello %1$s", out.get("Hello %1$s"), "kept in the source language");
+        assertEquals("ES Saved", out.get("Saved"), "the rest of the batch is not affected");
+        assertEquals(2, server.requests.size(), "the batch and one retry of the rejected text");
+        assertEquals(List.of("Hello %1$s"), List.copyOf(server.requests.get(1).items.values()));
     }
 
     // ------------------------------------------------------------------ one text per request
@@ -353,14 +357,65 @@ class LLMTranslatorTest {
         System.clearProperty("ITDROID_LLM_MASK_PLACEHOLDERS");
         server.responder = r -> r.user.replace("Hello", "Hola").replace("you have", "tienes").replace("items", "art\u00edculos");
 
-        Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s, you have %2$d items "), "en", "pt-rBR");
+        Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s, you have %2$d items "), "en", "es-rMX");
 
         FakeLlmServer.Request request = server.requests.get(0);
-        assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=pt", request.system, "the bare language code, without Android's region suffix");
+        assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=es", request.system, "the bare language code, without Android's region suffix");
         assertEquals("Hello <ph0>, you have <ph1> items", request.user, "masked by default, and without the edge space");
         assertEquals(List.of("<|plamo:tag|>", "<|plamo:bos|>"), request.body.get("stop"));
         assertEquals(1024L, request.body.get("max_tokens"));
         assertEquals("Hola %1$s, tienes %2$d art\u00edculos ", out.get("Hello %1$s, you have %2$d items "));
+    }
+
+    /**
+     * A word alone is ambiguous ("Open": a verb on a button, an adjective in a sentence). PLaMo is
+     * told that a short text is a label of an app; a sentence carries its own context.
+     */
+    @Test
+    void aShortLabelIsSentToPlamoWithItsContext() {
+        System.setProperty("ITDROID_LLM_STYLE", "plamo");
+        server.responder = r -> "ES " + r.user;
+
+        translator().translateUiLabels(List.of("Open", "Your cart is empty right now"), "en", "es");
+
+        Map<String, String> systemByText = new LinkedHashMap<>();
+        server.requests.forEach(r -> systemByText.put(r.user, r.system));
+        assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=es\n---\nText of a button, menu or label in the user interface of a mobile app.",
+                systemByText.get("Open"));
+        assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=es", systemByText.get("Your cart is empty right now"));
+        assertTrue(LLMTranslator.isShortLabel("Sign in"));
+        assertFalse(LLMTranslator.isShortLabel("Sign in to your account"));
+    }
+
+    @Test
+    void theContextOfShortLabelsCanBeTurnedOff() {
+        System.setProperty("ITDROID_LLM_STYLE", "plamo");
+        System.setProperty("ITDROID_LLM_CONTEXT", "none");
+        server.responder = r -> "ES " + r.user;
+
+        translator().translateUiLabels(List.of("Open"), "en", "es");
+
+        assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=es", server.requests.get(0).system);
+    }
+
+    /** Asked for a language it does not have, PLaMo answers in another one (Portuguese came back in French). */
+    @Test
+    void saysWhichLanguagesPlamoCannotTranslate() {
+        System.setProperty("ITDROID_LLM_STYLE", "plamo");
+        LLMTranslator plamo = translator();
+
+        assertNull(plamo.unsupportedLanguage("es"));
+        assertNull(plamo.unsupportedLanguage("ru"));
+        assertNull(plamo.unsupportedLanguage("zh-rTW"));
+        assertEquals("the translation model (PLaMo Translate) does not support the language 'pt-rBR'", plamo.unsupportedLanguage("pt-rBR"));
+        assertEquals("zh-hant", LLMTranslator.plamoCode("zh-rTW"));
+        assertEquals("zh-hans", LLMTranslator.plamoCode("zh"));
+        assertEquals("he", LLMTranslator.plamoCode("iw"));
+        assertEquals("id", LLMTranslator.plamoCode("in"));
+        assertEquals("es", LLMTranslator.plamoCode("es-rMX"));
+
+        useJsonStyle();
+        assertNull(translator().unsupportedLanguage("pt-rBR"), "a general chat model has no closed list");
     }
 
     @Test
@@ -380,19 +435,117 @@ class LLMTranslatorTest {
     }
 
     /**
-     * KNOWN GAP (TODO 3.3): nothing looks at the answer itself. A model that echoes its instruction
-     * instead of translating (seen with "English" in a real batch) has that sentence stored as the
-     * translation. Expected after 3.3: the answer is rejected and the source text kept.
+     * A model that repeats its instruction instead of translating (seen with "English" in a real
+     * batch) used to have that sentence stored as the translation. The answer is now rejected,
+     * asked for again, and the source text kept; the rejections are counted for the report.
      */
     @Test
-    void knownGap_anAnswerThatRepeatsTheInstructionIsStoredAsTheTranslation() {
+    void anAnswerThatRepeatsTheInstructionIsNotStoredAsTheTranslation() {
         useTemplateStyle(true);
-        String echo = "Nota: debe solo mostrar el resultado traducido, sin ninguna explicación adicional.";
+        String echo = "Nota: debe solo mostrar el resultado traducido, sin ninguna explicaci\u00f3n adicional.";
         server.responder = r -> echo;
+        long before = (Long) LLMTranslator.stats().get("answersRejected");
 
         Map<String, String> out = translator().translateUiLabels(List.of("English"), "en", "es");
 
-        assertEquals(echo, out.get("English"));
+        assertEquals("English", out.get("English"));
+        assertEquals(2, server.requests.size(), "asked once more before giving up");
+        assertEquals(before + 2, LLMTranslator.stats().get("answersRejected"));
+    }
+
+    @Test
+    void tellsATranslationFromAnAnswerThatIsNotOne() {
+        LLMTranslator t = translator();
+
+        assertNull(t.rejectReason("Settings", "Configuraci\u00f3n", "es"));
+        assertNull(t.rejectReason("OK", "Aceptar", "es"), "a short text may grow a lot");
+        assertNull(t.rejectReason("Translation: on", "Traducci\u00f3n: activada", "es"), "the source starts the same way");
+        assertNull(t.rejectReason("Machine translation", "Traducci\u00f3n autom\u00e1tica", "es"), "a label, not a comment: no colon");
+        assertNull(t.rejectReason("Note: tap to edit", "Nota: toca para editar", "es"));
+        assertEquals("empty answer", t.rejectReason("Settings", "  ", "es"));
+        assertEquals("a placeholder was lost", t.rejectReason("Hello %1$s", "Hola", "es"));
+        assertEquals("far longer than the text", t.rejectReason("Save", "Guardar. " + "x".repeat(60), "es"));
+        assertEquals("a comment instead of a translation", t.rejectReason("Your cart is empty", "Sure! Tu carrito est\u00e1 vac\u00edo", "es"));
+        assertEquals("a comment instead of a translation", t.rejectReason("Your cart is empty", "Translation: Tu carrito", "es"));
+
+        // a language with its own alphabet: an answer left in Latin letters is not a translation
+        assertNull(t.rejectReason("Settings", "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", "ru"));
+        assertNull(t.rejectReason("Hello %1$s", "\u041f\u0440\u0438\u0432\u0435\u0442 %1$s", "ru"));
+        assertNull(t.rejectReason("Open GitHub", "\u041e\u0442\u043a\u0440\u044b\u0442\u044c GitHub", "ru"), "a brand inside a translated sentence is fine");
+        assertEquals("not written in the script of the language", t.rejectReason("Settings", "Configuraci\u00f3n", "ar"));
+        assertEquals("not written in the script of the language", t.rejectReason("Your cart is empty", "Votre panier est vide", "ru"));
+        assertNull(t.rejectReason("GitHub", "GitHub", "ru"), "left as it was: a brand is not a wrong answer");
+        assertNull(t.rejectReason("12:30", "12:30", "ru"), "nothing to translate, nothing to check");
+        assertNull(t.rejectReason("Settings", "Settings", "es"), "Latin-script languages are not checked this way");
+    }
+
+    // ------------------------------------------------------------------ protected terms
+
+    private void protect(String... terms) throws IOException {
+        Files.writeString(settingsDir.resolve(LLMTranslator.PROTECTED_TERMS_FILE),
+                "# names that are never translated\n\n" + String.join("\n", terms) + "\n");
+    }
+
+    /**
+     * A name in protected-terms.txt never reaches the model: it travels as a token, like a
+     * placeholder, and comes back exactly as written, whatever the model would have done with it.
+     */
+    @Test
+    void aProtectedTermTravelsMaskedAndComesBackAsWritten() throws IOException {
+        protect("Juan P\u00e9rez", "Beanbook Cloud");
+        useTemplateStyle(true);
+        server.responder = r -> r.text.replace("Welcome back,", "\u0421\u043d\u043e\u0432\u0430 \u0440\u0430\u0434\u044b \u0432\u0438\u0434\u0435\u0442\u044c \u0432\u0430\u0441,");
+
+        LLMTranslator translator = translator();
+        Map<String, String> out = translator.translateUiLabels(List.of("Welcome back, Juan P\u00e9rez"), "en", "ru");
+
+        assertEquals(List.of("Juan P\u00e9rez", "Beanbook Cloud"), translator.protectedTerms());
+        assertEquals("Welcome back, <ph0>", server.requests.get(0).text);
+        assertEquals("\u0421\u043d\u043e\u0432\u0430 \u0440\u0430\u0434\u044b \u0432\u0438\u0434\u0435\u0442\u044c \u0432\u0430\u0441, Juan P\u00e9rez", out.get("Welcome back, Juan P\u00e9rez"));
+        assertEquals(2L, translator.settings().get("protectedTerms"));
+    }
+
+    @Test
+    void aTranslationThatLosesAProtectedTermIsKeptInTheSourceLanguage() throws IOException {
+        protect("ShiftSwift");
+        useTemplateStyle(true);
+        server.responder = r -> "Inicia sesi\u00f3n";     // the model dropped the token
+
+        Map<String, String> out = translator().translateUiLabels(List.of("Log in to ShiftSwift"), "en", "es");
+
+        assertEquals("Log in to ShiftSwift", out.get("Log in to ShiftSwift"));
+        assertEquals(2, server.requests.size());
+    }
+
+    @Test
+    void theBatchedStyleMasksProtectedTermsToo() throws IOException {
+        protect("Maria Smith");
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> v.replace("Shared by", "Compartido por"));
+
+        Map<String, String> out = translator().translateResourceTexts(List.of("Shared by Maria Smith"), "en", "es");
+
+        assertEquals(List.of("Shared by <ph0>"), List.copyOf(server.requests.get(0).items.values()));
+        assertEquals("Compartido por Maria Smith", out.get("Shared by Maria Smith"));
+    }
+
+    @Test
+    void protectsWholeWordsExactlyAsWrittenAndAlsoAddressesInsideAText() throws IOException {
+        protect("Tasks", "New York", "New York City");
+        LLMTranslator t = translator();
+        t.addProtectedTerms(List.of("uMath+"));
+        List<String> originals = new ArrayList<>();
+
+        assertEquals("Open <ph0> in <ph1>", t.maskTerms("Open Tasks in New York City", originals));
+        assertEquals(List.of("Tasks", "New York City"), originals, "the longest term wins");
+        assertEquals("your tasks, Taskset", t.maskTerms("your tasks, Taskset", new ArrayList<>()), "case-sensitive, whole words only");
+        assertEquals("Write to <ph0> or see <ph1>", t.maskTerms("Write to help@acme.com or see https://acme.com/help?id=1", new ArrayList<>()));
+        assertTrue(t.termsKept("Mail help@acme.com", "Escribe a help@acme.com"));
+        assertFalse(t.termsKept("Mail help@acme.com", "Escribe a ayuda@acme.com"));
+
+        assertTrue(LLMTranslator.looksLikeBrand("ShiftSwift"));
+        assertTrue(LLMTranslator.looksLikeBrand("Super Productivity"));
+        assertTrue(LLMTranslator.looksLikeBrand("uMath+"));
+        assertFalse(LLMTranslator.looksLikeBrand("Tasks"), "an ordinary word is only protected when the user lists it");
     }
 
     // ------------------------------------------------------------------ placeholder helpers
@@ -433,18 +586,26 @@ class LLMTranslatorTest {
     }
 
     /**
-     * KNOWN GAP (TODO 3.2): a percent sign followed by a space and a word matches the placeholder
-     * pattern (the space is a valid printf flag), so "% o" is cut out of the text and put back
-     * untranslated, leaving a stray letter in the translation. Expected after 3.2: nothing is masked.
+     * A percent sign is a format only where one can be: "% o" in "50% of users" used to be cut out
+     * as a placeholder (the space is a valid printf flag) and put back untranslated, leaving a
+     * stray letter in the translation.
      */
     @Test
-    void knownGap_aPercentSignBeforeAWordIsTakenForAPlaceholder() {
+    void aPercentageIsNotTakenForAPlaceholder() {
         List<String> originals = new ArrayList<>();
 
-        String masked = LLMTranslator.mask("50% of users", originals);
+        assertEquals("50% of users", LLMTranslator.mask("50% of users", originals));
+        assertEquals("Symbol size (% of line width)", LLMTranslator.mask("Symbol size (% of line width)", originals));
+        assertEquals("20%off today", LLMTranslator.mask("20%off today", originals));
+        assertTrue(originals.isEmpty());
 
-        assertEquals("50<ph0>f users", masked);
-        assertEquals(List.of("% o"), originals);
+        assertEquals("<ph0><ph1> of goal", LLMTranslator.mask("%1$d%% of goal", originals));
+        assertEquals(List.of("%1$d", "%%"), originals, "the doubled percent is kept as it is");
+        originals.clear();
+        assertEquals("<ph0> items (<ph1>), <ph2>MB of <ph3>", LLMTranslator.mask("%d items (%.2f), %dMB of %s", originals));
+        assertEquals(List.of("%d", "%.2f", "%d", "%s"), originals);
+        assertTrue(LLMTranslator.placeholdersKept("50% of users", "50 % de los usuarios"), "no placeholder to keep");
+        assertFalse(LLMTranslator.placeholdersKept("%d%% done", "%d hecho"));
     }
 
     // ------------------------------------------------------------------ writing values-<lang>/strings.xml

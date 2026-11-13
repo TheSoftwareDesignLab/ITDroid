@@ -478,6 +478,22 @@ public class ITDroid {
 		writeReport();
 
 		LLMTranslator llm = new LLMTranslator(langsDir, inventory);
+		// The name of the app is not translated where it stands alone (see StringInventory.appName);
+		// inside other texts ("Welcome to ShiftSwift") it is protected when it is recognisably a name.
+		List<String> ownNames = new ArrayList<>();
+		for (String name : appNameInfo.texts) {
+			if (LLMTranslator.looksLikeBrand(name)) {
+				ownNames.add(name);
+			}
+		}
+		llm.addProtectedTerms(ownNames);
+		if (!llm.protectedTerms().isEmpty()) {
+			System.out.println("Terms kept as written in every translation: " + llm.protectedTerms());
+		}
+		String sourceUnsupported = llm.unsupportedLanguage(sourceLang);
+		if (sourceUnsupported != null) {
+			throw new ITDroidException(sourceUnsupported + " (the source language of the app)");
+		}
 		explorerOptions.llm = llm;
 		explorerOptions.language = sourceLang;
 		SmaliPatcher patcher = new SmaliPatcher(decodedFolderPath);
@@ -532,11 +548,16 @@ public class ITDroid {
 				inventory = collectInventory(decodedFolderPath, appName, dictionary, hits, xmlLiterals, extraction,
 						codeExtraction, sourceLang, inventoryFile);
 				llm = new LLMTranslator(langsDir, inventory);
+				llm.addProtectedTerms(ownNames);
 				explorerOptions.llm = llm;
 				sourceApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
 			}
 		}
 		metrics.end("build:" + sourceLang);
+		if (!APKToolWrapper.buildAdjustments().isEmpty()) {
+			// what apktool could not rebuild as decoded: adjusted so the app builds, and said so
+			report.put("buildAdjustments", jsonArray(APKToolWrapper.buildAdjustments()));
+		}
 		if (sourceApk == null || sourceApk.isEmpty()) {
 			throw new ITDroidException("apktool could not rebuild the app, so ITDroid cannot process it "
 					+ "(typical of apps whose resources need a newer apktool, e.g. Material 3 components). See the apktool output above.");
@@ -659,6 +680,10 @@ public class ITDroid {
 		int patched = 0;
 		RunMetrics metrics = RunMetrics.get();
 		try {
+			String unsupported = llm.unsupportedLanguage(lang);
+			if (unsupported != null) {
+				throw new ITDroidException(unsupported + ": this language was not evaluated");
+			}
 			metrics.begin("translate:" + lang);
 			// 1. Resources. A language the app does not ship is translated whole. One it ships is
 			// evaluated as the developer left it: only the strings ITDroid added to the app (the

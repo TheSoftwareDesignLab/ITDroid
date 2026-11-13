@@ -110,6 +110,7 @@ public class RunConfig {
         setIfPresent("ITDROID_LLM_PROMPT_TEMPLATE", optional("translation.promptTemplate", ""));
         // true|false: mask %1$s / {name} / tags with <phN> tokens around each single-text request.
         setIfPresent("ITDROID_LLM_MASK_PLACEHOLDERS", optional("translation.maskPlaceholders", ""));
+        setIfPresent("ITDROID_LLM_CONTEXT", optional("translation.context", ""));
     }
 
     private static void setIfPresent(String key, String value) {

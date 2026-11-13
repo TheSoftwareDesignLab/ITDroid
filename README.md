@@ -68,6 +68,12 @@ Copy `.env.example` to `.env` (in the folder you pass as `settingsDir`, or the w
 
 The folder you pass as `settingsDir` must also contain a `strings.xml` file listing the resource strings that must not be translated: framework/AppCompat entries such as `abc_action_bar_home_description`, plus any app string you want kept verbatim. ITDroid loads it as a dictionary; every `name` found there is skipped by the resource translator and by the translated-vs-not-translated language check. A ready-to-use `strings.xml` with the standard AppCompat entries ships in the repo root, so pointing `settingsDir` at the repo root works out of the box. If this file is missing the run fails.
 
+# Protected terms (protected-terms.txt)
+
+Names of people, places, products and brands must come out of a translation as they went in. List them, one per line, in a `protected-terms.txt` file in the `settingsDir` folder (the repository has a commented template). Each term is replaced by a token before the text reaches the model and put back afterwards, so no model can translate, transliterate or inflect it; a translation that comes back without one is discarded and the source text is kept. Matching is case-sensitive and by whole words, so do not list ordinary words.
+
+Protected without being listed: e-mail addresses and URLs inside a text, and the name of the app when it is recognisably a name (several words, or a capital, digit or symbol inside, such as `ShiftSwift`). The name of the app on its own, as a resource or as a literal, is never translated. A name that is in neither place is translated like any other word: a translation model does not know it is a name.
+
 # Recommended host resources
 
 16 GB RAM or more (emulator ~2-4 GB plus the LLM: a 3B model ~3-4 GB, a 7B model ~6-8 GB on CPU).
@@ -110,6 +116,7 @@ Optional keys, all with sensible defaults:
 - `translation.reuseInventory` (true): reuse the translations of a previous `strings_inventory.json` found in the output folder, so a re-run only asks the LLM for new texts.
 - `translation.style` (auto): how texts are sent to the model. `json` batches 25 texts in a JSON object (general chat models); `translategemma`, `template` and `plamo` send one text per request in the model's own prompt (Google's TranslateGemma prompt; `translation.promptTemplate` with `{source}`, `{target}` and `{text}`, by default Tencent Hy-MT2's prompt; or, for PFN's PLaMo Translate, the language codes in the system message and the bare text as the user message). `auto` picks by model name. PLaMo Translate needs a recent Ollama (0.40 or later; 0.34 cannot load its tokenizer): `translation.model=hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M`.
 - `translation.maskPlaceholders` (true for the one-text styles): replace `%1$s`, `{name}`, tags and entities with `<phN>` tokens around each request and restore them afterwards, so translation-only models cannot alter them.
+- `translation.context` (a sentence saying the text is a label of an app): what PLaMo Translate is told about a text of up to three words, which on its own is ambiguous (`Open` gives `Abrir` with it and `Abierto` without). `none` turns it off. Other styles ignore it.
 - `exploration.maxStates` (5) and `exploration.maxClickables` (8): size of the source-language exploration; the translated versions replay it.
 - `exploration.settleSeconds` (3): extra wait after each launch before the first capture, on top of the automatic "UI stopped changing" check.
 - `exploration.fillForms` (false): ask the LLM for a value for each text field and type it before tapping, so screens behind forms become reachable; the same values are typed in every language.
@@ -184,6 +191,10 @@ The output directory contains the results and intermediate steps:
 - `hcs.txt`: the hardcoded strings grouped as in the original tool, a line with the class, a tab and the method, two tabs and each literal of that method, followed by its use in brackets. The literals of the XML come after the code: file, element, literal with its attribute.
 
 If the app does not build or start once its literals are read from resources, they go back to the code and are patched per language instead (`codeExtraction.reverted` in `report.json`). If the build of a language does not start, or crashes during the replay where the original app did not, ITDroid rebuilds that language with its hardcoded strings in the source language and evaluates that; `report.json` records it per language (`hardcodedFallback`, `revertedHardcoded`, `crashes`) and the CSV marks the rows as reverted.
+
+An answer of the model that is not a translation is discarded: empty, without a placeholder or a protected term of the source, far longer than the text, a comment about the task, or left in Latin letters when the language uses another alphabet. The text is asked for again and, if the answer is no better, kept in the source language; `performance.llm.answersRejected` in `report.json` counts them. A language the model does not handle (PLaMo Translate has a closed list of 53; Portuguese is not in it) is not evaluated, and its entry in `report.json` says why.
+
+Some apps cannot be rebuilt by apktool exactly as decoded. Two known cases are adjusted and the build tried again, and `buildAdjustments` in `report.json` lists what was done: an `android:` attribute newer than the Android apktool knows is removed, and an attribute of the app whose declaration was lost in the decoding (Material 3's `state_with_icon`) is declared again.
 
 ITDroid exits with code 1 when it rejects or aborts an app; the reason is in the `error` field of `report.json`. Besides the findings, `report.json` records the run itself: `itdroid` (version, start/end, status), `environment` (host, device model and API, translation model and style, configuration) and `performance` (seconds per phase, translation requests, ITDroid's CPU time and heap, the host's CPU load and memory in use).
 

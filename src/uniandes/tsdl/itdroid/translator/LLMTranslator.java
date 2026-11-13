@@ -103,6 +103,33 @@ public class LLMTranslator implements TranslationInterface {
     /** Concurrent requests in the one-text-per-request mode (Ollama serves them in parallel when it can). */
     private static final int NATIVE_PARALLELISM = 4;
 
+    /** File of the settings folder with the terms that are never translated, one per line (# for comments). */
+    public static final String PROTECTED_TERMS_FILE = "protected-terms.txt";
+    /**
+     * Terms that go through every translation unchanged: names of people, places, products. They
+     * travel masked, like placeholders, so no model can translate, transliterate or inflect them.
+     */
+    private final List<String> protectedTerms = new ArrayList<>();
+    private volatile java.util.regex.Pattern protectedPattern;
+    /** E-mail addresses and URLs inside a text: data, masked the same way. */
+    private static final java.util.regex.Pattern EMAIL_OR_URL = java.util.regex.Pattern.compile(
+            "[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+|https?://[^\\s<>\"]+|www\\.[^\\s<>\"]+");
+
+    /**
+     * What PLaMo Translate is told about a short text (up to three words), which on its own is
+     * ambiguous: "Open" is a verb on a button and an adjective in a sentence. With this line it
+     * gives "Abrir" instead of "Abierto" and "Declinar" instead of "Declive". Longer texts carry
+     * their own context. {@code ITDROID_LLM_CONTEXT}; "none" turns it off.
+     */
+    private final String shortTextContext;
+    private static final String DEFAULT_CONTEXT = "Text of a button, menu or label in the user interface of a mobile app.";
+
+    /** The languages PLaMo Translate handles, by the code it expects (its model card lists these 53). */
+    private static final Set<String> PLAMO_LANGUAGES = Set.of("ja", "en", "zh-hans", "zh-hant", "ko", "ar", "az", "be", "bg", "bn",
+            "ca", "ceb", "de", "es", "et", "eu", "fa", "fr", "gu", "he", "hi", "hr", "hu", "hy", "id", "it", "jv", "ka", "kk", "km",
+            "lt", "lv", "ml", "mr", "ms", "my", "ne", "nl", "pa", "pl", "ru", "si", "sk", "sl", "sr", "sw", "ta", "te", "th", "tl",
+            "ur", "uz", "vi");
+
     /** Run-wide totals for the performance section of report.json (every instance adds to them). */
     private static final java.util.concurrent.atomic.AtomicLong REQUESTS = new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.concurrent.atomic.AtomicLong REQUEST_MS = new java.util.concurrent.atomic.AtomicLong();
@@ -110,6 +137,7 @@ public class LLMTranslator implements TranslationInterface {
     private static final java.util.concurrent.atomic.AtomicLong TEXTS_SENT = new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.concurrent.atomic.AtomicLong TEXTS_REUSED = new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.concurrent.atomic.AtomicLong TEXTS_KEPT = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong ANSWERS_REJECTED = new java.util.concurrent.atomic.AtomicLong();
 
     public LLMTranslator(String directory) {
         this.propertiesDirectory = directory;
@@ -135,9 +163,74 @@ public class LLMTranslator implements TranslationInterface {
         String mask = resolve(env, "ITDROID_LLM_MASK_PLACEHOLDERS", "").trim().toLowerCase();
         this.maskPlaceholders = mask.isEmpty() ? (templateStyle || nativeTranslateGemma || plamoStyle)
                 : (mask.equals("true") || mask.equals("yes") || mask.equals("1") || mask.equals("on"));
+        String context = resolve(env, "ITDROID_LLM_CONTEXT", DEFAULT_CONTEXT).trim();
+        this.shortTextContext = context.equalsIgnoreCase("none") ? "" : context;
+        loadProtectedTerms(directory);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
+    }
+
+    private void loadProtectedTerms(String directory) {
+        if (directory == null || directory.isEmpty()) {
+            return;
+        }
+        Path file = Paths.get(directory, PROTECTED_TERMS_FILE);
+        if (!Files.isRegularFile(file)) {
+            return;
+        }
+        try {
+            List<String> terms = new ArrayList<>();
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String term = line.trim();
+                if (!term.isEmpty() && !term.startsWith("#")) {
+                    terms.add(term);
+                }
+            }
+            addProtectedTerms(terms);
+        } catch (Exception e) {
+            System.out.println("WARNING: could not read " + file + " (" + e.getMessage() + "); no term is protected");
+        }
+    }
+
+    /** Adds terms that must come out of every translation exactly as written (case-sensitive, whole words). */
+    public synchronized void addProtectedTerms(java.util.Collection<String> terms) {
+        for (String term : terms) {
+            String t = term == null ? "" : term.trim();
+            if (t.length() >= 2 && !protectedTerms.contains(t)) {
+                protectedTerms.add(t);
+            }
+        }
+        if (protectedTerms.isEmpty()) {
+            protectedPattern = null;
+            return;
+        }
+        List<String> longestFirst = new ArrayList<>(protectedTerms);
+        longestFirst.sort((a, b) -> b.length() - a.length());      // "New York City" before "New York"
+        StringBuilder alternatives = new StringBuilder();
+        for (String term : longestFirst) {
+            alternatives.append(alternatives.length() == 0 ? "" : "|").append(java.util.regex.Pattern.quote(term));
+        }
+        protectedPattern = java.util.regex.Pattern.compile("(?<![\\p{L}\\p{N}])(?:" + alternatives + ")(?![\\p{L}\\p{N}])");
+    }
+
+    /** The terms protected in this run. */
+    public synchronized List<String> protectedTerms() {
+        return new ArrayList<>(protectedTerms);
+    }
+
+    /**
+     * True for a name that is safe to protect without being asked: several words, or a word with a
+     * capital, a digit or a symbol inside ("ShiftSwift", "uMath+", "Super Productivity"). A single
+     * ordinary word ("Tasks", "Notes") is not: protecting it would leave that word untranslated
+     * wherever a sentence starts with it.
+     */
+    public static boolean looksLikeBrand(String name) {
+        String n = name == null ? "" : name.trim();
+        if (n.length() < 3) {
+            return false;
+        }
+        return n.matches(".*\\s.*") || n.substring(1).matches(".*[\\p{Lu}\\p{N}+&@#!].*");
     }
 
     public LLMTranslator(String directory, StringInventory inventory) {
@@ -153,6 +246,10 @@ public class LLMTranslator implements TranslationInterface {
         o.put("model", model);
         o.put("style", plamoStyle ? "plamo" : nativeTranslateGemma ? "translategemma" : templateStyle ? "template" : "json");
         o.put("maskPlaceholders", maskPlaceholders);
+        o.put("protectedTerms", (long) protectedTerms().size());
+        if (plamoStyle) {
+            o.put("shortTextContext", shortTextContext);
+        }
         o.put("temperature", temperature);
         o.put("timeoutSeconds", timeoutSeconds);
         return o;
@@ -169,6 +266,7 @@ public class LLMTranslator implements TranslationInterface {
         o.put("textsSent", TEXTS_SENT.get());
         o.put("textsReused", TEXTS_REUSED.get());
         o.put("textsKeptInSource", TEXTS_KEPT.get());
+        o.put("answersRejected", ANSWERS_REJECTED.get());
         return o;
     }
 
@@ -381,15 +479,16 @@ public class LLMTranslator implements TranslationInterface {
     private Map<String, String> translateTexts(List<String> texts, String inputLang, String outputLang, String systemPrompt,
             String userPrefix, String what) {
         Map<String, String> result = new LinkedHashMap<>();
-        List<String> pending = new ArrayList<>();
+        LinkedHashSet<String> unique = new LinkedHashSet<>();   // each text once, in the order given
         for (String t : texts) {
             String memory = inventory != null ? inventory.translation(outputLang, t) : null;
             if (memory != null) {
                 result.put(t, memory);
-            } else if (!pending.contains(t)) {
-                pending.add(t);
+            } else {
+                unique.add(t);
             }
         }
+        List<String> pending = new ArrayList<>(unique);
         long start = System.currentTimeMillis();
         int[] requests = {0};
         List<String> missing;
@@ -398,7 +497,7 @@ public class LLMTranslator implements TranslationInterface {
             // came back empty or lost a placeholder.
             missing = translateNativePass(pending, inputLang, outputLang, result, requests);
             if (!missing.isEmpty()) {
-                System.out.println("  retrying " + missing.size() + " " + what + " that came back empty or without their placeholders");
+                System.out.println("  retrying " + missing.size() + " " + what + " whose answer could not be used");
                 missing = translateNativePass(missing, inputLang, outputLang, result, requests);
             }
         } else {
@@ -452,10 +551,12 @@ public class LLMTranslator implements TranslationInterface {
                     System.out.println("  WARNING: request failed for '" + preview(source) + "': " + describe(e));
                 }
                 requests[0]++;
-                if (out == null || out.trim().isEmpty()) {
-                    missing.add(source);
-                } else if (!placeholdersKept(source, out)) {
-                    System.out.println("  WARNING: placeholder lost in '" + preview(source) + "' -> '" + preview(out) + "'");
+                String rejected = rejectReason(source, out, outputLang);
+                if (rejected != null) {
+                    if (out != null && !out.trim().isEmpty()) {
+                        ANSWERS_REJECTED.incrementAndGet();
+                        System.out.println("  WARNING: answer rejected (" + rejected + "): '" + preview(source) + "' -> '" + preview(out) + "'");
+                    }
                     missing.add(source);
                 } else {
                     result.put(source, out);
@@ -493,12 +594,17 @@ public class LLMTranslator implements TranslationInterface {
         String src = languageName(inputLang);
         String tgt = languageName(outputLang);
         List<String> masked = new ArrayList<>();
-        String body = maskPlaceholders ? mask(text, masked) : text;
+        String body = maskTerms(maskPlaceholders ? mask(text, masked) : text, masked);
         if (plamoStyle) {
             // The whole user message is translated, so the text goes alone and without its edge
-            // whitespace; the options go in the system message, as the model card specifies.
+            // whitespace; the options go in the system message, as the model card specifies. What
+            // follows a "---" line there is context for the model, not text to translate.
+            String options = "[plamo-translate]\nsource_lang=" + plamoCode(inputLang) + "\ntarget_lang=" + plamoCode(outputLang);
+            if (!shortTextContext.isEmpty() && isShortLabel(text)) {
+                options += "\n---\n" + shortTextContext;
+            }
             JSONArray messages = new JSONArray();
-            messages.add(message("system", "[plamo-translate]\nsource_lang=" + plamoCode(inputLang) + "\ntarget_lang=" + plamoCode(outputLang)));
+            messages.add(message("system", options));
             messages.add(message("user", body.strip()));
             JSONObject extra = new JSONObject();
             JSONArray stop = new JSONArray();
@@ -508,7 +614,7 @@ public class LLMTranslator implements TranslationInterface {
             extra.put("max_tokens", 1024L);
             try {
                 String out = chatCompletion(messages, false, extra).trim();
-                return withEdges(text, maskPlaceholders ? unmask(out, masked, text.contains("\\n")) : out);
+                return withEdges(text, restore(out, masked, text));
             } catch (Exception e) {
                 System.out.println("  WARNING: translation request failed for '" + preview(text) + "': " + describe(e));
                 return null;
@@ -532,20 +638,222 @@ public class LLMTranslator implements TranslationInterface {
             if (out.length() >= 2 && out.startsWith("\"") && out.endsWith("\"") && !text.trim().startsWith("\"")) {
                 out = out.substring(1, out.length() - 1).trim();
             }
-            return withEdges(text, maskPlaceholders ? unmask(out, masked, text.contains("\\n")) : out);
+            return withEdges(text, restore(out, masked, text));
         } catch (Exception e) {
             System.out.println("  WARNING: translation request failed for '" + preview(text) + "': " + describe(e));
             return null;
         }
     }
 
-    /** The language code PLaMo Translate expects: the bare language, without Android's region suffix (pt-rBR gives pt). */
-    private static String plamoCode(String code) {
+    /** Puts back what was masked before the request (placeholders, protected terms). */
+    private String restore(String out, List<String> masked, String source) {
+        if (!maskPlaceholders && masked.isEmpty()) {
+            return out;
+        }
+        return unmask(out, masked, maskPlaceholders && source.contains("\\n"));
+    }
+
+    /** A text of up to three words: a label, whose meaning depends on where it is shown. */
+    static boolean isShortLabel(String text) {
+        String t = text.strip();
+        return !t.isEmpty() && t.length() <= 30 && t.split("\\s+").length <= 3;
+    }
+
+    /**
+     * Replaces protected terms, e-mail addresses and URLs with the same numbered tokens used for
+     * placeholders ({@code <ph0>}...), adding the originals to {@code originals}.
+     */
+    String maskTerms(String text, List<String> originals) {
+        String out = maskMatches(EMAIL_OR_URL, text, originals);
+        java.util.regex.Pattern terms = protectedPattern;
+        return terms == null ? out : maskMatches(terms, out, originals);
+    }
+
+    private static String maskMatches(java.util.regex.Pattern pattern, String text, List<String> originals) {
+        java.util.regex.Matcher m = pattern.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            originals.add(m.group());
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement("<ph" + (originals.size() - 1) + ">"));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    /** True when every protected term, e-mail address and URL of the source is in the translation as many times. */
+    boolean termsKept(String source, String translated) {
+        Map<String, Integer> needed = new HashMap<>();
+        java.util.regex.Matcher m = EMAIL_OR_URL.matcher(source);
+        while (m.find()) {
+            needed.merge(m.group(), 1, Integer::sum);
+        }
+        java.util.regex.Pattern terms = protectedPattern;
+        if (terms != null) {
+            m = terms.matcher(source);
+            while (m.find()) {
+                needed.merge(m.group(), 1, Integer::sum);
+            }
+        }
+        for (Map.Entry<String, Integer> e : needed.entrySet()) {
+            int found = 0;
+            for (int at = translated.indexOf(e.getKey()); at >= 0; at = translated.indexOf(e.getKey(), at + e.getKey().length())) {
+                found++;
+            }
+            if (found < e.getValue()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ------------------------------------------------------------------ is the answer a translation?
+
+    /**
+     * How a model starts when it comments instead of translating: "Note: ...", "Translation: ...",
+     * "Here is ...", "Sure, ...". The labels need their colon, so that "Translation settings" or
+     * "Nota nueva" are not taken for a comment.
+     */
+    private static final java.util.regex.Pattern COMMENTARY = java.util.regex.Pattern.compile(
+            "(?is)^\\W{0,3}(?:(?:note|nota|translation|traducci[o\u00f3]n|\u043f\u0435\u0440\u0435\u0432\u043e\u0434|\u043f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435)\\s*:"
+            + "|here is\\b|here's\\b|sure[,!.]|certainly[,!.]|of course[,!.]|aqu[i\u00ed] (?:est[a\u00e1]|tienes)\\b|claro[,!.]).*");
+
+    /** The script a language is written in, for the languages that do not use the Latin alphabet. */
+    private static final Map<String, Character.UnicodeScript[]> SCRIPTS = new HashMap<>();
+    static {
+        for (String code : new String[] {"ru", "uk", "bg", "be", "sr", "mk", "kk", "ky", "mn", "tg"}) {
+            SCRIPTS.put(code, new Character.UnicodeScript[] {Character.UnicodeScript.CYRILLIC});
+        }
+        for (String code : new String[] {"ar", "fa", "ur", "ps"}) {
+            SCRIPTS.put(code, new Character.UnicodeScript[] {Character.UnicodeScript.ARABIC});
+        }
+        for (String code : new String[] {"he", "iw", "yi"}) {
+            SCRIPTS.put(code, new Character.UnicodeScript[] {Character.UnicodeScript.HEBREW});
+        }
+        for (String code : new String[] {"hi", "mr", "ne"}) {
+            SCRIPTS.put(code, new Character.UnicodeScript[] {Character.UnicodeScript.DEVANAGARI});
+        }
+        SCRIPTS.put("el", new Character.UnicodeScript[] {Character.UnicodeScript.GREEK});
+        SCRIPTS.put("th", new Character.UnicodeScript[] {Character.UnicodeScript.THAI});
+        SCRIPTS.put("ko", new Character.UnicodeScript[] {Character.UnicodeScript.HANGUL, Character.UnicodeScript.HAN});
+        SCRIPTS.put("ja", new Character.UnicodeScript[] {Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA, Character.UnicodeScript.HAN});
+        SCRIPTS.put("zh", new Character.UnicodeScript[] {Character.UnicodeScript.HAN});
+        SCRIPTS.put("ka", new Character.UnicodeScript[] {Character.UnicodeScript.GEORGIAN});
+        SCRIPTS.put("hy", new Character.UnicodeScript[] {Character.UnicodeScript.ARMENIAN});
+        SCRIPTS.put("bn", new Character.UnicodeScript[] {Character.UnicodeScript.BENGALI});
+        SCRIPTS.put("ta", new Character.UnicodeScript[] {Character.UnicodeScript.TAMIL});
+        SCRIPTS.put("te", new Character.UnicodeScript[] {Character.UnicodeScript.TELUGU});
+        SCRIPTS.put("gu", new Character.UnicodeScript[] {Character.UnicodeScript.GUJARATI});
+        SCRIPTS.put("pa", new Character.UnicodeScript[] {Character.UnicodeScript.GURMUKHI});
+        SCRIPTS.put("ml", new Character.UnicodeScript[] {Character.UnicodeScript.MALAYALAM});
+        SCRIPTS.put("si", new Character.UnicodeScript[] {Character.UnicodeScript.SINHALA});
+        SCRIPTS.put("km", new Character.UnicodeScript[] {Character.UnicodeScript.KHMER});
+        SCRIPTS.put("my", new Character.UnicodeScript[] {Character.UnicodeScript.MYANMAR});
+    }
+
+    /**
+     * Why an answer cannot be stored as the translation of a text, or null when it can. A model
+     * sometimes answers with something that is not a translation at all: nothing, the text with a
+     * placeholder or a protected term missing (which breaks the app or the rule), its own
+     * instruction repeated, a comment about the task, or the text left in the wrong alphabet. Such
+     * an answer is asked for again and, if it comes back the same, the source text is kept.
+     */
+    String rejectReason(String source, String out, String outputLang) {
+        if (out == null || out.trim().isEmpty()) {
+            return "empty answer";
+        }
+        if (!placeholdersKept(source, out)) {
+            return "a placeholder was lost";
+        }
+        if (!termsKept(source, out)) {
+            return "a protected term was lost";
+        }
+        String s = source.trim();
+        String o = out.trim();
+        if (o.length() > 3 * s.length() + 30) {
+            return "far longer than the text";
+        }
+        if (COMMENTARY.matcher(o).matches() && !COMMENTARY.matcher(s).matches()) {
+            return "a comment instead of a translation";
+        }
+        if (inWrongScript(s, o, outputLang)) {
+            return "not written in the script of the language";
+        }
+        return null;
+    }
+
+    /**
+     * True when the language is written in a non-Latin script and the answer has letters but none
+     * of that script, once placeholders and protected terms are set aside: the model answered in
+     * another language. An answer equal to the source is not that: a brand or an acronym
+     * ("GitHub", "GPS") is rightly left as it is.
+     */
+    private boolean inWrongScript(String source, String out, String outputLang) {
+        String code = outputLang == null ? "" : outputLang.toLowerCase(Locale.ROOT);
+        int dash = code.indexOf('-');
+        Character.UnicodeScript[] expected = SCRIPTS.get(dash > 0 ? code.substring(0, dash) : code);
+        if (expected == null || !source.matches("(?s).*\\p{L}.*")) {
+            return false;
+        }
+        if (out.trim().equals(source.trim())) {
+            return false;   // left as it was (a brand, an acronym): the model's choice, not a wrong answer
+        }
+        String bare = maskTerms(PLACEHOLDER.matcher(out).replaceAll(" "), new ArrayList<>()).replaceAll("<ph\\d+>", " ");
+        boolean letters = false;
+        for (int i = 0; i < bare.length(); ) {
+            int cp = bare.codePointAt(i);
+            i += Character.charCount(cp);
+            if (!Character.isLetter(cp)) {
+                continue;
+            }
+            letters = true;
+            Character.UnicodeScript script = Character.UnicodeScript.of(cp);
+            for (Character.UnicodeScript e : expected) {
+                if (script == e) {
+                    return false;
+                }
+            }
+        }
+        return letters;
+    }
+
+    // ------------------------------------------------------------------ PLaMo Translate
+
+    /**
+     * The language code PLaMo Translate expects for an Android language code: the bare language
+     * ({@code es-rMX} gives {@code es}), Chinese by script, and the old codes Android still uses.
+     */
+    static String plamoCode(String code) {
         if (code == null || code.isEmpty()) {
             return "en";
         }
-        int dash = code.indexOf('-');
-        return (dash > 0 ? code.substring(0, dash) : code).toLowerCase(Locale.ROOT);
+        String c = code.toLowerCase(Locale.ROOT).replace("-r", "-").replace('_', '-');
+        if (c.startsWith("zh")) {
+            return c.contains("tw") || c.contains("hk") || c.contains("mo") || c.contains("hant") ? "zh-hant" : "zh-hans";
+        }
+        int dash = c.indexOf('-');
+        String base = dash > 0 ? c.substring(0, dash) : c;
+        switch (base) {
+            case "iw":
+                return "he";
+            case "in":
+                return "id";
+            case "fil":
+                return "tl";
+            default:
+                return base;
+        }
+    }
+
+    /**
+     * Why this engine cannot translate from or into a language, or null when it can. Only PLaMo
+     * Translate has a closed list; asked for a language outside it, it answers in another one
+     * (Portuguese came back in French) without saying so.
+     */
+    public String unsupportedLanguage(String code) {
+        if (!plamoStyle || PLAMO_LANGUAGES.contains(plamoCode(code))) {
+            return null;
+        }
+        return "the translation model (PLaMo Translate) does not support the language '" + code + "'";
     }
 
     /**
@@ -620,8 +928,17 @@ public class LLMTranslator implements TranslationInterface {
         return out;
     }
 
+    /**
+     * What must come out of a translation exactly as it went in: format specifiers, named
+     * placeholders, escaped line breaks, tags and entities. A percent sign is a specifier when it
+     * is doubled ({@code %%}), carries an argument index ({@code %1$s}), or is followed straight
+     * away by a conversion and does not follow a digit: in "50% of users" and "(% of line width)"
+     * it is a percentage, and masking "% o" there left stray letters in the translation.
+     */
     private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile(
-            "%(\\d+\\$)?[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z]|\\{[A-Za-z_][\\w.]*\\}|\\\\n|<[^<>]+>|&[a-z]+;");
+            "%%|%\\d+\\$[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z]"
+            + "|(?<![0-9%])%[-#+0,(]*\\d*(\\.\\d+)?(?:[bBhHsScCdoxXeEfgGaAn]|[tT][a-zA-Z])"
+            + "|\\{[A-Za-z_][\\w.]*\\}|\\\\n|<[^<>]+>|&[a-z]+;");
 
     /** True when every placeholder, tag and entity of the source appears at least as often in the translation. */
     static boolean placeholdersKept(String source, String translated) {
@@ -684,6 +1001,13 @@ public class LLMTranslator implements TranslationInterface {
                 } else {
                     t = withEdges(source, t);
                 }
+                String rejected = rejectReason(source, t, outputLang);
+                if (rejected != null) {
+                    ANSWERS_REJECTED.incrementAndGet();
+                    System.out.println("  WARNING: answer rejected (" + rejected + "): '" + preview(source) + "' -> '" + preview(t) + "'");
+                    missing.add(source);
+                    continue;
+                }
                 result.put(source, t);
                 if (inventory != null) {
                     inventory.putTranslation(outputLang, batch.get(i), t);
@@ -701,9 +1025,12 @@ public class LLMTranslator implements TranslationInterface {
     @SuppressWarnings("unchecked")
     private List<String> translateBatch(List<String> batch, String systemPrompt, String userPrefix) {
         JSONObject items = new JSONObject();
+        List<List<String>> maskedTerms = new ArrayList<>();
         for (int i = 0; i < batch.size(); i++) {
             String text = batch.get(i);
-            items.put(String.valueOf(i), isQuoted(text) ? text.substring(1, text.length() - 1) : text);
+            List<String> originals = new ArrayList<>();
+            items.put(String.valueOf(i), maskTerms(isQuoted(text) ? text.substring(1, text.length() - 1) : text, originals));
+            maskedTerms.add(originals);
         }
         JSONArray messages = new JSONArray();
         messages.add(message("system", systemPrompt));
@@ -724,6 +1051,8 @@ public class LLMTranslator implements TranslationInterface {
             String translated = translatedByKey.get(String.valueOf(i));
             if (translated == null) {
                 dropped++;
+            } else if (!maskedTerms.get(i).isEmpty()) {
+                translated = unmask(translated, maskedTerms.get(i), false);
             }
             result.add(translated);
         }

@@ -39,7 +39,7 @@ Paquete `helper/` (infraestructura):
 - `Preflight`: comprobaciones previas de dispositivo y APK; datos de la app decodificada (`describeDecodedApp`, sin dispositivo) y su comprobación contra el dispositivo (`checkDecodedApp`).
 - `StringInventory`: inventario de strings con origen, reglas de "no traducir", uso de cada literal hardcoded y memoria de traducciones (`strings_inventory.json`).
 - `LLMServerManager`: arranca o verifica el servidor LLM.
-- `APKToolWrapper`: decodifica (`apktool d`) y reconstruye+firma (`apktool b` + signer).
+- `APKToolWrapper`: decodifica (`apktool d`) y reconstruye+firma (`apktool b` + signer). Si la construcción falla por un atributo `android:` que apktool no conoce o por un atributo de la app cuya declaración se perdió al decodificar, lo ajusta en `temp/` y reintenta (`buildAdjustments`).
 - `AppCode`: localiza el código propio de la app (raíces de paquete) a partir del `applicationId`, de la clase `BuildConfig` y de las clases que declara el manifiesto, descartando librerías.
 - `SmaliScan`: una sola pasada por el smali de la app; cada `const-string` con su dex, clase, método, línea, registro, literal y el uso que le da el código (`Consumer`).
 - `ConsumerRules`: la tabla que dice qué hace cada API con un string, leída de `hardcoded-consumers.txt` (empaquetado junto a la clase; uno con el mismo nombre en la carpeta de settings añade reglas que se prueban primero).
@@ -148,6 +148,14 @@ ITDroid es agnóstico al motor: solo habla un endpoint HTTP OpenAI-compatible. E
 - Vacío: pre-flight; el server debe estar arriba o aborta con mensaje claro.
 
 El estilo de petición lo fija `translation.style`: `json` (lotes de 25 textos en un objeto JSON, para modelos de chat), `translategemma` (un texto por petición con el prompt fijo de TranslateGemma) o `template` (un texto por petición con `translation.promptTemplate`, por defecto el prompt de Hy-MT2); `auto` lo deduce del nombre del modelo. En los estilos de un texto por petición los placeholders viajan enmascarados como `<phN>` (`translation.maskPlaceholders`) y cada respuesta pasa por la comprobación de placeholders; si los pierde dos veces, el texto se queda en el idioma origen. Un GGUF del Hub servido por Ollama puede traer la plantilla de chat corrupta: comprobar `ollama show <modelo> --template` y, si hace falta, envolverlo en un Modelfile con la plantilla oficial (ver `eval/Modelfile.hy-mt2`).
+
+Qué viaja al modelo y qué se acepta de vuelta (`LLMTranslator`), igual en todos los estilos:
+
+- Lo que debe volver intacto se enmascara con tokens `<phN>` y se restaura después: especificadores de formato, placeholders con nombre, etiquetas y entidades (en los estilos de un texto por petición), y siempre los términos protegidos (`protected-terms.txt` de la carpeta de settings, más el nombre de la app cuando es reconocible como nombre), las direcciones de correo y las URL. Un `%` solo es formato si va doblado, lleva índice (`%1$s`) o le sigue directamente una conversión y no viene tras un dígito; en `50% of users` es un porcentaje.
+- Las comillas dobles que envuelven un valor entero son sintaxis de recursos: se quitan antes de enviar y se vuelven a poner sin escapar.
+- La traducción conserva el espacio inicial y final del original.
+- `rejectReason` descarta la respuesta que no es una traducción: vacía, sin un placeholder o un término protegido del original, desproporcionadamente larga, un comentario (`Nota: ...`, `Sure, ...`), o en letras latinas cuando el idioma usa otro alfabeto. El texto se pide otra vez y, si vuelve igual, queda en el idioma origen; los rechazos se cuentan en `performance.llm.answersRejected`.
+- PLaMo Translate (`translation.style=plamo`): un texto por petición, con `source_lang` y `target_lang` en el mensaje de sistema y, para textos de hasta tres palabras, una línea de contexto tras `---` que dice que es una etiqueta de la interfaz de una app. Tiene una lista cerrada de 53 idiomas (`unsupportedLanguage`); un idioma fuera de ella no se evalúa, porque el modelo responde en otro sin avisar.
 
 Un server que ITDroid arrancó se apaga al final (shutdown hook, mata el árbol de procesos). Uno que ya estaba corriendo se reutiliza y no se toca. La salida del server va a `<output>/llm-server.log`.
 

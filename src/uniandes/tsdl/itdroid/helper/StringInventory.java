@@ -528,7 +528,20 @@ public class StringInventory {
         if (LLMTranslator.looksLikeNonText(t)) {
             return "not human-readable text";
         }
+        if (looksLikeKeyOrToken(t)) {
+            return "key or token";
+        }
         return null;
+    }
+
+    /**
+     * An API key, a token, an encoded secret: one long run of letters and digits with no space,
+     * such as {@code AIzaSyD4x...} or a Base64 value. Never text for a person, in a resource or in
+     * the code.
+     */
+    static boolean looksLikeKeyOrToken(String t) {
+        return t.length() >= 24 && t.matches("[A-Za-z0-9+/_=.-]+") && t.matches(".*[0-9].*") && t.matches(".*[A-Za-z].*")
+                && !t.contains("..") && t.chars().filter(c -> c == '.').count() <= 2;
     }
 
     /** The element's content as XML text, so inline markup ({@code <b>}, {@code <xliff:g>}) is kept. */
