@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -44,6 +46,15 @@ final class TestGraphs {
         return node(index, "android.widget.TextView", "", x1, y1, x2, y2);
     }
 
+    /** A layout that holds other nodes. */
+    static String group(int index, int x1, int y1, int x2, int y2, String... children) {
+        return node(index, "android.widget.LinearLayout", "", x1, y1, x2, y2, children);
+    }
+
+    static State state(String screen) throws Exception {
+        return new State(1, ".Main", screen, "");
+    }
+
     /**
      * Writes a {@code result.json} with one state per screen (ids 1..n) into the folder. With
      * {@code replay}, every state carries the source id it reproduces, as a replayed exploration does.
@@ -73,13 +84,18 @@ final class TestGraphs {
         return folder;
     }
 
-    /** Compares a source exploration with a replayed one, as the pipeline does; returns the language report. */
+    /** Compares a source exploration (English) with a replayed one in Spanish, as the pipeline does; returns the language report. */
     static JSONObject compare(Path source, Path language, Path out) throws IOException {
+        return compare(source, language, out, "es", "Spanish");
+    }
+
+    /** The same, for the language of the given code: "ar" makes it a comparison with a right-to-left language. */
+    static JSONObject compare(Path source, Path language, Path out, String code, String name) throws IOException {
         Files.createDirectories(out);
         LayoutGraph sourceGraph = new LayoutGraph("en", source.toString());
-        LayoutGraph languageGraph = new LayoutGraph("es", language.toString());
+        LayoutGraph languageGraph = new LayoutGraph(code, language.toString());
         JSONObject report = new JSONObject();
-        new LayoutGraphComparision("en", sourceGraph, "Spanish", "es", languageGraph, language.toString(), out.toString(), report);
+        new LayoutGraphComparision("en", sourceGraph, name, code, languageGraph, language.toString(), out.toString(), report);
         return report;
     }
 
@@ -88,36 +104,74 @@ final class TestGraphs {
         return v instanceof Number ? ((Number) v).longValue() : -1;
     }
 
-    /** Node indexes reported as IPF, in order. */
-    static Set<Long> ipfNodes(JSONObject report) {
-        Set<Long> nodes = new TreeSet<>();
+    /** A number of the breakdown of the language ({@code ipfSummary}), -1 when it is not there. */
+    static long summary(JSONObject report, String key) {
+        Object summary = report.get("ipfSummary");
+        return summary instanceof JSONObject ? count((JSONObject) summary, key) : -1;
+    }
+
+    /** How many findings of the language have the given type ({@code ipfSummary.byType}). */
+    static long ofType(JSONObject report, String type) {
+        Object summary = report.get("ipfSummary");
+        Object byType = summary instanceof JSONObject ? ((JSONObject) summary).get("byType") : null;
+        return byType instanceof JSONObject ? count((JSONObject) byType, type) : -1;
+    }
+
+    /** The findings as they are written in the report. */
+    static List<JSONObject> findings(JSONObject report) {
+        List<JSONObject> out = new ArrayList<>();
         Object ipfs = report.get("ipfs");
         if (ipfs instanceof JSONArray) {
             for (Object o : (JSONArray) ipfs) {
-                nodes.add(((Number) ((JSONObject) o).get("nodeID")).longValue());
+                out.add((JSONObject) o);
             }
+        }
+        return out;
+    }
+
+    /** The finding of the element at that position of the source screen, or null. */
+    static JSONObject finding(JSONObject report, long node) {
+        for (JSONObject f : findings(report)) {
+            if (((Number) f.get("nodeID")).longValue() == node) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    /** The types of the finding of that element of the source screen, in the order of the report. */
+    static List<String> types(JSONObject report, long node) {
+        List<String> out = new ArrayList<>();
+        JSONObject f = finding(report, node);
+        if (f != null) {
+            for (Object t : (JSONArray) f.get("types")) {
+                out.add(String.valueOf(t));
+            }
+        }
+        return out;
+    }
+
+    /** Positions in the source screen of the elements reported, in order (-1 for one only the translated screen has). */
+    static Set<Long> ipfNodes(JSONObject report) {
+        Set<Long> nodes = new TreeSet<>();
+        for (JSONObject f : findings(report)) {
+            nodes.add(((Number) f.get("nodeID")).longValue());
         }
         return nodes;
     }
 
-    /** The relations of {@code field} ("added" or "removed") reported for {@code node} against {@code other}. */
+    /** The relations of {@code field} ("added", "removed" or "missing") reported for {@code node} against {@code other}. */
     static Set<String> relations(JSONObject report, long node, long other, String field) {
         Set<String> out = new TreeSet<>();
-        Object ipfs = report.get("ipfs");
-        if (!(ipfs instanceof JSONArray)) {
+        JSONObject ipf = finding(report, node);
+        if (ipf == null) {
             return out;
         }
-        for (Object o : (JSONArray) ipfs) {
-            JSONObject ipf = (JSONObject) o;
-            if (((Number) ipf.get("nodeID")).longValue() != node) {
-                continue;
-            }
-            for (Object r : (JSONArray) ipf.get("relations")) {
-                JSONObject rel = (JSONObject) r;
-                if (((Number) rel.get("relNode")).longValue() == other) {
-                    String raw = String.valueOf(rel.get(field));
-                    Arrays.stream(raw.split(";")).filter(s -> !s.isEmpty()).forEach(out::add);
-                }
+        for (Object r : (JSONArray) ipf.get("relations")) {
+            JSONObject rel = (JSONObject) r;
+            if (((Number) rel.get("relNode")).longValue() == other && rel.get(field) != null) {
+                String raw = String.valueOf(rel.get(field));
+                Arrays.stream(raw.split(";")).filter(s -> !s.isEmpty()).forEach(out::add);
             }
         }
         return out;

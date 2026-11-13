@@ -310,9 +310,10 @@
       return;
     }
     root.appendChild(el('p', { class: 'text-muted small' },
-      'An IPF is a node of a screen whose spatial relations to the other nodes changed in the translated version ' +
-      '(a relation lost or gained: LEFT, RIGHT, ABOVE, BELOW, alignment). The screens are paired with the source exploration (' + (dflt || '') + ') ' +
-      'by replayed state; expand a screen to see both versions with the affected nodes outlined.'));
+      'An IPF is an element of a screen whose place with respect to the other elements changed in the translated version ' +
+      '(a relation lost or gained: LEFT, RIGHT, ABOVE, BELOW, alignment, overlap), or one that only one of the two screens has. ' +
+      'In a right-to-left language the layout is expected to be mirrored, so what is reported there is what did not swap sides. ' +
+      'The screens are paired with the source exploration (' + (dflt || '') + ') by replayed state; expand a screen to see both versions with the affected elements outlined.'));
     for (const c of targets) {
       const l = lr[c];
       const rep = l.replay || {};
@@ -335,13 +336,18 @@
         if (rep.divergences.length > 12) ul.appendChild(el('li', { class: 'text-muted' }, '… ' + (rep.divergences.length - 12) + ' more'));
         body.appendChild(el('details', null, el('summary', { class: 'small text-muted state-toggle' }, 'Replay divergences (' + rep.divergences.length + ')'), ul));
       }
+      if (Array.isArray(l.statesNotCompared) && l.statesNotCompared.length) {
+        const ul = el('ul', { class: 'small mb-2' });
+        for (const s of l.statesNotCompared) ul.appendChild(el('li', null, 'Screen ' + s.stateID + ' ' + s.reason));
+        body.appendChild(el('details', null, el('summary', { class: 'small text-muted state-toggle' }, 'Screens reached but not compared (' + l.statesNotCompared.length + ')'), ul));
+      }
       const groups = groupIpfs(l.ipfs || []);
       if (!groups.length) {
         body.appendChild(el('p', { class: 'text-success mb-0' }, 'No presentation failures detected.'));
       } else {
         for (const g of groups) {
           const det = el('details', { class: 'mb-2' });
-          det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, 'Screen ' + g.stateId), ' · ' + g.ipfs.length + ' node' + (g.ipfs.length === 1 ? '' : 's') + ' with changed relations'));
+          det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, 'Screen ' + g.stateId), ' · ' + g.ipfs.length + ' element' + (g.ipfs.length === 1 ? '' : 's') + ' with a finding'));
           const holder = el('div', { class: 'mt-2' }, el('p', { class: 'text-muted small' }, 'Loading screens…'));
           det.appendChild(holder);
           det.addEventListener('toggle', () => { if (det.open && !det.dataset.loaded) { det.dataset.loaded = '1'; renderScreenPair(holder, c, dflt, g); } });
@@ -449,27 +455,52 @@
     }
     const srcState = src ? src.states[group.stateId] : null;
     const tgtState = tgt ? (tgt.bySource[group.stateId] || tgt.states[group.stateId]) : null;
-    const ipfIdx = group.ipfs.map(i => Number(i.nodeID));
-    const relIdx = [];
-    for (const i of group.ipfs) for (const r of (i.relations || [])) if (!ipfIdx.includes(Number(r.relNode))) relIdx.push(Number(r.relNode));
+    // An element has a position in the source screen (nodeID) and one in the translated screen
+    // (langNodeID); -1 when that screen does not have it. Reports written before elements were
+    // paired one by one only carry nodeID, which was the same position in both screens.
+    const tgtPos = i => i.langNodeID != null ? Number(i.langNodeID) : Number(i.nodeID);
+    const tgtRelPos = r => r.langRelNode != null ? Number(r.langRelNode) : Number(r.relNode);
+    const srcIpf = group.ipfs.map(i => Number(i.nodeID)).filter(n => n >= 0);
+    const tgtIpf = group.ipfs.map(tgtPos).filter(n => n >= 0);
+    const srcRel = [], tgtRel = [];
+    for (const i of group.ipfs) for (const r of (i.relations || [])) {
+      if (!srcIpf.includes(Number(r.relNode))) srcRel.push(Number(r.relNode));
+      if (!tgtIpf.includes(tgtRelPos(r))) tgtRel.push(tgtRelPos(r));
+    }
     holder.appendChild(el('div', { class: 'shot-pair mb-2' },
-      shotView(srcState, 'Source (' + dflt + ')', ipfIdx, relIdx),
-      shotView(tgtState, 'Translated (' + lang + ')', ipfIdx, relIdx)));
-    holder.appendChild(el('p', { class: 'text-muted small mb-1' }, 'Red: nodes with changed relations. Dashed blue: the nodes they relate to. The translated screen outlines the nodes at the same positions (ITDroid pairs nodes positionally).'));
+      shotView(srcState, 'Source (' + dflt + ')', srcIpf, srcRel),
+      shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel)));
+    holder.appendChild(el('p', { class: 'text-muted small mb-1' }, 'Red: the elements with a finding, each outlined where it is in that screen. Dashed blue: the elements they relate to. An element only one of the two screens has is outlined in that screen alone.'));
+    const list = s => s.replace(/;$/, '').replace(/;/g, ', ');
     const rows = [];
     for (const i of group.ipfs) {
-      const n = srcState ? srcState.nodes[Number(i.nodeID)] : null;
-      const rel = (i.relations || []).map(r => {
-        const other = srcState ? srcState.nodes[Number(r.relNode)] : null;
-        const parts = [];
-        if (r.removed) parts.push('lost ' + r.removed.replace(/;$/, '').replace(/;/g, ', '));
-        if (r.added) parts.push('gained ' + r.added.replace(/;$/, '').replace(/;/g, ', '));
-        return el('div', null, el('span', { class: 'text-muted' }, '→ #' + r.relNode + ' '), el('span', { class: 'node-text', title: nodeLabel(other) }, nodeLabel(other)), ': ' + parts.join('; '));
-      });
-      rows.push(['#' + i.nodeID, el('span', { class: 'node-text', title: nodeLabel(n) }, nodeLabel(n)), el('div', null, ...rel)]);
+      const lost = i.kind === 'componentLost', added = i.kind === 'componentAdded';
+      const n = added ? (tgtState ? tgtState.nodes[tgtPos(i)] : null) : (srcState ? srcState.nodes[Number(i.nodeID)] : null);
+      const inside = isNum(i.score) && i.score > 1 ? ' (with the ' + (i.score - 1) + ' element' + (i.score === 2 ? '' : 's') + ' inside it)' : '';
+      let what;
+      if (lost) what = 'The translated screen does not have it' + inside + '.';
+      else if (added) what = 'The source screen does not have it' + inside + '.';
+      else {
+        what = el('div', null, ...(i.relations || []).map(r => {
+          const other = srcState ? srcState.nodes[Number(r.relNode)] : null;
+          const parts = [];
+          if (r.removed) parts.push('lost ' + list(r.removed));
+          if (r.added) parts.push('gained ' + list(r.added));
+          if (r.missing) parts.push('not mirrored, expected ' + list(r.missing));
+          return el('div', null, el('span', { class: 'text-muted' }, '→ #' + r.relNode + ' '), el('span', { class: 'node-text', title: nodeLabel(other) }, nodeLabel(other)), ': ' + parts.join('; '));
+        }));
+      }
+      const kinds = (i.types || []).map(t => IPF_TYPES[t] || t).join(', ') + (i.geometry && IPF_GEOMETRY[i.geometry] ? ' · ' + IPF_GEOMETRY[i.geometry] : '');
+      rows.push([added ? '– / #' + tgtPos(i) : '#' + i.nodeID + (lost ? ' / –' : ''),
+        el('span', { class: 'node-text', title: nodeLabel(n) }, nodeLabel(n)), kinds, what]);
     }
-    holder.appendChild(table(['Node', 'Element (source)', 'Changed relations'], rows));
+    holder.appendChild(table(['Node', 'Element', 'What changed', 'Detail'], rows));
   }
+
+  /** The kinds of change of the comparison (ipfs[].types) and what happened to the element itself (ipfs[].geometry). */
+  const IPF_TYPES = { positionLost: 'position lost', positionAdded: 'position gained', alignmentLost: 'alignment lost', alignmentAdded: 'alignment gained',
+    overlapAdded: 'overlap', overlapRemoved: 'overlap gone', missingMirroring: 'not mirrored', componentLost: 'missing element', componentAdded: 'extra element' };
+  const IPF_GEOMETRY = { same: 'it stayed in place', mirrored: 'it was mirrored', moved: 'it moved', resized: 'it changed size', 'moved+resized': 'it moved and changed size' };
 
   // ------------------------------------------------------------------ hardcoded strings
 

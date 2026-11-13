@@ -21,7 +21,7 @@ import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
 
 /**
- * {@code java -jar ITDroid.jar --reanalyze <folder> [--out <folder>]}: recomputes the layout
+ * {@code java -jar ITDroid.jar --reanalyze <folder> [--out <folder>] [--min-similarity <0..1>]}: recomputes the layout
  * comparison of evaluations that were already explored, from their stored {@code result.json}
  * files. No device and no LLM are needed, so a change to the comparison can be measured on a whole
  * batch without exploring every app again.
@@ -43,6 +43,8 @@ public class Reanalysis {
         public Long recomputedPaired;
         /** Why there is no recomputed value (missing result.json, unreadable graph), else "". */
         public String note = "";
+        /** The breakdown of the recomputed comparison (the ipfSummary of the language), or null. */
+        public JSONObject summary;
 
         public boolean same() {
             return reportedIpfs != null && reportedIpfs.equals(recomputedIpfs);
@@ -55,12 +57,20 @@ public class Reanalysis {
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("--out") && i + 1 < args.length) {
                 out = args[++i];
+            } else if (args[i].equals("--min-similarity") && i + 1 < args.length) {
+                // the same threshold as the config key comparison.minSimilarity, to try values on stored runs
+                String raw = args[++i];
+                try {
+                    LayoutGraphComparision.setMinSimilarity(Double.parseDouble(raw));
+                } catch (IllegalArgumentException e) {
+                    throw new ITDroidException("--min-similarity must be a number between 0 and 1, got '" + raw + "'.");
+                }
             } else {
                 input = args[i];
             }
         }
         if (input == null) {
-            throw new ITDroidException("Usage: --reanalyze <evaluation or folder of evaluations> [--out <folder>]");
+            throw new ITDroidException("Usage: --reanalyze <evaluation or folder of evaluations> [--out <folder>] [--min-similarity <0..1>]");
         }
         Path in = Paths.get(input).toAbsolutePath().normalize();
         if (!Files.isDirectory(in)) {
@@ -131,7 +141,7 @@ public class Reanalysis {
         JSONObject langs = (JSONObject) langsObj;
         Files.createDirectories(evalOut);
         Path ipfsCsv = evalOut.resolve("ipfs.csv");
-        Files.writeString(ipfsCsv, "language;state;nodePos;ipfScore" + System.lineSeparator(), StandardCharsets.UTF_8);
+        Files.writeString(ipfsCsv, "language;state;nodePos;ipfScore;langNodePos;kind" + System.lineSeparator(), StandardCharsets.UTF_8);
 
         LayoutGraph sourceGraph = null;
         String sourceNote = "";
@@ -178,6 +188,7 @@ public class Reanalysis {
                                 evalOut.toString(), recomputed);
                         row.recomputedIpfs = asLong(recomputed.get("amIPFs"));
                         row.recomputedPaired = asLong(recomputed.get("pairedStates"));
+                        row.summary = recomputed.get("ipfSummary") instanceof JSONObject ? (JSONObject) recomputed.get("ipfSummary") : null;
                     } catch (Exception e) {
                         row.note = "comparison failed: " + describe(e);
                     }
@@ -235,14 +246,35 @@ public class Reanalysis {
         return hasTranslated ? translated : null;
     }
 
+    /** The kinds of change of the comparison, in the order of the columns of summary.csv. */
+    private static final String[] TYPES = {"positionLost", "positionAdded", "alignmentLost", "alignmentAdded", "overlapAdded",
+            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded"};
+
     private static void writeSummaryCsv(List<Row> rows, Path file) throws IOException {
         try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            w.write("evaluation;language;reportedIPFs;recomputedIPFs;same;reportedPaired;recomputedPaired;note");
+            w.write("evaluation;language;reportedIPFs;recomputedIPFs;same;reportedPaired;recomputedPaired;note"
+                    + ";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;" + String.join(";", TYPES)
+                    + ";siblingPairsChecked;siblingPairsNotMirrored");
             w.newLine();
             for (Row r : rows) {
-                w.write(r.evaluation + ";" + r.language + ";" + cell(r.reportedIpfs) + ";" + cell(r.recomputedIpfs) + ";"
-                        + (r.recomputedIpfs == null ? "" : String.valueOf(r.same())) + ";" + cell(r.reportedPaired) + ";"
-                        + cell(r.recomputedPaired) + ";" + r.note.replace(';', ',').replace('\n', ' '));
+                StringBuilder line = new StringBuilder();
+                line.append(r.evaluation).append(';').append(r.language).append(';').append(cell(r.reportedIpfs)).append(';')
+                        .append(cell(r.recomputedIpfs)).append(';').append(r.recomputedIpfs == null ? "" : String.valueOf(r.same()))
+                        .append(';').append(cell(r.reportedPaired)).append(';').append(cell(r.recomputedPaired)).append(';')
+                        .append(r.note.replace(';', ',').replace('\n', ' '));
+                // the breakdown of the recomputed comparison (empty for a row that could not be recomputed)
+                for (String key : new String[] {"nodesCompared", "nodesChanged", "nodesAffected", "componentsLost", "componentsAdded"}) {
+                    line.append(';').append(r.summary == null ? "" : String.valueOf(r.summary.get(key)));
+                }
+                Object byType = r.summary == null ? null : r.summary.get("byType");
+                for (String type : TYPES) {
+                    line.append(';').append(byType instanceof JSONObject ? String.valueOf(((JSONObject) byType).get(type)) : "");
+                }
+                for (String key : new String[] {"siblingPairsChecked", "siblingPairsNotMirrored"}) {
+                    Object v = r.summary == null ? null : r.summary.get(key);
+                    line.append(';').append(v == null ? "" : String.valueOf(v));
+                }
+                w.write(line.toString());
                 w.newLine();
             }
         }

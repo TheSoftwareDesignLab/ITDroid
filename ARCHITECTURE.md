@@ -61,14 +61,13 @@ Paquete `helper/` (infraestructura):
 Paquete `model/` (grafos y comparación, detección de IPFs):
 
 - `LayoutGraph`: parsea `result.json` a `List<State>` + `List<Transition>`, por id de estado.
-- `State`: una pantalla; convierte su `rawXML` en nodos y un grafo de relaciones espaciales; conserva el id del estado origen que reproduce.
-- `AndroidNode`: un elemento UI (clase, bounds, texto, enabled).
+- `State`: una pantalla; convierte su `rawXML` en nodos, con el árbol que forman (padre e hijos de cada uno), y en un grafo de relaciones espaciales entre cada dos nodos; conserva el id del estado origen que reproduce.
+- `AndroidNode`: un elemento UI (clase, resource-id, bounds, texto, clickable) y su lugar en el árbol.
 - `AndroidNodeProperty`: enum de propiedades de nodo.
-- `GraphEdgeType`: enum de relaciones espaciales (LEFT/RIGHT/ABOVE/BELOW/alineación).
+- `GraphEdgeType`: enum de relaciones espaciales (LEFT/RIGHT/ABOVE/BELOW, alineaciones, CONTAINS/CONTAINED, INTERSECTS), con la relación en que se convierte cada una en un layout espejado. Los conjuntos de relaciones son `EnumSet`: siempre se escriben en el mismo orden.
 - `Transition`, `TransitionType`: aristas del grafo (navegaciones).
-- `LayoutGraphComparision`: empareja estados (por id reproducido, o posicionalmente) y compara grafos, produce IPFs.
-- `IPF`: un Internationalization Presentation Failure.
-- `IPFComparator`: ordena IPFs por severidad.
+- `NodePairing`: qué elemento de la pantalla traducida es cada elemento de la pantalla origen. Recorre los dos árboles desde arriba y alinea en orden los hijos de cada par (como un diff), por clase, resource-id, forma y, para desempatar, posición.
+- `LayoutGraphComparision`: empareja estados (por id reproducido y parecido suficiente, o posicionalmente cuando no hay replay), compara las relaciones de cada dos elementos emparejados y produce los IPFs con su tipo, más el desglose `ipfSummary`.
 
 Dependencias externas (no van en el repo, ver README): apktool.jar y uber-apk-signer.jar en `extra/`, adb (Android SDK) y un servidor LLM local. Librerías Maven: `json-simple`, `commons-io`, `jdom2`.
 
@@ -133,7 +132,11 @@ Por cada idioma (`ITDroid.processLanguage`), con la app fuera del dispositivo:
 3. `APKToolWrapper.buildAPK` reconstruye y firma `<pkg>-<lang>-aligned-debugSigned.apk`; el smali vuelve a quedar intacto.
 4. Respaldo: el explorador anota en `replay_report.json` los crashes de la app durante el replay (y en `exploration_script.json` los del original durante la exploración). Si el APK del idioma no llega a primer plano, o crashea con una excepción que el original no dio, el idioma se reconstruye sin parches y sin las traducciones de los literales del código (`CodeLiteralExtractor.removeTranslations`), se repite el replay y quedan `hardcodedFallback`, `revertedHardcoded` y `crashes` en `report.json`, y las filas como `reverted` en el CSV.
 5. `AdbExplorer.replay`: instala, reinicio limpio, lanza, asienta, y ejecuta las acciones grabadas. Antes de cada acción comprueba estar en el estado esperado (por la firma aprendida en esta versión) y, si no, reinicia y rehace el camino. Cada pantalla capturada se guarda con el id del estado origen que reproduce. Las divergencias (elemento no encontrado, pantalla distinta, salida de la app) se anotan en `replay_report.json`, nunca abortan. Al terminar desinstala la app.
-6. `LayoutGraphComparision` empareja cada estado por id reproducido (misma actividad y número de nodos similar) y compara las relaciones espaciales nodo a nodo; cada relación perdida o nueva es un IPF.
+6. `LayoutGraphComparision` compara cada estado con el estado origen que reproduce:
+   - Empareja el estado por id reproducido si está en la misma actividad y `NodePairing` logra emparejar al menos la proporción `comparison.minSimilarity` (0,5 por defecto) de los elementos de la pantalla mayor. Si no, la app mostró otra cosa en ese paso y el estado queda en `statesNotCompared` con el motivo.
+   - Para cada dos elementos emparejados compara las relaciones que tenían en el origen con las que tienen ahora. Un elemento con una relación perdida o ganada es un hallazgo; también lo es un elemento que solo tiene una de las dos pantallas, reportado una vez en lo más alto de lo que falta o sobra.
+   - Dos reglas dejan fuera lo que no es un fallo. Un cambio de alineación se ignora si cualquiera de los dos elementos es un texto (un texto traducido cambia de ancho). Y entre un idioma de izquierda a derecha y uno de derecha a izquierda (`Helper.languageIsRTL`) se espera que el layout se espeje: que izquierda y derecha se intercambien no se reporta; se reporta que dos elementos hermanos no se hayan intercambiado (`missingMirroring`).
+   - Cada hallazgo lleva sus tipos (posición perdida o ganada, alineación perdida o ganada, solapamiento nuevo o desaparecido, falta de espejado, componente perdido o añadido) y qué le pasó al elemento mismo (`geometry`: igual, movido, redimensionado, espejado). `amIPFs` es el número de hallazgos; `ipfSummary` lo desglosa.
 
 # Fase 4, cierre
 
@@ -169,17 +172,17 @@ Un server que ITDroid arrancó se apaga al final (shutdown hook, mata el árbol 
 
 # Re-análisis sin dispositivo
 
-`java -jar ITDroid.jar --reanalyze <carpeta> [--out <carpeta>]` (`helper/Reanalysis`) vuelve a calcular la comparación de evaluaciones ya exploradas: lee el `report.json` de cada una para saber el idioma origen y los idiomas evaluados, carga los `result.json` guardados con `LayoutGraph` y ejecuta `LayoutGraphComparision` tal como lo hace el pipeline. No usa dispositivo ni LLM y no escribe nada en la carpeta de entrada; la salida (por defecto `reanalysis/<nombre de la carpeta>`) lleva un `summary.csv` con los IPFs reportados y los recalculados por evaluación e idioma, y por evaluación un `reanalysis.json` y un `ipfs.csv`. Sirve para medir sobre un lote entero el efecto de cualquier cambio en el comparador sin volver a explorar las apps.
+`java -jar ITDroid.jar --reanalyze <carpeta> [--out <carpeta>] [--min-similarity <0..1>]` (`helper/Reanalysis`) vuelve a calcular la comparación de evaluaciones ya exploradas: lee el `report.json` de cada una para saber el idioma origen y los idiomas evaluados, carga los `result.json` guardados con `LayoutGraph` y ejecuta `LayoutGraphComparision` tal como lo hace el pipeline. No usa dispositivo ni LLM y no escribe nada en la carpeta de entrada; la salida (por defecto `reanalysis/<nombre de la carpeta>`) lleva un `summary.csv` con los IPFs reportados y los recalculados por evaluación e idioma y el desglose de `ipfSummary` en columnas, y por evaluación un `reanalysis.json` y un `ipfs.csv`. Sirve para medir sobre un lote entero el efecto de cualquier cambio en el comparador sin volver a explorar las apps: un lote de 40 apps en tres idiomas se recalcula en un par de segundos, y dos corridas sobre los mismos datos escriben los mismos archivos.
 
 # Pruebas
 
 `mvn test` corre las pruebas unitarias (JUnit 5), que viven en `test/` con los mismos paquetes que `src/`. No necesitan dispositivo ni LLM.
 
-- `model/`: relaciones entre los nodos de una pantalla (`StateRelationsTest`), reglas de la comparación sobre pantallas hechas a mano (`ComparisonRulesTest`), carga de `result.json` (`LayoutGraphTest`) y la comparación de cuatro evaluaciones reales guardadas en `test/fixtures/evaluations` (`StoredEvaluationsComparisonTest`), cuyos conteos de IPFs quedan fijados: un cambio en el comparador que los mueva tiene que ser intencionado.
+- `model/`: relaciones entre los nodos de una pantalla (`StateRelationsTest`), emparejamiento de los elementos de dos pantallas (`NodePairingTest`), reglas de la comparación sobre pantallas hechas a mano (`ComparisonRulesTest`, y `RtlComparisonTest` para los idiomas de derecha a izquierda), carga de `result.json` (`LayoutGraphTest`) y la comparación de cuatro evaluaciones reales guardadas en `test/fixtures/evaluations` (`StoredEvaluationsComparisonTest`), cuyos conteos de IPFs y su desglose quedan fijados: un cambio en el comparador que los mueva tiene que ser intencionado.
 - `helper/`: localización del código (`AppCodeTest`), escaneo y clasificación de cada literal (`SmaliScanTest`), literales del XML (`XmlLiteralFinderTest`), strings que le faltan a cada idioma (`XMLComparatorTest`), detección de hardcoded e inventario sobre una app escrita a mano (`test/fixtures/decoded/shop`: smali en dos dex, código fuera de la carpeta del `applicationId`, recursos y un layout), parcheo del smali y el modo de re-análisis.
 - `translator/`: el traductor contra `FakeLlmServer`, un servidor local que imita el endpoint OpenAI-compatible, para probar lotes, reintentos, enmascarado de placeholders y la escritura de `values-<lang>/strings.xml`.
 
-Las pruebas llamadas `knownGap_...` fijan un comportamiento que la auditoría de noviembre de 2026 encontró incorrecto: afirman lo que el código hace hoy y nombran la corrección pendiente; cuando se corrige, la aserción se invierte en el mismo cambio.
+Las pruebas llamadas `knownGap_...` fijan un comportamiento que la auditoría de noviembre de 2026 encontró incorrecto: afirman lo que el código hace hoy y nombran la corrección pendiente; cuando se corrige, la aserción se invierte en el mismo cambio. Hoy no queda ninguna: las de detección, traducción y comparación se invirtieron con sus correcciones.
 
 # Artefactos que se generan
 
@@ -193,7 +196,7 @@ Las pruebas llamadas `knownGap_...` fijan un comportamiento que la auditoría de
 - `<output>/trnsResults/<origen>/exploration_script.json`: el recorrido grabado.
 - `<output>/.../<lang>/replay_report.json`: acciones reproducidas, estados capturados y divergencias.
 - `<output>/.../<lang>/screenshots/`: capturas. Con `debug.graphDumps=true`, además `graph.txt` y `graph.json`: volcados legibles de cada estado con todas las relaciones entre pares de nodos (varios MB por idioma; solo para depurar la comparación a mano).
-- `<output>/ipfs.csv`: IPFs en CSV.
+- `<output>/ipfs.csv`: IPFs en CSV (`language;state;nodePos;ipfScore;langNodePos;kind`).
 - `<output>/hardcoded_<lang>.csv`: una fila por aparición de cada hardcoded: parcheado, extraído, revertido o no traducido y por qué.
 - `<output>/hcs.txt`: textos hardcoded detectados, por clase y método, cada uno con su uso; después los del XML, por archivo y elemento.
 - `<output>/llm-server.log`: salida del servidor LLM (si ITDroid lo arrancó).
@@ -203,6 +206,7 @@ Las pruebas llamadas `knownGap_...` fijan un comportamiento que la auditoría de
 - Preflight antes que nada: lo que no se puede procesar se rechaza en segundos con un motivo clasificable (fuera de alcance, entorno, límite de apktool) en vez de fallar a mitad de una exploración.
 - Inventario único con origen: una sola fuente para traducir, revisar a mano, deduplicar y reutilizar; permite rastrear cada texto hasta su archivo y línea.
 - Grabar y reproducir: las versiones traducidas no exploran por su cuenta, repiten el recorrido grabado, así los grafos se emparejan por construcción y el no determinismo del explorador deja de contaminar la comparación. Cada versión traducida se reconstruye, instala y evalúa de verdad.
+- Comparar elementos, no posiciones del volcado: cada elemento de la pantalla traducida se compara con el que es en la pantalla origen, aunque haya elementos de más o de menos, y lo que solo tiene una pantalla es un hallazgo en sí. Entre idiomas de distinta dirección de escritura el espejado es lo esperado y se reporta su ausencia.
 - La app fuera del dispositivo mientras se traduce: tras cada exploración se desinstala (procesos y datos incluidos); solo vive en el dispositivo el tiempo de su exploración.
 - Strategy en la traducción (`TranslationInterface`): cambiar de IBM Watson a un LLM local fue cambiar la estrategia, sin tocar el orquestador.
 - LLM agnóstico al motor: HTTP OpenAI-compatible, sirve Ollama, llama.cpp o LM Studio sin cambiar código.

@@ -191,6 +191,28 @@ public class RunConfig {
         return boolOptional("debug.graphDumps", false);
     }
 
+    /**
+     * Share of the elements of a replayed screen, from 0 to 1, that must match those of the source
+     * screen for the two to be compared as the same screen (key comparison.minSimilarity, default
+     * 0.5). Lower it to compare screens whose content differs more; raise it to be stricter.
+     */
+    public double getMinSimilarity() {
+        String raw = optional("comparison.minSimilarity", "");
+        if (raw.isEmpty()) {
+            return uniandes.tsdl.itdroid.model.LayoutGraphComparision.DEFAULT_MIN_SIMILARITY;
+        }
+        double value;
+        try {
+            value = Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            value = Double.NaN;
+        }
+        if (!(value >= 0 && value <= 1)) {
+            throw new IllegalArgumentException("Config key 'comparison.minSimilarity' must be a number between 0 and 1, got '" + raw + "'.");
+        }
+        return value;
+    }
+
     private int intOptional(String key, int defaultValue) {
         String raw = optional(key, "");
         if (raw.isEmpty()) {

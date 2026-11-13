@@ -7,7 +7,7 @@ Given an APK in one language, ITDroid:
 2. Decodes it with apktool and analyses it statically: the hardcoded strings of the code and of the XML, with what the code does with each one (`hcs.txt`); an inventory of every string (resources, plurals, arrays and hardcoded literals) with the file and line it came from (`strings_inventory.json`); and the strings each language lacks. The hardcoded strings the app shows are then moved to string resources, so they are translated like the rest. This step needs no device and can be run alone with `--static`.
 3. Rebuilds the untouched app and explores it on the device in its source language, recording every tap as a script.
 4. For each target language, with the app removed from the device: translates the inventory with a local LLM (reusing earlier translations), rebuilds and signs a per-language APK. A hardcoded string that could not be moved to a resource is patched in the code of that language's APK, in the places where the app shows it.
-5. Installs each translated APK, replays the recorded script so it visits the same screens, uninstalls it, and compares the layouts state by state to detect Internationalization Presentation Failures (IPF): text that overflows, overlaps or shifts the layout when translated.
+5. Installs each translated APK, replays the recorded script so it visits the same screens, uninstalls it, and compares the layouts state by state to detect Internationalization Presentation Failures (IPF): elements that the translated text pushes out of place, makes overlap or makes disappear, and, in a right-to-left language, elements that do not mirror.
 6. Builds one internationalized APK that holds every language, hardcoded strings included, and writes `report.json` after every language (a run cut short keeps the finished ones) plus a web report.
 
 The repository contains only source code. The external tools and the LLM model are not committed; install them as described below.
@@ -120,6 +120,9 @@ Optional keys, all with sensible defaults:
 - `exploration.maxStates` (5) and `exploration.maxClickables` (8): size of the source-language exploration; the translated versions replay it.
 - `exploration.settleSeconds` (3): extra wait after each launch before the first capture, on top of the automatic "UI stopped changing" check.
 - `exploration.fillForms` (false): ask the LLM for a value for each text field and type it before tapping, so screens behind forms become reachable; the same values are typed in every language.
+- `comparison.minSimilarity` (0.5): share of the elements of a replayed screen, from 0 to 1, that must match those of the source screen for the two to be compared. Below it the app showed something else at that step (a dialog, an error) and the screen is listed as not compared, with the reason. See "What is reported as an IPF".
+- `debug.graphDumps` (false): also write `graph.txt` and `graph.json` next to every `result.json`, with every relation between every two elements of every screen. Large; only to debug the comparison by hand.
+- `alpha` (0): untranslatable strings tolerated before a language is considered not translated.
 
 # Option B, positional arguments
 
@@ -187,7 +190,7 @@ The output directory contains the results and intermediate steps:
 - `<package>-<lang>-aligned-debugSigned.apk`: the APK built for each language, with its translated resources and its hardcoded strings patched.
 - `<package>-aligned-debugSigned.apk`: the internationalized APK, a single build with the resources of every language processed, including the hardcoded strings moved to resources (`itdroid_code_<hash>` for the code, `itdroid_hc_N` for the XML). It follows the language of the device like any app. A hardcoded string of the code that could not be moved is translated only in the per-language APKs. A string the code reads once into a static field keeps the language the app started in until the app restarts.
 - `hardcoded_<lang>.csv`: what was done with every hardcoded string for that language, one row per place (a line of smali or an attribute of the XML): `extracted` to a resource, `patched`, `reverted`, or `not translated` with the reason, plus class, method, use and the call that receives the text.
-- `ipfs.csv`: the IPFs as a flat list.
+- `ipfs.csv`: the IPFs as a flat list: `language;state;nodePos;ipfScore;langNodePos;kind`. `nodePos` is the position of the element in the dump of the source screen and `langNodePos` in the translated one (-1 when that screen does not have it).
 - `hcs.txt`: the hardcoded strings grouped as in the original tool, a line with the class, a tab and the method, two tabs and each literal of that method, followed by its use in brackets. The literals of the XML come after the code: file, element, literal with its attribute.
 
 If the app does not build or start once its literals are read from resources, they go back to the code and are patched per language instead (`codeExtraction.reverted` in `report.json`). If the build of a language does not start, or crashes during the replay where the original app did not, ITDroid rebuilds that language with its hardcoded strings in the source language and evaluates that; `report.json` records it per language (`hardcodedFallback`, `revertedHardcoded`, `crashes`) and the CSV marks the rows as reverted.
@@ -231,16 +234,36 @@ ui   ^Lorg/thirdparty/Chart;->axis\(
 log  ^Lcom/example/app/util/Tracer;->
 ```
 
+# What is reported as an IPF
+
+Each translated screen is compared with the source screen it reproduces (the same step of the recorded path, on the same activity).
+
+1. The elements of the two screens are paired. The two trees are walked together from the top, and the children of two paired elements are matched in order when they are the same kind of element: same class and same resource id, then what they are like (clickable, with text, how much hangs from them) and, to break ties, where they are. An element that only one screen has costs that element alone; the ones after it are still compared with their true counterparts. A Compose test tag that shows up as `resource-id` is not taken for an id, because apps use the visible label as the tag and it changes with the language.
+2. If fewer than `comparison.minSimilarity` (half, by default) of the elements of the larger screen could be paired, the app showed something else there, and the screen is not compared: it is listed in `statesNotCompared` with the reason.
+3. For every two paired elements, the relations they had in the source (one is `LEFT`, `RIGHT`, `ABOVE` or `BELOW` the other, contains it, shares an edge with it, overlaps it) are set against the ones they have now. An element with a relation lost or gained is a finding. So is an element only one of the screens has, reported once at the top of what is missing or new.
+
+Two rules keep out what is not a failure. A change of alignment is ignored when either element is a text, because a translated text gets wider or narrower and that moves its edges. And between a left-to-right and a right-to-left language the layout is expected to be mirrored: who is left of whom and which side is aligned are expected to swap, so that is not reported; what is reported is two elements of the same container that did not swap (`missingMirroring`).
+
+In `report.json`, each language has:
+
+- `amIPFs`: the number of findings.
+- `ipfSummary`: `nodesCompared`; `nodesChanged` (the element itself moved or changed size) and `nodesAffected` (it stayed as it was, or was mirrored as expected, and it is its neighbours that changed); `componentsLost` and `componentsAdded`; and `byType`, how many findings carry each kind of change: `positionLost`, `positionAdded`, `alignmentLost`, `alignmentAdded`, `overlapAdded`, `overlapRemoved`, `missingMirroring`, `componentLost`, `componentAdded`. A finding can carry several. For a right-to-left language, also `siblingPairsChecked` and `siblingPairsNotMirrored`. `amIPFs` is the sum of changed, affected, lost and added.
+- `ipfs`: each finding with `stateID`, `nodeID` and `langNodeID` (its position in each screen, -1 when that screen does not have it), `kind` (`relations`, `componentLost`, `componentAdded`), `types`, `geometry` (`same`, `moved`, `resized`, `moved+resized`, `mirrored`), `score` (how many other elements it changed with; for a lost or added component, how many elements it is made of) and `relations`: against which element (`relNode`, `langRelNode`) which relations were `added`, `removed` or, when mirroring was expected, are `missing`.
+- `pairedStates`, `statesNotCompared`, `missingDfltStates`, `missingLangStates`: which screens were compared.
+
+These figures are not comparable with those of the 2020 paper, which paired elements by their position in the dump and counted mirroring as a failure. REFACTOR.md, section 12, has the before and after on a batch of 40 apps.
+
 # Re-analysis without a device
 
-The layout comparison can be recomputed from the `result.json` files of evaluations that were already explored. It needs no device and no LLM, and never modifies the folder it reads. A batch of 40 apps in three languages takes about 7 minutes, against the day it takes to explore them again:
+The layout comparison can be recomputed from the `result.json` files of evaluations that were already explored. It needs no device and no LLM, and never modifies the folder it reads. A batch of 40 apps in three languages takes a couple of seconds, against the day it takes to explore them again:
 
 ```
 java -jar target/ITDroid-1.0.0.jar --reanalyze results/                     # every evaluation in the folder
 java -jar target/ITDroid-1.0.0.jar --reanalyze results/org.foo.app          # a single evaluation
 java -jar target/ITDroid-1.0.0.jar --reanalyze results/ --out some/folder   # default: reanalysis/<input folder name>
+java -jar target/ITDroid-1.0.0.jar --reanalyze results/ --min-similarity 0.4   # try another comparison.minSimilarity
 ```
 
-The output folder gets a `summary.csv` (one row per evaluation and language: the IPFs the stored report says and the IPFs the current code computes) and, per evaluation, a `reanalysis.json` with the recomputed comparison and an `ipfs.csv`. Use it to check that a change to the comparison does what was intended before spending hours exploring again.
+The output folder gets a `summary.csv` (one row per evaluation and language: the IPFs the stored report says, the IPFs the current code computes, and the breakdown of `ipfSummary` in columns) and, per evaluation, a `reanalysis.json` with the recomputed comparison and an `ipfs.csv`. Two runs over the same data write the same files. Use it to check that a change to the comparison does what was intended before spending hours exploring again.
 
 See ARCHITECTURE.md for how the code is organized and REFACTOR.md for the modernization change log.

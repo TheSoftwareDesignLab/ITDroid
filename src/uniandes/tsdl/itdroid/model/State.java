@@ -4,9 +4,11 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -93,17 +95,31 @@ public class State {
 		populateStateNodes();
 	}
 
+	@SuppressWarnings("unchecked")
 	private void populateStateNodes() {
 		NodeList allNodes = parsedXML.getElementsByTagName("node");
 		Node currentNode;
 		AndroidNode newAndroidNode;
 		graph = (Set<GraphEdgeType>[][]) new Set[allNodes.getLength()][allNodes.getLength()];
+		// The nodes come in document order, so a parent is always placed before its children.
+		Map<Node, Integer> positions = new IdentityHashMap<>();
 		for (int i = 0; i < allNodes.getLength(); i++) {
 			currentNode = allNodes.item(i);
 			newAndroidNode = new AndroidNode(this, currentNode);
+			Integer parent = positions.get(currentNode.getParentNode());
+			newAndroidNode.placeInTree(i, parent == null ? -1 : parent);
+			if (parent != null) {
+				stateNodes.get(parent).addChild(i);
+			}
+			positions.put(currentNode, i);
 			stateNodes.add(newAndroidNode);
 			processLastNode();
 		}
+	}
+
+	/** True when both nodes hang from the same parent (two top-level nodes count as siblings). */
+	public boolean nodesAreSiblings(int node1, int node2) {
+		return stateNodes.get(node1).getParentPosition() == stateNodes.get(node2).getParentPosition();
 	}
 
 	private void processLastNode() {
@@ -113,8 +129,7 @@ public class State {
 			AndroidNode tempItem = stateNodes.get(i);
 			graph = compareNodes(lastItem, lastItemIndex, tempItem, i, graph);
 		}
-		graph[lastItemIndex][lastItemIndex] = new HashSet<GraphEdgeType>();
-		graph[lastItemIndex][lastItemIndex].add(GraphEdgeType.DEFAULT);
+		graph[lastItemIndex][lastItemIndex] = EnumSet.of(GraphEdgeType.DEFAULT);
 	}
 
 	private Set<GraphEdgeType>[][] compareNodes(AndroidNode firstNode, int firstNodeIndex, AndroidNode secondNode,
@@ -126,8 +141,8 @@ public class State {
 		int xCoord = 0;
 		int yCoord = 1;
 
-		tempGraph[secondNodeIndex][firstNodeIndex] = new HashSet<GraphEdgeType>();
-		tempGraph[firstNodeIndex][secondNodeIndex] = new HashSet<GraphEdgeType>();
+		tempGraph[secondNodeIndex][firstNodeIndex] = EnumSet.noneOf(GraphEdgeType.class);
+		tempGraph[firstNodeIndex][secondNodeIndex] = EnumSet.noneOf(GraphEdgeType.class);
 
 		if(firstNodeCoor1[yCoord]>=secondNodeCoor2[yCoord]) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.ABOVE);
@@ -175,8 +190,15 @@ public class State {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINED);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINS);
 		}
-		if(tempGraph[firstNodeIndex][secondNodeIndex].size()==0 
-				&& tempGraph[secondNodeIndex][firstNodeIndex].size()==0) {
+		// Two elements intersect when they share some area and neither holds the other. They may be
+		// aligned at the same time: two buttons of the same row that overlap by a few pixels share
+		// their top and bottom edges, and that overlap is exactly what a longer text causes.
+		boolean shareArea = firstNodeCoor1[xCoord] < secondNodeCoor2[xCoord] && secondNodeCoor1[xCoord] < firstNodeCoor2[xCoord]
+				&& firstNodeCoor1[yCoord] < secondNodeCoor2[yCoord] && secondNodeCoor1[yCoord] < firstNodeCoor2[yCoord];
+		boolean oneHoldsTheOther = tempGraph[firstNodeIndex][secondNodeIndex].contains(GraphEdgeType.CONTAINS)
+				|| tempGraph[firstNodeIndex][secondNodeIndex].contains(GraphEdgeType.CONTAINED);
+		if((shareArea && !oneHoldsTheOther) || (tempGraph[firstNodeIndex][secondNodeIndex].size()==0
+				&& tempGraph[secondNodeIndex][firstNodeIndex].size()==0)) {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.INTERSECTS);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.INTERSECTS);
 		}
@@ -200,18 +222,14 @@ public class State {
 	}
 
 	/**
-	 * Loose check for a state reached by REPLAYING the same taps in another language: same
-	 * activity and a similar node count (within 10%, at least 1). The text-based Levenshtein test
-	 * of {@link #compareTo} is not used here: translated text legitimately changes the raw XML.
+	 * First check for a state reached by REPLAYING the same taps in another language: it must be on
+	 * the same activity. Whether it shows the same screen is then decided from how many of its
+	 * elements can be matched with those of the source ({@link NodePairing}), not from the number
+	 * of nodes: a translated screen can have a few more or fewer and still be the same screen, and
+	 * those extra or missing elements are findings in themselves.
 	 */
 	public boolean matchesReplayed(State other) {
-		if (activityName == null ? other.getActivityName() != null : !activityName.equals(other.getActivityName())) {
-			return false;
-		}
-		int mine = stateNodes.size();
-		int theirs = other.getStateNodes().size();
-		long tolerance = Math.max(1, mine / 10);
-		return Math.abs(mine - theirs) <= tolerance;
+		return activityName == null ? other.getActivityName() == null : activityName.equals(other.getActivityName());
 	}
 
 	public String getActivityName() {

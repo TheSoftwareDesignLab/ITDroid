@@ -23,6 +23,23 @@ public class Helper {
 		Helper.packageName = packageName;
 	}
 
+	/**
+	 * Languages written from right to left, by ISO code: Arabic, Aramaic, Sorani Kurdish, Divehi,
+	 * Persian, Hausa (in Ajami script), Hebrew ("iw" is the code Android still uses for it), Khowar,
+	 * Kashmiri, Pashto, Urdu and Yiddish.
+	 */
+	private static final java.util.Set<String> RTL_LANGUAGES = java.util.Set.of("ar", "arc", "ckb", "dv", "fa", "ha", "he", "iw",
+			"khw", "ks", "ps", "ur", "yi");
+
+	/** True when the language of an Android locale code ("ar", "fa-rIR", "he_IL") is written from right to left. */
+	public static boolean languageIsRTL(String code) {
+		if (code == null) {
+			return false;
+		}
+		String base = code.toLowerCase().split("[-_]")[0];
+		return RTL_LANGUAGES.contains(base);
+	}
+
 	public String getCurrentDirectory() throws UnsupportedEncodingException {
 		return System.getProperty("user.dir");
 	}

@@ -213,6 +213,7 @@ public class ITDroid {
 			launchTest = cfg.isLaunchTest();
 			reuseInventory = cfg.isReuseInventory();
 			graphDumps = cfg.isGraphDumps();
+			LayoutGraphComparision.setMinSimilarity(cfg.getMinSimilarity());
 			AppCode.setExtraRoots(cfg.getCodePackages());
 			hardcodedPolicy = cfg.getHardcodedPolicy();
 			extractCode = cfg.isExtractCode();
@@ -514,6 +515,7 @@ public class ITDroid {
 		config.put("launchTest", launchTest);
 		config.put("reuseInventory", reuseInventory);
 		config.put("graphDumps", graphDumps);
+		config.put("minSimilarity", LayoutGraphComparision.getMinSimilarity());
 		config.put("hardcodedTranslate", hardcodedPolicy.key);
 		config.put("emulator", emulatorName);
 		report.put("environment", RunMetrics.environment(device, llm.settings(), config));
@@ -591,7 +593,7 @@ public class ITDroid {
 		// Truncate any ipfs.csv from a previous run and write a fresh header. The per-language
 		// rows are appended later (LayoutGraphComparision opens it in append mode).
 		try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath + File.separator + "ipfs.csv", false))) {
-			bw.write("language;state;nodePos;ipfScore");
+			bw.write("language;state;nodePos;ipfScore;langNodePos;kind");
 			bw.newLine();
 		}
 
@@ -859,7 +861,7 @@ public class ITDroid {
 		System.out.println("  java -jar ITDroid.jar --static <config file>                              decode and analyse only: hardcoded strings and inventory");
 		System.out.println("  java -jar ITDroid.jar --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>");
 		System.out.println("  java -jar ITDroid.jar --report [resultsFolder] [--port N] [--no-browser]   web report");
-		System.out.println("  java -jar ITDroid.jar --reanalyze <folder> [--out <folder>]              recompute the comparison of stored evaluations");
+		System.out.println("  java -jar ITDroid.jar --reanalyze <folder> [--out <folder>] [--min-similarity <0..1>]   recompute the comparison of stored evaluations");
 	}
 
 	/**

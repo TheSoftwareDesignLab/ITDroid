@@ -3,8 +3,6 @@ package uniandes.tsdl.itdroid.model;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 
-import uniandes.tsdl.itdroid.helper.Helper;
-
 public class AndroidNode {
 
 	public static String TRUE = "true";
@@ -21,6 +19,13 @@ public class AndroidNode {
 	private String name="";
 	private String xPath="";
 	private String index="";
+	private String contentDesc="";
+	/** Position of this node in the node list of its state (document order), -1 until the state sets it. */
+	private int position = -1;
+	/** Position of the parent node in that list, -1 for a top-level node. */
+	private int parentPosition = -1;
+	/** Positions of the child nodes, in document order. */
+	private final java.util.List<Integer> childPositions = new java.util.ArrayList<>();
 	
 	@Override
 	public String toString() {
@@ -86,6 +91,9 @@ public class AndroidNode {
 				case TEXT:
 					text = attributeValue;
 					break;
+				case CONTENT_DESCRIPTION:
+					contentDesc = attributeValue;
+					break;
 				case INDEX:
 					index = attributeValue;
 					break;
@@ -110,6 +118,45 @@ public class AndroidNode {
 
 	public String getText() {
 		return text;
+	}
+
+	public String getContentDesc() {
+		return contentDesc;
+	}
+
+	/** True when the element shows or announces some text (its own text or its content description). */
+	public boolean hasText() {
+		return !text.isEmpty() || !contentDesc.isEmpty();
+	}
+
+	public int getPosition() {
+		return position;
+	}
+
+	public int getParentPosition() {
+		return parentPosition;
+	}
+
+	public java.util.List<Integer> getChildPositions() {
+		return childPositions;
+	}
+
+	/** Set by the state while it builds its node list. */
+	void placeInTree(int position, int parentPosition) {
+		this.position = position;
+		this.parentPosition = parentPosition;
+	}
+
+	void addChild(int childPosition) {
+		childPositions.add(childPosition);
+	}
+
+	public int getWidth() {
+		return point2[0] - point1[0];
+	}
+
+	public int getHeight() {
+		return point2[1] - point1[1];
 	}
 
 	public String getName() {
@@ -173,16 +220,6 @@ public class AndroidNode {
 
 	public boolean isEnabled() {
 		return enabled;
-	}
-
-	public double compare(AndroidNode langNode) {
-		String self = toString();
-		// Guard against division by zero when this node has no name/xPath/resourceID: an empty
-		// signature is identical (0.0) to another empty one and maximally different (1.0) otherwise.
-		if (self.isEmpty()) {
-			return langNode.toString().isEmpty() ? 0.0 : 1.0;
-		}
-		return Helper.levenshteinDistance(self, langNode.toString()) / (double) self.length();
 	}
 
 }

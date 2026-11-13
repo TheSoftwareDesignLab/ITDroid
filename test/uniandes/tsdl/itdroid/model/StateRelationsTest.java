@@ -82,15 +82,35 @@ class StateRelationsTest {
     }
 
     /**
-     * KNOWN GAP (TODO 4.5): INTERSECTS is only the fallback when no other relation holds, so two
-     * elements that overlap while sharing an edge are reported as merely aligned. When 4.5 is done
-     * this must also contain INTERSECTS.
+     * Two buttons of the same row that step on each other share their top and bottom edges. That
+     * they are aligned does not hide that they overlap, which is what a longer text causes.
      */
     @Test
-    void knownGap_anOverlapThatSharesAnEdgeIsNotReportedAsIntersection() throws Exception {
+    void anOverlapThatSharesAnEdgeIsAnIntersectionToo() throws Exception {
         Set<GraphEdgeType>[][] g = graphOf(button(0, 100, 100, 300, 300), button(1, 200, 100, 400, 300));
 
-        assertEquals(EnumSet.of(TOP_ALIGNED, BOTTOM_ALIGNED), g[1][2]);
+        assertEquals(EnumSet.of(TOP_ALIGNED, BOTTOM_ALIGNED, INTERSECTS), g[1][2]);
+        assertEquals(EnumSet.of(TOP_ALIGNED, BOTTOM_ALIGNED, INTERSECTS), g[2][1]);
+    }
+
+    @Test
+    void anElementInsideAnotherDoesNotIntersectIt() throws Exception {
+        // the second button lies inside the first and shares its left edge
+        Set<GraphEdgeType>[][] g = graphOf(button(0, 100, 100, 500, 500), button(1, 100, 200, 300, 300));
+
+        assertEquals(EnumSet.of(LEFT_ALIGNED, CONTAINS), g[1][2]);
+        assertEquals(EnumSet.of(LEFT_ALIGNED, CONTAINED), g[2][1]);
+        // nor does the root intersect what it holds
+        assertFalse(g[0][1].contains(INTERSECTS));
+    }
+
+    @Test
+    void theRelationsOfAPairAreListedInTheOrderOfTheEnum() throws Exception {
+        Set<GraphEdgeType>[][] g = graphOf(button(0, 50, 100, 450, 200), button(1, 50, 300, 450, 400));
+
+        // an EnumSet, so reports and dumps are the same from one run to the next
+        assertTrue(g[1][2] instanceof EnumSet);
+        assertEquals("[ABOVE, RIGHT_ALIGNED, LEFT_ALIGNED]", g[1][2].toString());
     }
 
     @Test
