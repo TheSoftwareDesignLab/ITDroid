@@ -101,6 +101,12 @@ public class Preflight {
         o.put("trustedWebActivity", manifestText.contains("android.support.customtabs.trusted")
                 || manifestText.contains("com.google.androidbrowserhelper"));
         o.put("launchable", hasLauncher(manifestText));
+        Matcher activity = Pattern.compile("<activity[\\s>]").matcher(manifestText);
+        long activities = 0;
+        while (activity.find()) {
+            activities++;
+        }
+        o.put("activities", activities);   // what the exploration is measured against
         Matcher pkg = Pattern.compile("<manifest[^>]*\\spackage=\"([^\"]+)\"").matcher(manifestText);
         o.put("package", pkg.find() ? pkg.group(1) : "");
 

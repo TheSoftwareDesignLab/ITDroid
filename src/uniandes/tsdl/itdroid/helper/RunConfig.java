@@ -137,14 +137,19 @@ public class RunConfig {
         return boolOptional("preflight.launchTest", true);
     }
 
-    /** UI states captured per app version (default 5). */
+    /** UI states captured per app version (default 5); 0 for no limit. */
     public int getMaxStates() {
-        return intOptional("exploration.maxStates", 5);
+        return Math.max(0, intOptional("exploration.maxStates", 5));
     }
 
-    /** Clickables tapped per state (default 8). */
+    /** Clickables tapped per state (default 8); 0 for all of them. */
     public int getMaxClickables() {
-        return intOptional("exploration.maxClickables", 8);
+        return Math.max(0, intOptional("exploration.maxClickables", 8));
+    }
+
+    /** Minutes the exploration of the source language may take (default 0, no limit). */
+    public int getMaxMinutes() {
+        return Math.max(0, intOptional("exploration.maxMinutes", 0));
     }
 
     /** Seconds to wait after each launch before the first capture, on top of the stability check (default 3). */

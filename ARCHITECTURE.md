@@ -122,10 +122,11 @@ Se reconstruye la app intacta (si apktool no puede, la app no se puede procesar 
 
 1. `install` (con permisos concedidos) y `cleanReset` (`pm clear`, sin root; vuelve a fijar el locale por-app y a conceder los permisos runtime).
 2. `launch` (monkey), espera a primer plano aceptando el diálogo de permisos si aparece, y ventana de asentamiento: `exploration.settleSeconds` más esperar a que la estructura no cambie durante 1,5 s.
-3. DFS in-place: captura el estado con `stableDump`, extrae los clickables (los campos de texto no se tocan), los toca, recursa en estados nuevos y vuelve con el botón atrás o, si no vuelve, con reinicio limpio y repetición del camino. Cada tap, cada atrás y cada reinicio queda grabado como acción.
+3. DFS in-place: captura el estado con `stableDump`, extrae los clickables (los campos de texto no se tocan), los toca, recursa en estados nuevos y vuelve con el botón atrás o, si no vuelve, con reinicio limpio y repetición del camino. Cada tap, cada atrás y cada reinicio queda grabado como acción. El recorrido termina al llegar a `exploration.maxStates` pantallas, al pasar `exploration.maxMinutes`, o cuando no queda nada por tocar (con `exploration.maxClickables` elementos por pantalla como tope); un 0 en cualquiera de las tres claves quita ese límite.
+   Una pantalla se da por asentada cuando dos volcados seguidos tienen la misma firma. Cada volcado de `uiautomator` tarda unos 2,4 s en el emulador, porque arranca un proceso y espera un segundo sin cambios en la interfaz, así que no se repite cuando el explorador sabe qué pantalla debe haber (la que deja un atrás, un paso del camino tras un reinicio): si el primer volcado muestra esa firma, basta. Una pantalla que se ve por primera vez, o un toque que puede navegar o no, pasan siempre por los dos volcados. Tras un atrás, y tras un toque hacia una pantalla conocida, se espera a que cambie la ventana con el foco, con un tope de 0,4 s; el toque que prueba un elemento espera 0,9 s fijos. Si lo que sale de ese toque es la misma pantalla salvo por unos pocos elementos, puede ser un aviso pasajero: se vuelve a mirar dos veces, cada 2,5 s, y solo cuenta como pantalla si la diferencia sigue ahí.
 4. Firma de estado: `resource-id` + clase + `content-desc` (dígitos plegados) + si el nodo muestra texto, ignorando el teclado. Además se guarda la estructura (`resource-id` + clase) comparable entre idiomas.
 5. Opcional (`exploration.fillForms`): al llegar a una pantalla con campos de texto pide al LLM un valor por campo, lo teclea y lo graba; el replay teclea exactamente lo mismo.
-6. Emite `result.json` y `exploration_script.json` (estados con su camino desde la raíz y sus entradas, y la lista de acciones), y desinstala la app.
+6. Emite `result.json` y `exploration_script.json` (estados con su camino desde la raíz y sus entradas, la lista de acciones y un resumen: cuántas pantallas, qué terminó el recorrido, cuánto tardó y en qué se fue el tiempo), y desinstala la app. `report.json` recoge ese resumen en el idioma origen (`exploration`), junto con las actividades visitadas y las que declara el manifiesto.
 
 # Fase 3, idiomas destino
 
@@ -237,7 +238,8 @@ Cada comportamiento que se puede querer distinto es una línea del archivo de co
 | `translation.timeoutSeconds`, `translation.temperature` | 180, 0 | tope por petición y temperatura |
 | `alpha` | 0 | strings sin traducir que se toleran antes de dar un idioma por no traducido |
 | `preflight.launchTest` | `true` | probar que la app original arranca antes de procesarla |
-| `exploration.maxStates`, `exploration.maxClickables` | 5, 8 | pantallas que se capturan y toques por pantalla |
+| `exploration.maxStates`, `exploration.maxClickables` | 5, 8 | pantallas que se capturan y toques por pantalla; 0 es sin límite |
+| `exploration.maxMinutes` | 0 | minutos que puede durar la exploración del idioma origen; 0 es sin límite |
 | `exploration.settleSeconds` | 3 | espera tras cada arranque |
 | `exploration.fillForms` | `false` | pedir al LLM valores para los campos de texto |
 | `comparison.minSimilarity` | 0,5 | proporción de elementos que hay que emparejar para comparar dos pantallas |
@@ -250,7 +252,7 @@ Lo que no es configuración son constantes del código, cada una en una línea:
 
 - `LLMTranslator`: `TRANSLATOR_PACKAGE_SIZE` (25 textos por lote), `BATCH_CHAR_BUDGET` (2500 caracteres por lote) y `NATIVE_PARALLELISM` (4 peticiones a la vez en los estilos de un texto por petición).
 - `APKToolWrapper.MAX_BUILD_ATTEMPTS` (6 intentos de construcción con ajustes).
-- `AdbExplorer.FOREGROUND_WAIT_SECONDS` (15 s para que la app llegue a primer plano).
+- `AdbExplorer.FOREGROUND_WAIT_SECONDS` (15 s para que la app llegue a primer plano), `STABLE_INTERVAL_MS` (0,6 s entre los dos volcados que deben coincidir), `TAP_SETTLE_MS` (0,9 s tras un toque de resultado desconocido), `ACTION_WAIT_MS` (0,4 s como máximo esperando una ventana nueva tras un atrás o un toque hacia una pantalla conocida), y `MESSAGE_NODES`, `MESSAGE_POLL_MS` y `MESSAGE_POLLS` (5 elementos, 2,5 s y 2 miradas para decidir si una diferencia pequeña es un aviso pasajero).
 - `LLMServerManager.STARTUP_TIMEOUT_SECONDS` (180 s para que responda un servidor que ITDroid arrancó).
 - `ReportServer.STALE_HOURS` (3 horas sin reescribirse para dar por interrumpido un informe antiguo sin `pid`) y `MAX_LISTED_FILES` (500 archivos por evaluación en la pestaña de artefactos).
 - `webreport/js/main.js`: 50 filas por página en las tablas (`pagedTable`) y `DIFF_THRESHOLD` (32, cuánto debe diferir un píxel para pintarse en la diferencia visual).

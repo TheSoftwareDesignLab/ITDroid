@@ -38,6 +38,21 @@ class RunConfigTest {
         assertEquals(0.5, cfg.getMinSimilarity());
         assertEquals(5, cfg.getMaxStates());
         assertEquals(8, cfg.getMaxClickables());
+        assertEquals(0, cfg.getMaxMinutes());
+    }
+
+    @Test
+    void theBudgetOfTheExplorationIsThreeLinesAndZeroMeansNoLimit() throws Exception {
+        RunConfig cfg = config("exploration.maxStates=20", "exploration.maxClickables=0", "exploration.maxMinutes=30");
+        assertEquals(20, cfg.getMaxStates());
+        assertEquals(0, cfg.getMaxClickables());
+        assertEquals(30, cfg.getMaxMinutes());
+
+        // a negative number is not a smaller limit: it reads as no limit, like 0
+        RunConfig none = config("exploration.maxStates=-1", "exploration.maxClickables=-5", "exploration.maxMinutes=-2");
+        assertEquals(0, none.getMaxStates());
+        assertEquals(0, none.getMaxClickables());
+        assertEquals(0, none.getMaxMinutes());
     }
 
     @Test

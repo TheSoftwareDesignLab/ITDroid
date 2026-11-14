@@ -370,6 +370,7 @@ class HardcodedDetectionTest {
         assertEquals("com.example.shop.free", facts.get("package"), "the package the run is checked against");
         assertEquals(false, facts.get("hasStrings"));
         assertEquals(true, facts.get("launchable"));
+        assertEquals(2L, facts.get("activities"), "the activities the manifest declares, to measure the exploration against");
         Preflight.checkDecodedApp(facts, 34);   // accepted: no exception
     }
 }

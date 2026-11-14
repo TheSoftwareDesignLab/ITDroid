@@ -445,13 +445,57 @@ Lo que la validación enseñó, que no se sabía:
 
 Comparación con corridas anteriores. Solo tres de las 15 tenían antecedente, en otra versión: ambio se evaluaba y se evalúa; superproductivity, que en los lotes de octubre tardó 70 minutos una vez y agotó un límite de 110 otra, aquí agotó el de 75 en la primera pasada y terminó en 57 en la repetición; y audiobook pasa de no reconstruirse a evaluarse. Las otras 12 son nuevas, así que no hay cifras previas con las que contrastarlas, y las de este lote no son comparables con las de antes de la sección "Comparador de layouts".
 
+# Explorador más rápido
+
+Problema: la exploración y el replay son el 95 % del tiempo de una corrida. Se daba por hecho que el coste estaba en los tres procesos `adb` que lanza cada volcado de pantalla y en las pausas fijas tras cada toque.
+
+- Dónde se va el tiempo, medido en el emulador. Lanzar un proceso `adb` cuesta 0,05 s; una captura de pantalla, 0,5 s; un volcado de `uiautomator`, 2,4 s, porque arranca un proceso en el dispositivo y no vuelca hasta que la interfaz lleva un segundo sin cambios. Lo caro no es el número de procesos sino el número de volcados: el explorador hacía siempre al menos dos, con 0,6 s entre ellos, para dar una pantalla por asentada, y tras cada reinicio rehacía el camino con dos por paso. En rereminder los cuatro reinicios de un recorrido eran dos tercios del tiempo.
+- Un volcado basta cuando la pantalla es conocida. Al volver con atrás, al rehacer un camino tras un reinicio y al reproducir un toque que lleva a una pantalla ya capturada, el explorador sabe qué firma debe encontrar. Si el primer volcado la muestra, se acepta: esa estructura ya se capturó asentada antes, y `uiautomator` acaba de esperar un segundo de quietud. Si muestra otra cosa, sigue el procedimiento de siempre. Una pantalla que se ve por primera vez, el primer arranque de cada versión y un toque que en el origen no cambió de pantalla siguen pasando por los dos volcados.
+- Un volcado ya no se repite para volver a leer lo mismo: tras un reinicio se volcaba para asentar, se descartaba y se volvía a volcar para buscar el elemento del primer paso; y al llegar por primera vez a una pantalla por un reinicio o un atrás se volcaba una vez para comprobar y otra para capturar.
+- Los tres pasos de un volcado (borrar el archivo anterior, volcar, leerlo) van en un solo proceso `adb`. Ahorra 0,1 s por volcado; se conserva la garantía de que un volcado fallido no se confunde con el de la pantalla anterior, porque el archivo solo se lee si el volcado dijo haber escrito.
+- Pausas fijas. Tras cada toque se esperaban 0,9 s y tras cada atrás 0,7 s. Lo que esa pausa cubría era el arranque de una ventana nueva (otra actividad, un diálogo, otra app). Tras un atrás, y tras un toque que lleva a una pantalla ya conocida, ahora se espera a que cambie la ventana con el foco, con un tope de 0,4 s; un cambio dentro de la misma ventana no necesita pausa, porque el volcado que sigue espera por sí mismo. El toque cuyo resultado no se conoce (el que prueba un elemento durante la exploración) conserva sus 0,9 s: de esa pausa depende que el explorador vea o no un aviso que dura tres segundos, y cambiarla cambiaba las pantallas encontradas (ver "Presupuesto de exploración").
+- Otra app que tarda en aparecer. Si un toque abría un navegador que arrancaba en frío, la comprobación de que la app seguía en primer plano llegaba antes que el navegador y su pantalla se capturaba como si fuera de la app. La comprobación se hace ahora antes del volcado y otra vez después.
+- El recorrido termina donde termina el presupuesto. Al capturar la última pantalla permitida, el explorador volvía hacia atrás nivel por nivel, con un atrás o un reinicio en cada uno, sin nada más que tocar; esas acciones quedaban grabadas y cada idioma las repetía. En rereminder eran 3 de los 4 reinicios y un tercio del tiempo de cada recorrido. Ahora el recorrido acaba en cuanto se agota el límite de pantallas o de tiempo, y el guion grabado termina en el toque que llevó a la última pantalla.
+- Mismo resultado, menos tiempo. Las dos versiones del explorador en el mismo emulador y el mismo día:
+
+| | Exploración del origen | Replay de un idioma | Acciones grabadas | Reinicios | Hallazgos es / ru / ar |
+|---|---|---|---|---|---|
+| rereminder, antes | 223 s | 242 s | 14 | 4 | 133 (solo español) |
+| rereminder, ahora | 110 s | 100 s | 10 | 1 | 133 / 162 / 14 |
+| lissen, antes | 241 s | 288 s | 19 | 3 | 21 (solo español) |
+| lissen, ahora | 141 s | 152 s | 15 | 2 | 21 / 19 / 24 |
+| offlinecurrencyconverter, en la validación | 358 s | 410 s | 30 | 7 | 54 / 64 / 55 |
+| offlinecurrencyconverter, ahora | 250 s | 227 s | 27 | 6 | 54 / 63 / 55 |
+
+Los hallazgos, su desglose, los elementos comparados y las cinco pantallas emparejadas coinciden con los de la validación final en los tres idiomas, y el replay reproduce todas las acciones (10 de 10, 15 de 15 y 27 de 27, sin divergencias). El único hallazgo que no se repite, en offlinecurrencyconverter en ruso, es el del texto de una tasa de cambio (`0.9024`), que la app trae de la red y cambia cada día. La exploración baja un 51, un 41 y un 30 %, y el replay un 59, un 47 y un 45 %; un reinicio con su camino pasa de 35 y 51 s de mediana a unos 20. La corrida completa con tres idiomas tarda 570, 762 y 1011 s; en la validación, con el emulador dibujando por GPU, había tardado 1159, 1522 y 2076 s. Las cifras de "antes" de offlinecurrencyconverter son las de esa validación, las de las otras dos apps se midieron con el explorador anterior el mismo día y en el mismo emulador. Cada recorrido deja ahora en `exploration_script.json` y en `replay_report.json` cuánto tardó y en qué: toques, atrás, reinicios y volcados (rereminder: 12 toques, 3 atrás, 1 reinicio y 30 volcados en 110 s).
+
+# Presupuesto de exploración
+
+Problema: el recorrido estaba fijado en 5 pantallas y 8 toques por pantalla, sin forma de quitar el límite ni de acotarlo por tiempo, y nada decía por qué había terminado.
+
+- Tres claves, y un 0 quita el límite. `exploration.maxStates` (5) y `exploration.maxClickables` (8) aceptan 0, y la clave nueva `exploration.maxMinutes` (0, sin límite) corta la exploración del idioma origen por tiempo; lo encontrado hasta entonces se conserva. Cada idioma reproduce después ese recorrido y tarda más o menos lo mismo, así que una corrida dura lo que la exploración por uno más el número de idiomas.
+- El recorrido dice por qué terminó. `report.json` lleva en el idioma origen un bloque `exploration`: `stop` (`maxStates`, `maxMinutes`, `maxClickables` cuando se tocó todo lo que el límite por pantalla permite, `exhausted` cuando no quedaba nada por tocar, `relaunchFailed`), las pantallas, las actividades visitadas y las que declara el manifiesto, y el tiempo con sus toques, atrás, reinicios y volcados. Con `exhausted` la consola lo avisa: o la app es así de pequeña, o necesita contenido o una cuenta para mostrar más.
+- Qué pasa al subir o quitar el límite, medido. Cinco apps exploradas sin límite de pantallas, con 8 toques por pantalla y un tope de 15 minutos:
+
+| App | Pantallas a los 2, 5, 10 y 15 min | Qué terminó el recorrido |
+|---|---|---|
+| rereminder | 5, 7, 8, 13 | el tope de tiempo |
+| beanbook | 5, 5, 7, 9 | el tope de tiempo; 6 de las 9 son el selector de fecha en meses distintos |
+| offlinecurrencyconverter | 2, 5, 8, 11 | el tope de tiempo; de la sexta en adelante son la pantalla principal y el selector, una vez por divisa elegida |
+| ambio | 3, 4, 4, 4 | a los 5 minutos, tocado todo lo que el límite por pantalla permite |
+| audiobook | 3, 3, 3, 3 | a los 4 minutos, sin nada más que tocar |
+
+Tres lecturas. Las primeras pantallas son baratas y las siguientes no: rereminder llega a 5 en minuto y medio y necesita diez minutos para llegar a 9, porque cada pantalla nueva está más lejos del inicio y cada regreso es un reinicio con un camino más largo. Quitar el límite no da cobertura donde no hay más que ver: audiobook y ambio terminan solas con 3 y 4 pantallas, las mismas que con el límite de 5. Y sin límite una app con un calendario o una lista no se acaba nunca: en beanbook dos tercios de lo encontrado son el mismo selector de fecha, mes a mes, y en offlinecurrencyconverter cada divisa que se elige de su lista da una pantalla principal y un selector "nuevos". Las actividades visitadas no sirven aquí como medida de cobertura: las cinco apps muestran todo en una sola actividad.
+- Un mensaje pasajero no es una pantalla. Con el explorador más rápido apareció un caso que el anterior esquivaba por suerte: en offlinecurrencyconverter, tocar "Sync Now" escribe "Sync completed successfully" en una línea de la pantalla durante unos tres segundos (medido: aparece hacia los 3 s del toque y a los 6 s ya no está). Los dos volcados que dan una pantalla por asentada caen a los 3 y a los 6 s: medio segundo antes o después decide si el aviso entra como una pantalla nueva, y con él cambian las cinco pantallas exploradas y todos los hallazgos de la app. Ahora, cuando la pantalla tras un toque es la anterior salvo por unos pocos elementos (hasta 5 añadidos o cambiados), se vuelve a mirar dos veces, cada 2,5 s: si vuelve a ser la que era, el toque no navegó; si la diferencia sigue ahí, es una pantalla. Una pantalla que de verdad es una variación pequeña de la anterior (una pestaña, un paso de un asistente) paga esos diez segundos una vez, al encontrarla. El replay aplica la misma regla donde el origen grabó que el toque no cambiaba de pantalla.
+- Valor por defecto. Se conservan 5 pantallas y 8 toques: son las pantallas baratas, es la configuración con la que se validó todo, y lo que se gana al subirlo depende de la app. Para una evaluación más honda la combinación razonable es subir `exploration.maxStates` y poner siempre `exploration.maxMinutes`, que es lo que impide que un calendario se lleve la corrida.
+
 # Límites conocidos y trabajo pendiente
 
 Límites de una evaluación, hoy:
 
 - Solo se traduce lo que está en los recursos de Android y en los literales del código Dalvik de la app. El texto de una app web (Capacitor, Cordova), de Flutter, de React Native o de los recursos de Compose Multiplatform no se traduce, y el informe no avisa cuando las pantallas traducidas muestran el mismo texto que el origen.
 - La exploración solo ve lo que la app enseña por sí sola. No carga datos ni inicia sesión; `exploration.fillForms` solo escribe en los campos de texto que encuentra.
-- El presupuesto por defecto es pequeño: 5 pantallas y 8 toques por pantalla.
+- El presupuesto por defecto es pequeño: 5 pantallas y 8 toques por pantalla. Se sube o se quita en una línea, y cada pantalla de más cuesta más que la anterior (ver "Presupuesto de exploración").
 - El replay supone que la app se comporta igual en cada arranque. Donde no (contenido que llega de la red, un mapa que tarda, un diálogo de primer uso) el recorrido diverge, las pantallas no reproducidas no se comparan y las cifras varían entre corridas.
 - Un hardcoded que se muestra fuera de las pantallas de la app (notificación, widget) se traduce y se construye, pero su layout no se compara.
 - Con `hardcoded.translate=ui` no se traduce el texto que llega a la pantalla a través de objetos de datos de la app; `ui+unknown` lo alcanza y traduce también algunos datos.
@@ -468,7 +512,5 @@ Trabajo pendiente, por orden de lo que más cambiaría la lectura de un resultad
 - Avisar cuando el idioma no llegó a la pantalla: contar por idioma cuántos textos de las pantallas origen siguen idénticos en las traducidas y dejarlo en `report.json` y en el informe (se puede calcular también en `--reanalyze`, porque los volcados ya están guardados), y detectar en el preflight el framework de la app.
 - Datos previos por app: una forma de dejar contenido o una cuenta en la app antes de explorar, igual en todos los idiomas, y un aviso cuando la exploración se queda en menos pantallas de las pedidas.
 - Reparación de RTL (port de `supportRTL` de la rama `repairments`): añadir `supportsRtl`, pasar `Left`/`Right` a `Start`/`End` y comparar la app original con la reparada.
-- Presupuesto de exploración: medir cobertura (actividades visitadas sobre las declaradas) y decidir un valor por defecto mayor o un tope por tiempo.
-- Rendimiento del explorador: un solo proceso `adb` por captura y esperar el cambio de pantalla en lugar de pausas fijas.
 - Traductor: proteger las cifras como se protegen los placeholders, y detectar el idioma de origen por app aunque `defaultLng` esté puesto.
 - Explorador: descartar una captura cuyo volcado no es de la app (un diálogo del sistema), y esperar al dispositivo o abortar con un mensaje claro cuando desaparece a mitad de una corrida.

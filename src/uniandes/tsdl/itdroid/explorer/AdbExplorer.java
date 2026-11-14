@@ -47,8 +47,12 @@ public class AdbExplorer {
 
     /** Tunables, from the {@code exploration.*} config keys. */
     public static class Options {
+        /** Screens captured before the exploration stops; 0 for no limit (then set {@link #maxMinutes}). */
         public int maxStates = 5;
+        /** Elements tapped on each screen; 0 for all of them. */
         public int maxClickables = 8;
+        /** Minutes the exploration of the source language may take; 0 for no limit. */
+        public int maxMinutes = 0;
         public int settleSeconds = 3;
         public boolean fillForms = false;
         /** Only needed when {@link #fillForms} is on: suggests the values typed into text fields. */
@@ -69,6 +73,36 @@ public class AdbExplorer {
      * {@code pm clear} on an emulator can take well over the 7 s this used to allow.
      */
     private static final int FOREGROUND_WAIT_SECONDS = 15;
+    /**
+     * Longest wait, after a BACK or a tap that leads to a screen already known, for the focused
+     * window to change before the screen is dumped. A new activity, a dialog or another app shows up as a new focused window and ends the
+     * wait at once; a change inside the same window needs no wait at all, because uiautomator only
+     * dumps once the interface has been quiet for a second.
+     */
+    private static final long ACTION_WAIT_MS = 400;
+    /**
+     * The pause after a tap whose outcome is not known (the exploration trying an element, a replayed
+     * tap that did not change the screen in the source language) before the screen is read.
+     */
+    private static final long TAP_SETTLE_MS = 900;
+    /** Pause between the two dumps that have to agree for a screen to count as settled. */
+    private static final long STABLE_INTERVAL_MS = 600;
+    /** Where uiautomator writes its dump on the device. */
+    private static final String DUMP_FILE = "/sdcard/itdroid_dump.xml";
+    /** The most elements a passing message adds to a screen, or changes in it: its box, its text, an icon, a button. */
+    private static final int MESSAGE_NODES = 5;
+    /** How long between two looks at a screen that may only be showing a message, and how many looks it gets. */
+    private static final long MESSAGE_POLL_MS = 2500;
+    private static final int MESSAGE_POLLS = 2;
+    /**
+     * Why an exploration ended: it reached the limit of screens or of time, it left elements untapped
+     * because of the limit per screen, it tapped everything there was, or the app stopped coming back.
+     */
+    public static final String STOP_STATES = "maxStates";
+    public static final String STOP_MINUTES = "maxMinutes";
+    public static final String STOP_CLICKABLES = "maxClickables";
+    public static final String STOP_EXHAUSTED = "exhausted";
+    public static final String STOP_RELAUNCH = "relaunchFailed";
     /**
      * Runtime ("dangerous") permissions. {@code pm clear} revokes them, so on every clean start the
      * system permission dialog would cover the app. That dialog belongs to another package, so the
@@ -284,11 +318,24 @@ public class AdbExplorer {
     private String grantCommand;
     /** Set when a relaunch could not bring the app back: further navigation is pointless. */
     private boolean relaunchFailed;
+    /** When the exploration has to stop ({@code System.nanoTime()}), 0 for never. */
+    private long deadlineNanos;
+    /** Set when the DFS left elements untapped because a limit was reached: which limit. */
+    private String limitReached;
+    /** Set when some screen had more elements than the limit per screen allows to tap. */
+    private boolean clickablesLeft;
+    /** Every tap, BACK and restart of this exploration or replay: what the time went into. */
+    private int tapCount;
+    private int backCount;
+    private int restartCount;
+    private int dumpCount;
 
     // ================================================================= explore (record)
 
     /** Runs the DFS exploration, writes {@code result.json} and the replay script. Returns the output folder. */
     public String explore() throws Exception {
+        long started = System.nanoTime();
+        deadlineNanos = opts.maxMinutes > 0 ? started + opts.maxMinutes * 60_000_000_000L : 0;
         prepareFolders();
         install();
         runAdb(8000, "logcat", "-b", "crash", "-c");   // so a crash found later belongs to THIS run
@@ -305,7 +352,7 @@ public class AdbExplorer {
                     + (crash != null ? "; app crashed on launch: " + crash
                                      : "; refusing to explore off-app screens (launch likely failed)."));
         }
-        settleAfterLaunch();
+        settleAfterLaunch(null);
 
         StateRec root = captureCurrent();
         if (root != null) {
@@ -316,12 +363,31 @@ public class AdbExplorer {
             System.out.println("  [explorer] WARNING: could not capture the initial state");
         }
 
+        // Why it ended: a limit that left elements untapped, or nothing left to tap. The second says
+        // the app showed all it has to a visitor without data or an account.
+        String stop = relaunchFailed ? STOP_RELAUNCH
+                : limitReached != null ? limitReached
+                : clickablesLeft ? STOP_CLICKABLES : STOP_EXHAUSTED;
+        long seconds = (System.nanoTime() - started) / 1_000_000_000L;
         writeResultJson(false);
-        writeScript();
+        writeScript(stop, seconds);
         System.out.println("  [explorer] done: " + states.size() + " states, "
                 + transitions.size() + " transitions -> " + outputFolder + File.separator + "result.json");
+        System.out.println("  [explorer] stopped by " + stop + " after " + seconds + " s (" + tapCount + " taps, "
+                + backCount + " BACK, " + restartCount + " restarts, " + dumpCount + " dumps)");
         uninstallQuietly();
         return outputFolder;
+    }
+
+    /** The limit that ends the exploration now, or null while there is budget left. */
+    private String limitNow() {
+        if (opts.maxStates > 0 && states.size() >= opts.maxStates) {
+            return STOP_STATES;
+        }
+        if (deadlineNanos != 0 && System.nanoTime() >= deadlineNanos) {
+            return STOP_MINUTES;
+        }
+        return null;
     }
 
     /**
@@ -335,7 +401,13 @@ public class AdbExplorer {
             if (relaunchFailed) {
                 return false;
             }
-            if (states.size() >= opts.maxStates || explored >= opts.maxClickables) {
+            String limit = limitNow();
+            if (limit != null) {
+                limitReached = limit;
+                return true;
+            }
+            if (opts.maxClickables > 0 && explored >= opts.maxClickables) {
+                clickablesLeft = true;
                 return true;
             }
             int[] center = findElementCenter(curXml, sel);
@@ -343,16 +415,30 @@ public class AdbExplorer {
                 continue;
             }
             explored++;
+            // What this tap does is not known yet, and the pause before looking decides it for a line
+            // of status that shows for a few seconds ("Sync completed"): caught by a look a little
+            // sooner, gone by a look a little later. It stays the pause every evaluation so far was
+            // made with, so the same screens are found.
             tap(center[0], center[1]);
-            sleep(900);
+            sleep(TAP_SETTLE_MS);
 
-            if (!inApp()) {
+            // Another app can take the screen at once (a chooser) or seconds later (a browser starting
+            // cold), so the foreground is checked before the dump and again after it.
+            boolean outside = !inApp();
+            String childXml = outside ? null : stableDump();
+            // A screen never seen that is this one but for a line may be a message about to go away.
+            if (childXml != null && !sigToId.containsKey(signatureOf(childXml))) {
+                childXml = outlastMessage(childXml, state.signature);
+            }
+            if (!outside && childXml != null && !inApp()) {
+                outside = true;
+            }
+            if (outside) {
                 // The tap opened an external app (Play Store, Maps, a browser/chooser, ...). Go back
                 // and do NOT record those screens; recover to this state.
                 actions.add(Action.tap(stateId, sel, 0));
-                back();
-                sleep(700);
-                String backXml = stableDump();
+                backAndWait();
+                String backXml = stableDump(STABLE_INTERVAL_MS, state.signature);
                 if (backXml == null || !inApp() || !signatureOf(backXml).equals(state.signature)) {
                     backXml = reposition(state);
                     if (backXml == null) {
@@ -363,7 +449,7 @@ public class AdbExplorer {
                 continue;
             }
 
-            StateRec child = captureCurrent();
+            StateRec child = childXml == null ? null : capture(childXml);
             if (child == null) {
                 curXml = reposition(state);
                 if (curXml == null) {
@@ -393,18 +479,27 @@ public class AdbExplorer {
 
             boolean atChild = true;
             if (isNew) {
-                String childXml = opts.fillForms ? fillForms(child) : child.rawXML;
-                if (states.size() < opts.maxStates) {
-                    atChild = dfs(child, childId, childXml); // device is currently at the child
+                String formXml = opts.fillForms ? fillForms(child) : child.rawXML;
+                if (limitNow() == null) {
+                    atChild = dfs(child, childId, formXml); // device is currently at the child
                 }
+            }
+            // The budget is spent: nothing else will be tapped, so there is nothing to walk back for.
+            // Going back up screen by screen (a BACK or a restart per level, here and again in the
+            // replay of every language) was a third of the time of a short exploration.
+            String spent = limitNow();
+            if (spent != null) {
+                if (limitReached == null) {
+                    limitReached = spent;
+                }
+                return false;
             }
 
             // Return to this state: BACK when we know where we are, else a clean restart + path.
             String backXml = null;
             if (atChild && !relaunchFailed) {
-                back();
-                sleep(700);
-                backXml = stableDump();
+                backAndWait();
+                backXml = stableDump(STABLE_INTERVAL_MS, state.signature);
                 if (backXml != null && signatureOf(backXml).equals(state.signature)) {
                     actions.add(Action.back(childId, stateId));
                 } else {
@@ -425,9 +520,11 @@ public class AdbExplorer {
     /** Captures the current on-screen state without navigating (waits for the UI to settle first). */
     private StateRec captureCurrent() throws Exception {
         String xml = stableDump();
-        if (xml == null) {
-            return null;
-        }
+        return xml == null ? null : capture(xml);
+    }
+
+    /** The state a dump that was just taken shows: where it is, what can be tapped on it, and its screenshot. */
+    private StateRec capture(String xml) throws Exception {
         StateRec rec = new StateRec();
         rec.rawXML = xml;
         rec.activity = currentActivity();
@@ -463,6 +560,7 @@ public class AdbExplorer {
         if (relaunchFailed) {
             return null;
         }
+        restartCount++;
         cleanReset();
         launch();
         sleep(1000);
@@ -474,13 +572,22 @@ public class AdbExplorer {
                     + "; keeping the " + states.size() + " states captured so far");
             return null;
         }
-        settleAfterLaunch();
+        // Every screen on the way is one that was captured before, so its structure is known and a
+        // first dump that shows it needs no second one to confirm it (see stableDump).
+        String rootSignature = states.isEmpty() ? null : states.get(0).signature;
+        String xml = settleAfterLaunch(rootSignature);
+        if (xml != null && !signatureOf(xml).equals(rootSignature)) {
+            xml = null;   // not the first screen yet (still loading, a notice): the next dump waits for it
+        }
         for (PathStep step : target.path) {
             StateRec via = stateById(step.stateId);
-            if (via != null) {
+            if (via != null && !via.inputs.isEmpty()) {
                 applyInputs(via);
+                xml = null;   // typing moved things: look again
             }
-            String xml = stableDump();
+            if (xml == null) {
+                xml = stableDump(STABLE_INTERVAL_MS, via == null ? null : via.signature);
+            }
             if (xml == null) {
                 return null;
             }
@@ -488,11 +595,16 @@ public class AdbExplorer {
             if (c == null) {
                 return null;
             }
-            tap(c[0], c[1]);
-            sleep(900);
+            tapAndWait(c[0], c[1]);
+            xml = null;
         }
-        applyInputs(target);
-        String xml = stableDump();
+        if (!target.inputs.isEmpty()) {
+            applyInputs(target);
+            xml = null;
+        }
+        if (xml == null) {
+            xml = stableDump(STABLE_INTERVAL_MS, target.signature);
+        }
         if (xml != null && signatureOf(xml).equals(target.signature)) {
             actions.add(Action.restart(target.id));
             return xml;
@@ -610,6 +722,7 @@ public class AdbExplorer {
      * missing, a different screen, the app leaving the foreground) are logged and reported, never fatal.
      */
     public String replay(String scriptPath) throws Exception {
+        long started = System.nanoTime();
         prepareFolders();
         Script script = Script.load(scriptPath);
         install();
@@ -623,7 +736,7 @@ public class AdbExplorer {
                     + (crash != null ? "; app crashed on launch: " + crash
                                      : "; refusing to explore off-app screens (launch likely failed)."));
         }
-        settleAfterLaunch();
+        settleAfterLaunch(null);
 
         List<String> divergences = new ArrayList<>();
         int reproduced = 0;
@@ -635,8 +748,7 @@ public class AdbExplorer {
         if (recordedRoot != null && !root.structure.equals(recordedRoot.structure)) {
             // A transient start screen (first-run dialog, notice) is the usual cause: one BACK
             // dismisses it. If the structure still differs, continue anyway and report it.
-            back();
-            sleep(700);
+            backAndWait();
             StateRec again = captureCurrent();
             if (again != null && again.structure.equals(recordedRoot.structure)) {
                 root = again;
@@ -673,7 +785,7 @@ public class AdbExplorer {
                 current = a.from;
             }
             if (TAP.equals(a.type)) {
-                String xml = stableDump();
+                String xml = stableDump(STABLE_INTERVAL_MS, replaySig.get(a.from));
                 if (xml == null) {
                     current = -1;
                     continue;
@@ -683,21 +795,36 @@ public class AdbExplorer {
                     divergences.add("state " + a.from + ": element " + a.selector + " not found");
                     continue;   // still at 'from'
                 }
-                tap(c[0], c[1]);
-                sleep(900);
-                if (!inApp()) {
-                    back();
-                    sleep(700);
+                if (a.to != a.from && replaySig.containsKey(a.to)) {
+                    tapAndWait(c[0], c[1]);   // the screen it leads to is known: it is seen as soon as it shows
+                } else {
+                    tap(c[0], c[1]);
+                    sleep(TAP_SETTLE_MS);     // as in the exploration: the same pause, the same answer
+                }
+                // A tap recorded as leading to another screen that is already known needs one dump
+                // when that screen is what shows; any other outcome waits for the screen to settle.
+                boolean outside = !inApp();
+                String after = outside ? null
+                        : stableDump(STABLE_INTERVAL_MS, a.to != a.from ? replaySig.get(a.to) : null);
+                // The message the source exploration let go by must not count as another screen here.
+                if (after != null && a.to == a.from) {
+                    after = outlastMessage(after, replaySig.get(a.from));
+                }
+                if (!outside && after != null && !inApp()) {
+                    outside = true;   // the other app only came to the front while the screen was read
+                }
+                if (outside) {
+                    backAndWait();
                     if (a.to == 0) {
                         reproduced++;
                     } else {
                         divergences.add("state " + a.from + ": tap " + a.selector + " left the app (expected state " + a.to + ")");
                     }
-                    String b = stableDump();
+                    String b = stableDump(STABLE_INTERVAL_MS, replaySig.get(a.from));
                     current = (b != null && inApp() && matchesReplayed(b, a.from)) ? a.from : -1;
                     continue;
                 }
-                StateRec rec = captureCurrent();
+                StateRec rec = after == null ? null : capture(after);
                 if (rec == null) {
                     current = -1;
                     continue;
@@ -726,9 +853,8 @@ public class AdbExplorer {
                     current = -1;
                 }
             } else if (BACK.equals(a.type)) {
-                back();
-                sleep(700);
-                String xml = stableDump();
+                backAndWait();
+                String xml = stableDump(STABLE_INTERVAL_MS, replaySig.get(a.to));
                 if (xml == null) {
                     current = -1;
                 } else if (replaySig.containsKey(a.to)) {
@@ -740,14 +866,9 @@ public class AdbExplorer {
                         current = -1;
                     }
                 } else {
-                    StateRec rec = captureCurrent();
-                    if (rec != null) {
-                        adopt(rec, a.to, script, true);
-                        reproduced++;
-                        current = a.to;
-                    } else {
-                        current = -1;
-                    }
+                    adopt(capture(xml), a.to, script, true);
+                    reproduced++;
+                    current = a.to;
                 }
             }
         }
@@ -760,10 +881,12 @@ public class AdbExplorer {
                 missing.add(id);
             }
         }
-        writeReplayReport(script.actions.size(), reproduced, divergences, script.states.size(), missing);
+        long seconds = (System.nanoTime() - started) / 1_000_000_000L;
+        writeReplayReport(script.actions.size(), reproduced, divergences, script.states.size(), missing, seconds);
         System.out.println("  [explorer] replay: " + reproduced + "/" + script.actions.size() + " actions reproduced, "
                 + divergences.size() + " divergences, " + states.size() + "/" + script.states.size() + " states captured"
-                + (missing.isEmpty() ? "" : " (missing " + missing + ")"));
+                + (missing.isEmpty() ? "" : " (missing " + missing + ")") + ", " + seconds + " s (" + tapCount + " taps, "
+                + backCount + " BACK, " + restartCount + " restarts, " + dumpCount + " dumps)");
         for (String d : divergences) {
             System.out.println("  [explorer] divergence: " + d);
         }
@@ -805,6 +928,7 @@ public class AdbExplorer {
         if (target == null) {
             return null;
         }
+        restartCount++;
         cleanReset();
         launch();
         sleep(1000);
@@ -816,13 +940,21 @@ public class AdbExplorer {
                     + "; keeping the " + states.size() + " states captured so far");
             return null;
         }
-        settleAfterLaunch();
+        // As in reposition: a screen of this build that was already captured is recognised by one dump.
+        String rootSignature = replaySig.get(script.rootId);
+        String xml = settleAfterLaunch(rootSignature);
+        if (xml != null && !signatureOf(xml).equals(rootSignature)) {
+            xml = null;
+        }
         for (PathStep step : target.path) {
             StateRec via = script.states.get(step.stateId);
-            if (via != null) {
+            if (via != null && !via.inputs.isEmpty()) {
                 applyInputs(via);
+                xml = null;
             }
-            String xml = stableDump();
+            if (xml == null) {
+                xml = stableDump(STABLE_INTERVAL_MS, replaySig.get(step.stateId));
+            }
             if (xml == null) {
                 return null;
             }
@@ -830,21 +962,23 @@ public class AdbExplorer {
             if (c == null) {
                 return null;
             }
-            tap(c[0], c[1]);
-            sleep(900);
+            tapAndWait(c[0], c[1]);
+            xml = null;
         }
-        applyInputs(target);
-        String xml = stableDump();
+        if (!target.inputs.isEmpty()) {
+            applyInputs(target);
+            xml = null;
+        }
+        if (xml == null) {
+            xml = stableDump(STABLE_INTERVAL_MS, replaySig.get(targetId));
+        }
         if (xml == null) {
             return null;
         }
         if (replaySig.containsKey(targetId)) {
             return signatureOf(xml).equals(replaySig.get(targetId)) ? xml : null;
         }
-        StateRec rec = captureCurrent();
-        if (rec == null) {
-            return null;
-        }
+        StateRec rec = capture(xml);
         adopt(rec, targetId, script, false);   // inputs were just typed along the path
         return rec.rawXML;
     }
@@ -926,11 +1060,50 @@ public class AdbExplorer {
     }
 
     private void tap(int x, int y) throws Exception {
+        tapCount++;
         runAdb(8000, "shell", "input", "tap", String.valueOf(x), String.valueOf(y));
     }
 
     private void back() throws Exception {
+        backCount++;
         runAdb(8000, "shell", "input", "keyevent", "KEYCODE_BACK");
+    }
+
+    /** Taps and gives a new window (an activity, a dialog, another app) the time to come to the front. */
+    private void tapAndWait(int x, int y) throws Exception {
+        String before = focusedWindow();
+        tap(x, y);
+        waitForFocusChange(before);
+    }
+
+    /** BACK, then the same short wait as after a tap. */
+    private void backAndWait() throws Exception {
+        String before = focusedWindow();
+        back();
+        waitForFocusChange(before);
+    }
+
+    /** The window that has the input focus, as the window manager names it; empty when it cannot be read. */
+    private String focusedWindow() throws Exception {
+        String out = runAdb(8000, "shell", "dumpsys window | grep -E 'mCurrentFocus'");
+        return out == null ? "" : out.trim();
+    }
+
+    /**
+     * Returns as soon as the focused window is another one, or after {@link #ACTION_WAIT_MS}. It
+     * replaces a fixed pause of 700 to 900 ms after every BACK and every tap towards a screen that
+     * is already known: what that pause covered
+     * was the start of a new window, which is seen here when it happens, and the rest is covered by
+     * uiautomator, which starts in about a second and then waits for the interface to go quiet.
+     */
+    private void waitForFocusChange(String before) throws Exception {
+        long end = System.nanoTime() + ACTION_WAIT_MS * 1_000_000L;
+        while (System.nanoTime() < end) {
+            sleep(100);
+            if (!focusedWindow().equals(before)) {
+                return;
+            }
+        }
     }
 
     /** True iff the foreground activity belongs to the app under test (not Play Store, Maps, launcher...). */
@@ -975,13 +1148,14 @@ public class AdbExplorer {
     /**
      * Startup settle window: splash screens, loaders and first-run animations make the first dump
      * differ from launch to launch, which was the main source of non-reproducible graphs. Wait a
-     * fixed time, then until the structure holds for 1.5 s.
+     * fixed time, then until the structure holds for 1.5 s. On a relaunch the first screen is known
+     * ({@code expected}), and a dump that shows it ends the wait. Returns the settled dump.
      */
-    private void settleAfterLaunch() throws Exception {
+    private String settleAfterLaunch(String expected) throws Exception {
         if (opts.settleSeconds > 0) {
             sleep(opts.settleSeconds * 1000L);
         }
-        stableDump(1500);
+        return stableDump(1500, expected);
     }
 
     /** Taps the "allow" button of the system permission dialog currently on screen, if there is one. */
@@ -1087,23 +1261,27 @@ public class AdbExplorer {
      * the tool's own answer is checked, so a failed dump can never be mistaken for the previous screen
      * (batch 4, 2026-10-20: a clock showing seconds never goes idle, the dump timed out and the explorer
      * kept reading the stale file left by the previous app). uiautomator gives up on a UI that stays
-     * busy after 10 s, so the command gets more than that.
+     * busy after 10 s, so the command gets more than that. The three steps (remove, dump, print) run
+     * in one adb process: the file is only printed when the dump succeeded.
      */
     private static String dumpHierarchy(String serial) throws Exception {
         boolean neverIdle = false;
         for (int attempt = 0; attempt < 3; attempt++) {
-            execAdb(serial, 8000, "shell", "rm", "-f", "/sdcard/itdroid_dump.xml");
-            String answer = execAdb(serial, 25000, "shell", "uiautomator", "dump", "/sdcard/itdroid_dump.xml");
+            String answer = execAdb(serial, 35000, "shell", "rm -f " + DUMP_FILE + "; uiautomator dump " + DUMP_FILE
+                    + " && cat " + DUMP_FILE);
             if (answer != null && answer.contains("idle state")) {
                 neverIdle = true;
             }
-            if (answer == null || !answer.contains("dumped to")) {
-                sleep(800);
-                continue;
+            // uiautomator's own line ("UI hierchary dumped to: ...") comes first, the file after it
+            int at = answer == null || !answer.contains("dumped to") ? -1 : answer.indexOf("<?xml");
+            if (at < 0 && answer != null && answer.contains("dumped to")) {
+                at = answer.indexOf("<hierarchy");
             }
-            String xml = execAdb(serial, 10000, "shell", "cat", "/sdcard/itdroid_dump.xml");
-            if (xml != null && xml.contains("<hierarchy") && xml.contains("<node")) {
-                return xml.trim();
+            if (at >= 0) {
+                String xml = answer.substring(at).trim();
+                if (xml.contains("<hierarchy") && xml.contains("<node")) {
+                    return xml;
+                }
             }
             sleep(800);
         }
@@ -1112,8 +1290,71 @@ public class AdbExplorer {
         return null;
     }
 
+    /**
+     * True when {@code candidate} is the screen of {@code base} but for a few elements, added or
+     * changed: what a message shown for some seconds looks like in a dump, be it a box drawn over
+     * the screen (a snackbar) or a line of the screen that gets a text ("Sync completed"). Both are
+     * state signatures, one element per {@code ;}.
+     */
+    static boolean differsLittle(String base, String candidate) {
+        String[] before = base.split(";");
+        String[] after = candidate.split(";");
+        if (Math.abs(after.length - before.length) > MESSAGE_NODES) {
+            return false;
+        }
+        // longest common subsequence: what the two screens share, in order
+        int[] previous = new int[after.length + 1];
+        for (String element : before) {
+            int[] current = new int[after.length + 1];
+            for (int j = 0; j < after.length; j++) {
+                current[j + 1] = element.equals(after[j]) ? previous[j] + 1 : Math.max(previous[j + 1], current[j]);
+            }
+            previous = current;
+        }
+        int shared = previous[after.length];
+        int added = after.length - shared;
+        int gone = before.length - shared;
+        return added + gone > 0 && added <= MESSAGE_NODES && gone <= MESSAGE_NODES;
+    }
+
+    /**
+     * A message that shows over a screen for a few seconds ("Sync completed", "Saved") is not a screen
+     * of its own: it is gone before anyone could act on it, and whether a dump catches it depends on
+     * the second the dump is taken. Capturing sooner after each tap made the explorer catch such
+     * messages and count them as screens. So when the dump taken after a tap is the screen the tap
+     * was made on but for a few elements, it is looked at again every {@link #MESSAGE_POLL_MS}: if the
+     * screen goes back to what it was, the tap did not navigate; if the difference is still there
+     * after {@link #MESSAGE_POLLS} looks (some ten seconds), it is a screen. A screen that really is a
+     * small variation of the one before (a tab, a step of a wizard) pays those seconds once, the
+     * first time it is found. Returns the dump to go on with.
+     */
+    private String outlastMessage(String xml, String base) throws Exception {
+        String candidate = signatureOf(xml);
+        if (base == null || candidate.equals(base) || !differsLittle(base, candidate)) {
+            return xml;
+        }
+        for (int look = 0; look < MESSAGE_POLLS; look++) {
+            sleep(MESSAGE_POLL_MS);
+            String again = dumpHierarchy(serial);
+            dumpCount++;
+            if (again == null) {
+                return xml;
+            }
+            String now = signatureOf(again);
+            if (now.equals(base)) {
+                System.out.println("  [explorer] a message shown for a moment over the screen was let go by");
+                return again;
+            }
+            if (!now.equals(candidate)) {
+                String settled = stableDump();   // it became something else: read it once it settles
+                return settled != null ? settled : again;
+            }
+        }
+        return xml;
+    }
+
     private String stableDump() throws Exception {
-        return stableDump(600);
+        return stableDump(STABLE_INTERVAL_MS, null);
     }
 
     /**
@@ -1121,18 +1362,25 @@ public class AdbExplorer {
      * {@code intervalMs} apart), so a screen is captured fully rendered, not mid-render. Falls back to
      * the last dump after a few attempts. Keyed on the signature, so clock/text animations don't
      * prevent settling.
+     *
+     * <p>{@code expected} is the signature of the screen the caller knows should be there, or null
+     * when it cannot know (a screen seen for the first time, a tap that may or may not navigate). A
+     * dump that shows the expected screen is returned at once: that structure was captured settled
+     * before, and uiautomator only dumps after a second without changes, so a second dump (2.4 s on
+     * the emulator) would only confirm it. Any other dump goes through the two-dump check as always.
      */
-    private String stableDump(long intervalMs) throws Exception {
+    private String stableDump(long intervalMs, String expected) throws Exception {
         String prevSig = null;
         String dump = null;
         for (int attempt = 0; attempt < 6; attempt++) {
             dump = dumpHierarchy(serial);
+            dumpCount++;
             if (dump == null) {
                 return null;
             }
             String sig = signatureOf(dump);
-            if (sig.equals(prevSig)) {
-                return dump;   // two consecutive identical structures: UI settled
+            if (sig.equals(prevSig) || sig.equals(expected)) {
+                return dump;   // two consecutive identical structures, or the known one: UI settled
             }
             prevSig = sig;
             sleep(intervalMs);
@@ -1368,11 +1616,27 @@ public class AdbExplorer {
 
     /** The replay script: every state (with the path that reaches it and its typed inputs) and every action, in order. */
     @SuppressWarnings("unchecked")
-    private void writeScript() throws Exception {
+    private void writeScript(String stop, long seconds) throws Exception {
         JSONObject root = new JSONObject();
         root.put("package", pkg);
         root.put("locale", locale);
         root.put("rootId", states.isEmpty() ? 0L : (long) states.get(0).id);
+        // how far the exploration got and what ended it, for the report
+        JSONObject summary = work(seconds);
+        summary.put("stop", stop);
+        summary.put("states", (long) states.size());
+        summary.put("maxStates", (long) opts.maxStates);
+        summary.put("maxClickables", (long) opts.maxClickables);
+        summary.put("maxMinutes", (long) opts.maxMinutes);
+        JSONArray visited = new JSONArray();
+        for (StateRec s : states) {
+            String activity = nz(s.activity).replace("}", "");
+            if (!activity.isEmpty() && !visited.contains(activity)) {
+                visited.add(activity);
+            }
+        }
+        summary.put("activities", visited);
+        root.put("exploration", summary);
         // crashes of the ORIGINAL app while it was explored: a translated build that crashes the
         // same way was not broken by its translation
         JSONArray crashes = new JSONArray();
@@ -1413,8 +1677,8 @@ public class AdbExplorer {
 
     @SuppressWarnings("unchecked")
     private void writeReplayReport(int total, int reproduced, List<String> divergences, int recordedStates,
-            List<Integer> missing) throws Exception {
-        JSONObject o = new JSONObject();
+            List<Integer> missing, long seconds) throws Exception {
+        JSONObject o = work(seconds);
         o.put("actions", (long) total);
         o.put("reproduced", (long) reproduced);
         o.put("statesRecorded", (long) recordedStates);
@@ -1431,6 +1695,18 @@ public class AdbExplorer {
         crashes.addAll(crashReasons());
         o.put("crashes", crashes);
         Files.writeString(Paths.get(outputFolder, REPLAY_REPORT_FILE), o.toJSONString(), StandardCharsets.UTF_8);
+    }
+
+    /** What this exploration or replay did on the device: the time it took and what it went into. */
+    @SuppressWarnings("unchecked")
+    private JSONObject work(long seconds) {
+        JSONObject o = new JSONObject();
+        o.put("seconds", seconds);
+        o.put("taps", (long) tapCount);
+        o.put("backs", (long) backCount);
+        o.put("restarts", (long) restartCount);
+        o.put("dumps", (long) dumpCount);
+        return o;
     }
 
     // ================================================================= static device helpers
@@ -1674,17 +1950,38 @@ public class AdbExplorer {
         return chosen;
     }
 
-    /** Standalone entry point for testing: serial pkg apkPath outputFolder locale [maxStates] [scriptToReplay]. */
+    /**
+     * Standalone entry point for testing: serial pkg apkPath outputFolder locale, then in any order a
+     * number (maxStates), {@code maxStates=N}, {@code maxClickables=N}, {@code maxMinutes=N},
+     * {@code settleSeconds=N}, and the exploration_script.json to replay instead of exploring.
+     */
     public static void main(String[] args) throws Exception {
         if (args.length < 5) {
-            System.out.println("Usage: AdbExplorer <serial> <pkg> <apkPath> <outputFolder> <locale> [maxStates] [exploration_script.json]");
+            System.out.println("Usage: AdbExplorer <serial> <pkg> <apkPath> <outputFolder> <locale> [maxStates=N] [maxClickables=N]"
+                    + " [maxMinutes=N] [settleSeconds=N] [exploration_script.json]");
             return;
         }
         Options o = new Options();
-        o.maxStates = args.length > 5 ? Integer.parseInt(args[5]) : 5;
+        String script = null;
+        for (int i = 5; i < args.length; i++) {
+            String a = args[i];
+            if (a.matches("\\d+")) {
+                o.maxStates = Integer.parseInt(a);
+            } else if (a.matches("maxStates=\\d+")) {
+                o.maxStates = Integer.parseInt(a.substring(a.indexOf('=') + 1));
+            } else if (a.matches("maxClickables=\\d+")) {
+                o.maxClickables = Integer.parseInt(a.substring(a.indexOf('=') + 1));
+            } else if (a.matches("maxMinutes=\\d+")) {
+                o.maxMinutes = Integer.parseInt(a.substring(a.indexOf('=') + 1));
+            } else if (a.matches("settleSeconds=\\d+")) {
+                o.settleSeconds = Integer.parseInt(a.substring(a.indexOf('=') + 1));
+            } else {
+                script = a;
+            }
+        }
         AdbExplorer explorer = new AdbExplorer(args[0], args[1], args[2], args[3], args[4], o);
-        if (args.length > 6) {
-            explorer.replay(args[6]);
+        if (script != null) {
+            explorer.replay(script);
         } else {
             explorer.explore();
         }

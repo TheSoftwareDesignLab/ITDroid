@@ -252,6 +252,7 @@ public class ITDroid {
 			llmLaunchCommand = autoStart.isEmpty() ? null : autoStart;
 			explorerOptions.maxStates = cfg.getMaxStates();
 			explorerOptions.maxClickables = cfg.getMaxClickables();
+			explorerOptions.maxMinutes = cfg.getMaxMinutes();
 			explorerOptions.settleSeconds = cfg.getSettleSeconds();
 			explorerOptions.fillForms = cfg.isFillForms();
 			launchTest = cfg.isLaunchTest();
@@ -566,6 +567,7 @@ public class ITDroid {
 		config.put("alpha", alpha);
 		config.put("maxStates", explorerOptions.maxStates);
 		config.put("maxClickables", explorerOptions.maxClickables);
+		config.put("maxMinutes", explorerOptions.maxMinutes);
 		config.put("settleSeconds", explorerOptions.settleSeconds);
 		config.put("fillForms", explorerOptions.fillForms);
 		config.put("launchTest", launchTest);
@@ -644,6 +646,19 @@ public class ITDroid {
 		if (!sourceCrashes.isEmpty()) {
 			dfltLangJSON.put("crashes", jsonArray(sourceCrashes));
 			System.out.println("NOTE: the original app crashed while it was explored: " + sourceCrashes);
+		}
+		// How far the exploration got and what ended it: a limit of the budget, or nothing left to tap.
+		Object script = readJson(Paths.get(scriptPath));
+		Object summary = script instanceof JSONObject ? ((JSONObject) script).get("exploration") : null;
+		if (summary instanceof JSONObject) {
+			JSONObject exploration = (JSONObject) summary;
+			exploration.put("activitiesDeclared", appInfo.get("activities"));
+			dfltLangJSON.put("exploration", exploration);
+			if (AdbExplorer.STOP_EXHAUSTED.equals(exploration.get("stop"))) {
+				System.out.println("NOTE: the exploration ended at " + defltGraph.getStates().size()
+						+ " screens with nothing left to tap. Either the app is that small, or it needs content or an"
+						+ " account before it shows more.");
+			}
 		}
 		writeReport();
 
