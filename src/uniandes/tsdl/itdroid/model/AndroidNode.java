@@ -6,9 +6,7 @@ import org.w3c.dom.Node;
 public class AndroidNode {
 
 	public static String TRUE = "true";
-	public static String FALSE = "false";
 
-	private State state;
 	private boolean clickable;
 	private int[] point1 = {0,0};
 	private int[] point2 = {0,0};
@@ -38,8 +36,7 @@ public class AndroidNode {
 		return index;
 	}
 
-	public AndroidNode(State state, Node domNode) {
-		this.state = state;
+	public AndroidNode(Node domNode) {
 		loadAttributesFromDom(domNode);
 		String[] classes = pClass.split("\\.");
 		NamedNodeMap domAttrs = domNode.getAttributes();
@@ -118,10 +115,6 @@ public class AndroidNode {
 
 	public String getText() {
 		return text;
-	}
-
-	public String getContentDesc() {
-		return contentDesc;
 	}
 
 	/** True when the element shows or announces some text (its own text or its content description). */

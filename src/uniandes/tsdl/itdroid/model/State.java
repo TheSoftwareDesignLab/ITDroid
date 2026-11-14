@@ -105,7 +105,7 @@ public class State {
 		Map<Node, Integer> positions = new IdentityHashMap<>();
 		for (int i = 0; i < allNodes.getLength(); i++) {
 			currentNode = allNodes.item(i);
-			newAndroidNode = new AndroidNode(this, currentNode);
+			newAndroidNode = new AndroidNode(currentNode);
 			Integer parent = positions.get(currentNode.getParentNode());
 			newAndroidNode.placeInTree(i, parent == null ? -1 : parent);
 			if (parent != null) {
@@ -209,10 +209,6 @@ public class State {
 		return id;
 	}
 
-	public void setId(int id) {
-		this.id = id;
-	}
-
 	public int getSourceStateId() {
 		return sourceStateId;
 	}
@@ -236,16 +232,8 @@ public class State {
 		return activityName;
 	}
 
-	public void setActivityName(String activityName) {
-		this.activityName = activityName;
-	}
-
 	public String getRawXML() {
 		return rawXML;
-	}
-
-	public void setRawXML(String rawXML) {
-		this.rawXML = rawXML;
 	}
 
 	public void addInboundTransition(Transition pTransition) {
@@ -258,18 +246,6 @@ public class State {
 
 	public List<AndroidNode> getStateNodes() {
 		return stateNodes;
-	}
-
-	public List<Transition> getOutboundTransitions() {
-		return outboundTransitions;
-	}
-
-	public void setOutboundTransitions(List<Transition> outboundTransitions) {
-		this.outboundTransitions = outboundTransitions;
-	}
-
-	public void setScreenShot(String screenShot) {
-		this.screenShot = screenShot;
 	}
 
 	public String getScreenShot() {

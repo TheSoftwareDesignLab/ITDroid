@@ -54,6 +54,8 @@ llama-server -m <model>.gguf --port 8080
 
 LM Studio or any other OpenAI-compatible server also works. Ollama runs llama.cpp under the hood and adds model management; ITDroid talks to either through the same endpoint, so it is engine-agnostic. If the user has no Ollama, llama.cpp alone is enough.
 
+Two kinds of model work. A general chat model (`qwen2.5:3b`, `mistral:7b`) receives the texts in batches, with instructions. A model trained only to translate (Google's TranslateGemma, Tencent's Hy-MT2, PFN's PLaMo Translate) receives one text per request in the prompt it was trained with; ITDroid picks the way from the name of the model (`translation.style`, below). The final validation of this version (REFACTOR.md, section 12) used PLaMo Translate, which Ollama 0.40 or later serves straight from Hugging Face: `translation.model=hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M`.
+
 # Configure the LLM
 
 Copy `.env.example` to `.env` (in the folder you pass as `settingsDir`, or the working directory) and set the endpoint/model for the runtime you chose. Each value can also be a JVM system property (`-Dkey=value`) or an environment variable; precedence is system property, then env var, then `.env`.
@@ -88,7 +90,16 @@ The runnable jar is `target/ITDroid-1.0.0.jar`. The build runs the unit tests fi
 
 # Usage
 
-There are two ways to run ITDroid: a single config file (recommended) or the classic positional arguments.
+The jar has four modes:
+
+```
+java -jar target/ITDroid-1.0.0.jar itdroid.config.properties             # evaluate an app: needs the device and the LLM
+java -jar target/ITDroid-1.0.0.jar --static itdroid.config.properties    # static analysis only: no device, no LLM
+java -jar target/ITDroid-1.0.0.jar --report                              # browse the evaluations in the web report
+java -jar target/ITDroid-1.0.0.jar --reanalyze results/                  # recompute the comparison of stored evaluations
+```
+
+The last three have their own sections below. There are two ways to give an evaluation its parameters: a single config file (recommended) or the classic positional arguments.
 
 # Option A, config file (recommended)
 
@@ -288,5 +299,21 @@ java -jar target/ITDroid-1.0.0.jar --reanalyze results/ --min-similarity 0.4   #
 ```
 
 The output folder gets a `summary.csv` (one row per evaluation and language: the IPFs the stored report says, the IPFs the current code computes, and the breakdown of `ipfSummary` in columns) and, per evaluation, a `reanalysis.json` with the recomputed comparison and an `ipfs.csv`. Two runs over the same data write the same files. Use it to check that a change to the comparison does what was intended before spending hours exploring again.
+
+# Known limits
+
+What an evaluation does not cover today. REFACTOR.md, section 12, has the validation these come from and the work that is pending.
+
+- ITDroid translates the Android string resources of the app and the literals of its Dalvik code. An app written with a cross-platform framework keeps its texts somewhere else (the web assets of Capacitor or Cordova, the Dart snapshot of Flutter, the resources of Compose Multiplatform), and they are not translated: the app shows whatever it does by itself with the language of the device, often the source language. Its screens then come out equal to the source, and `0` findings means nothing was translated on screen, not that the translation fits. The report does not warn about it yet; compare the texts of the two screenshots before reading the figures of such an app.
+- The exploration only sees what the app shows by itself. An app that needs content or an account before it has screens to show (an audiobook player with an empty library, the client of a server) is evaluated on the few screens it reaches. ITDroid does not load data into the app or sign in; `exploration.fillForms=true` only types a value in the text fields it finds.
+- The exploration is small by default: 5 screens and 8 taps per screen (`exploration.maxStates`, `exploration.maxClickables`). More screens take proportionally longer, once for the source language and once per language.
+- The replay expects the app to behave the same every time it starts. Where it does not (a first-run dialog, content that arrives from the network, a map that loads late), the path diverges: `replay_report.json` lists every divergence, and a screen that could not be reproduced is not compared. For such an app the findings change from one run to the next; read them together with the share of the replay that was reproduced.
+- The source language is the `defaultLng` of `settings.properties` for every app (the model is asked to detect it from the strings only when that line is removed or empty). An app whose default strings are in another language than the one set there is translated from the wrong language.
+- A hardcoded string that is shown outside the screens of the app (a notification, a home-screen widget, an error of a sign-in) is translated and built into the APKs, but the exploration does not get to it, so its layout is not compared.
+- With `hardcoded.translate=ui` a text that reaches the screen through the app's own data objects is not translated; `ui+unknown` reaches it and translates some data too.
+- The translation is as good as the model. A small model takes a short word in the wrong sense, and rewrites a figure the way the target language writes it (`6,568.65 EUR` as `6.568,65 EUR`). A proper name that is not in `protected-terms.txt` is translated like any other word.
+- An app that only has ARM native code is rejected on an x86_64 emulator; it needs an ARM device. An app apktool cannot rebuild, beyond the two cases ITDroid adjusts, is rejected.
+- An app that is a single web view (Capacitor, Cordova) takes long: every restart of the replay waits for the page to load, and three languages can take more than an hour.
+- A layout that does not mirror in a right-to-left language is reported (`missingMirroring`), not repaired.
 
 See ARCHITECTURE.md for how the code is organized and REFACTOR.md for the modernization change log.

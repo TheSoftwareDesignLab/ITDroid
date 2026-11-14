@@ -188,11 +188,6 @@ public class HardcodedStringFinder {
 		return text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
 	}
 
-	/** True for text a person could read: neither compiler noise nor a bare identifier. */
-	public static boolean isLikelyUiString(String s) {
-		return !isNoise(s) && !isIdentifier(s);
-	}
-
 	/** Framework and compiler noise (Compose keys, toString fragments, descriptors, URLs, paths, formats). */
 	static boolean isNoise(String s) {
 		String t = s.trim();

@@ -26,7 +26,6 @@ public class LayoutGraph {
 
 	public static String STATES = "states";
 	public static String TRANSITIONS = "transitions";
-	public static String AMOUNT_STATES = "amountStates";
 
 	private String scriptPath;
 	private ArrayList<State> states;
@@ -210,14 +209,6 @@ public class LayoutGraph {
 		return result;
 	}
 
-	public String getScriptPath() {
-		return scriptPath;
-	}
-
-	public void setScriptPath(String scriptPath) {
-		this.scriptPath = scriptPath;
-	}
-
 	public ArrayList<State> getStates() {
 		return states;
 	}
@@ -227,24 +218,8 @@ public class LayoutGraph {
 		return states.get(i);
 	}
 
-	public void setStates(ArrayList<State> states) {
-		this.states = states;
-	}
-
 	public ArrayList<Transition> getTransitions() {
 		return transitions;
-	}
-
-	public void setTransitions(ArrayList<Transition> transitions) {
-		this.transitions = transitions;
-	}
-
-	public String getLanguage() {
-		return language;
-	}
-
-	public void setLanguage(String language) {
-		this.language = language;
 	}
 
 

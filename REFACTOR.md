@@ -4,6 +4,8 @@ Cambios realizados al modernizar ITDroid y reemplazar su motor de exploración, 
 
 Resumen: ITDroid quedó actualizado a Java 21, se reemplazó el traductor IBM Watson (deprecado) por un LLM local, se actualizaron los binarios externos, se corrigieron bugs, y se reemplazó el motor de exploración cerrado (RIP, 2017), que se colgaba en Android moderno, por uno propio basado en `adb` que no necesita root. El flujo completo (decode, traducir, reconstruir, explorar, detectar IPFs, reporte) se validó de punta a punta.
 
+El documento sigue el orden en que se hizo el trabajo. Las secciones 1 a 9 son la modernización inicial; la 10, el flujo rediseñado tras evaluar apps reales; la 11, la carpeta de resultados y el informe web; y la 12, las correcciones de la auditoría de noviembre de 2026, que comparó este refactor con la herramienta de 2020. Una sección posterior corrige a veces lo que dice una anterior: lo vigente es lo último, y la sección 12 termina con la validación final y lo que queda pendiente.
+
 Para entender cómo está armado todo ver ARCHITECTURE.md. Para cómo ejecutar ver README.md.
 
 # Novedades destacadas
@@ -167,18 +169,22 @@ Los 19 IPFs son nodos cuyas relaciones espaciales cambian por el texto en españ
 # 8. Limitaciones y trabajo futuro (no bloqueante)
 
 - El emparejamiento posicional con distancia de texto (`State.compareTo`) solo se usa cuando el grafo del idioma no viene de un replay; con replay el emparejamiento es por id reproducido.
-- Calidad de traducción: un modelo pequeño comete deslices ocasionales (traduce nombres propios). Un modelo mayor o un ajuste de prompt lo mejora.
+- Calidad de traducción: un modelo pequeño comete deslices ocasionales (traduce nombres propios). Desde la sección 12 los nombres que se listan en `protected-terms.txt` no llegan al modelo, y una respuesta que no es una traducción se descarta.
 - `exploration.maxStates` limita la cobertura por app; se puede subir en el archivo de config.
 - Apps cuyas pantallas cambian entre arranques (diálogos de primer uso, avisos) pueden divergir en el replay; las divergencias quedan en `replay_report.json`.
 
+La lista vigente de límites y de trabajo pendiente está al final de la sección 12.
+
 # 9. Cómo ejecutar
 
-1. Instalar un LLM local y configurarlo en `.env` (copia de `.env.example`).
+1. Instalar un LLM local (Ollama o llama.cpp).
 2. Tener un emulador/dispositivo Android 13+ (API 33+) conectado por `adb` (uno solo).
 3. `mvn clean package`.
-4. `java -jar target/ITDroid-1.0.0.jar <APK> <paquete> extra/ . <alpha> <salida> <emulador> ["comando-de-arranque-del-LLM"]`. El 8º argumento es opcional: si se pasa, ITDroid arranca el servidor LLM y lo apaga al final; si se omite, el servidor debe estar ya corriendo.
+4. Copiar `itdroid.config.example.properties` a `itdroid.config.properties`, poner el APK, su paquete, el emulador y el modelo, y ejecutar `java -jar target/ITDroid-1.0.0.jar itdroid.config.properties`. Los resultados quedan en `results/<paquete>/` y se ven con `java -jar target/ITDroid-1.0.0.jar --report`.
 
-Ver README.md para el detalle de argumentos.
+La forma original sigue valiendo: `java -jar target/ITDroid-1.0.0.jar <APK> <paquete> extra/ . <alpha> <salida> <emulador> ["comando-de-arranque-del-LLM"]`, con el LLM configurado en `.env` (copia de `.env.example`). El 8º argumento es opcional: si se pasa, ITDroid arranca el servidor LLM y lo apaga al final; si se omite, el servidor debe estar ya corriendo.
+
+Ver README.md para el detalle de cada clave y de los otros modos (`--static`, `--report`, `--reanalyze`).
 
 # 10. Flujo de trabajo revisado tras la evaluación con apps reales
 
@@ -202,7 +208,7 @@ Los modelos entrenados solo para traducir (TranslateGemma de Google, Hy-MT2 de T
 
 Como estos modelos traducen también lo que hay dentro de los placeholders (`{name}` a `{nombre}`) o los convierten (`&amp;` a "y"), los dos estilos enmascaran por defecto (`translation.maskPlaceholders`): cada `%1$s`, `{name}`, etiqueta o entidad se sustituye por un token `<phN>` antes de la petición y se restaura después, y el escape literal `\n` viaja como salto de línea real. Con Hy-MT2-1.8B sobre 42 textos de prueba el modelo conservó 35 placeholders sin enmascarar, 38 pidiéndoselo en el prompt y 41 enmascarando. Es la misma idea que el ITDroid original aplicaba con IBM Watson.
 
-Nota práctica: Ollama sirve un GGUF del Hub de Hugging Face directamente (`translation.model=hf.co/<repo>:<cuantización>`), pero la plantilla de chat que extrae del archivo puede salir corrupta (con Hy-MT2-1.8B el modelo respondía "onse" a todo). Conviene revisar `ollama show <modelo> --template` y, si hace falta, crear un modelo derivado con un Modelfile que lleve la plantilla oficial del repositorio (`eval/Modelfile.hy-mt2`).
+Nota práctica: Ollama sirve un GGUF del Hub de Hugging Face directamente (`translation.model=hf.co/<repo>:<cuantización>`), pero la plantilla de chat que extrae del archivo puede salir corrupta (con Hy-MT2-1.8B el modelo respondía "onse" a todo). Conviene revisar `ollama show <modelo> --template` y, si hace falta, crear con `ollama create` un modelo derivado: un Modelfile con `FROM hf.co/tencent/Hy-MT2-1.8B-GGUF:Q8_0`, un `TEMPLATE` con la plantilla oficial del repositorio del modelo (su `chat_template.jinja`) y los `PARAMETER stop` de sus marcas de fin de turno.
 
 # La app fuera del dispositivo mientras se traduce
 
@@ -234,7 +240,7 @@ Tras cada arranque se espera `exploration.settleSeconds` y hasta que la estructu
 
 ITDroid está pensado para que un desarrollador descargue el repositorio y evalúe sus propias apps; el informe web es la cara visible de esa evaluación. Antes, `webreport/` era una página de 2019 que leía un `report.json` copiado a mano y solo mostraba conteos.
 
-Ahora cada evaluación va a `results/<paquete>/` (clave `resultsDir`, por defecto `results`; `output=` sigue valiendo como carpeta explícita, que es lo que usa el harness), y `java -jar ITDroid.jar --report [carpeta]` arranca `ReportServer` (el `HttpServer` del JDK en 127.0.0.1, sin dependencias) que sirve `webreport/`, la carpeta de resultados y un índice `/api/results` con una entrada por subcarpeta que tenga `report.json`. La página (`webreport/`, JavaScript sin frameworks ni red, Bootstrap local) lista las apps evaluadas y muestra la elegida en pestañas: resumen (APK, versión, SDK, dispositivo, modelo, duración, totales), idiomas e IPFs (por pantalla, con la captura origen y la traducida lado a lado y los nodos afectados recuadrados a partir de los `bounds` del volcado), hardcodeados (desde `strings_inventory.json`, con su origen, si se tradujeron y cómo), rendimiento, entorno y artefactos. Sirve igual para los lotes del harness (`--report eval/results/<lote>`), que además aportan la telemetría de `meta.json`.
+Ahora cada evaluación va a `results/<paquete>/` (clave `resultsDir`, por defecto `results`; `output=` sigue valiendo como carpeta explícita, que es lo que usa el harness con el que se evaluaron los lotes de apps: unos scripts de PowerShell que lanzan ITDroid app por app y miden la máquina, y que no forman parte del repositorio), y `java -jar ITDroid.jar --report [carpeta]` arranca `ReportServer` (el `HttpServer` del JDK en 127.0.0.1, sin dependencias) que sirve `webreport/`, la carpeta de resultados y un índice `/api/results` con una entrada por subcarpeta que tenga `report.json`. La página (`webreport/`, JavaScript sin frameworks ni red, Bootstrap local) lista las apps evaluadas y muestra la elegida en pestañas: resumen (APK, versión, SDK, dispositivo, modelo, duración, totales), idiomas e IPFs (por pantalla, con la captura origen y la traducida lado a lado y los nodos afectados recuadrados a partir de los `bounds` del volcado), hardcodeados (desde `strings_inventory.json`, con su origen, si se tradujeron y cómo), rendimiento, entorno y artefactos. Sirve igual para la carpeta de un lote (`--report <carpeta del lote>`); si cada evaluación trae además un `meta.json` con la telemetría que midió el harness, la página la muestra.
 
 Para alimentarlo, `report.json` ganó tres secciones: `itdroid` (versión, inicio, fin, estado), `environment` (host, dispositivo con modelo y versión de Android, motor de traducción con modelo y estilo, configuración de la corrida) y `performance` (segundos por fase: preflight, decode, inventory, build/explore del origen y translate/build/replay/compare por idioma; totales del LLM: peticiones, latencia, textos enviados, reutilizados y dejados en origen; CPU y heap de ITDroid; carga de CPU y memoria del host muestreadas cada 2 s). Lo recoge `RunMetrics`; el servidor LLM y el emulador son procesos aparte, así que su consumo aparece en las cifras del host, no en las del proceso.
 
@@ -366,3 +372,103 @@ Problema: cada evaluación dejaba entre cinco y siete APK del tamaño de la app 
 - La construcción origen ya no se duplica. Si el APK internacionalizado no se podía construir, se copiaba la construcción origen con el nombre por defecto, y quedaba dos veces. Ahora no queda archivo con ese nombre, y `internationalizedApk` en `report.json` dice `built: false` y nombra la construcción origen.
 - Clave nueva `output.keepLanguageApks` (por defecto `true`, el comportamiento de siempre). Con `false`, el APK de cada idioma destino se borra al terminar su evaluación: solo hacía falta para instalarlo y reproducir el recorrido. Quedan la construcción origen y el APK internacionalizado, que lleva los recursos de todos los idiomas; lo único que tenían de más los APK por idioma son los hardcoded parcheados en el código, que `hardcoded_<idioma>.csv` lista. La pestaña de artefactos del informe lo indica.
 - Medido en el emulador con la app de prueba (58 MB): una corrida con dos idiomas dejaba 5 APK, 290 de los 292 MB de la carpeta. Con un idioma y `output.keepLanguageApks=false` quedan 2 (el internacionalizado y la construcción origen), 118 MB, y la evaluación sale igual (replay 14 de 14). El caso en que el APK internacionalizado no se construye no se ejercitó en el dispositivo.
+
+# Jar ejecutable
+
+Problema: `json-simple 1.1.1` declara JUnit 4.10 como dependencia normal, cuando es de pruebas, y el jar ejecutable arrastraba JUnit 4 y Hamcrest.
+
+- Se excluyen `junit:junit` y `org.hamcrest:hamcrest-core` de esa dependencia en el `pom.xml`. El jar pasa de 1010 a 698 archivos (de 1,40 a 1,13 MB) y ya no contiene `org/junit`, `junit/` ni `org/hamcrest`. Las pruebas del proyecto usan JUnit 5 con alcance de pruebas, que nunca entró en el jar.
+
+# Limpieza
+
+Problema: quedaban en el código métodos y campos que nada usa, restos de la herramienta de 2020 y de pasos intermedios del refactor, y la carpeta del informe traía dos archivos de Bootstrap que la página no carga.
+
+- Código sin uso que se quita: los `set...` de `State`, `LayoutGraph` y `Transition` que nadie llamaba (un grafo se construye al leer `result.json` y no se modifica después); `LayoutGraph.AMOUNT_STATES`, `getScriptPath` y `getLanguage`; `State.getOutboundTransitions`; `AndroidNode.FALSE`, `getContentDesc` y la referencia que cada nodo guardaba a su pantalla; el tipo de cada propiedad en `AndroidNodeProperty`; el nombre de paquete que `Helper` guardaba y nadie leía; `SmaliScan.decodedPath`; `LLMTranslator.getInventory`; `HardcodedStringFinder.isLikelyUiString`; y un constructor vacío en `AdbExplorer`. El compilador ya no da ningún aviso de código sin usar.
+- Se conservan tres lectores que hoy nadie llama (`AndroidNode.isEnabled`, `State.getScreenShot`, `Transition.getOriginNode`): exponen datos que el modelo ya lee del volcado, y quitarlos sería dejar de leerlos.
+- `webreport/js/bootstrap.bundle.js` (230 KB) y `webreport/css/bootstrap.css.map` (492 KB) salen del repositorio: la página solo carga `bootstrap.css`.
+- No cambia ningún comportamiento: pasan las mismas 226 pruebas y las 74 comprobaciones de la página.
+
+# Validación final
+
+Quince APK de apps reales se corrieron en el emulador (Android 13, API 33, x86_64) en español, ruso y árabe, con PLaMo Translate y todos los valores por defecto (`hardcoded.translate=ui`, 5 pantallas, 8 toques por pantalla). Tres no se pueden ejecutar en ese emulador y el preflight las rechazó en un segundo, antes de decodificar: fit_book, counted y oxu solo traen código nativo arm64. Las otras 12 se evaluaron en los tres idiomas: 36 evaluaciones de idioma, las 36 con resultado. Cuatro (ambio, salomax, locreminder y superproductivity) se repitieron con el jar que se entrega, porque en la primera pasada el emulador se colgó durante su evaluación o agotaron el límite de tiempo; la tabla da la última corrida de cada app. El jar de las repeticiones es idéntico, archivo por archivo, al que sale de compilar este código.
+
+| App | Interfaz | Pantallas | Hallazgos es / ru / ar | Replay es / ru / ar | Texto igual al origen es / ru / ar | Hardcoded (traducidos) | Minutos |
+|---|---|---|---|---|---|---|---|
+| com.jbgsoft.ambio | Android | 4 | 96 / 67 / 16 | 40/40, 40/40, 39/40 | 30 % / 0 % / 0 % | 13 (0) | 36 |
+| com.offlinecurrencyconverter.app | Android | 5 | 54 / 64 / 55 | 30/30, 30/30, 29/30 | 46 % / 46 % / 46 % | 20 (0) | 35 |
+| com.olaf.rereminder | Android | 5 | 133 / 162 / 14 | 14/14, 14/14, 14/14 | 5 % / 2 % / 2 % | 42 (0) | 19 |
+| com.superproductivity.superproductivity | Capacitor (página web) | 5 | 59 / 0 / 69 | 43/43, 43/43, 43/43 | 27 % / 100 % / 100 % | 537 (20) | 57 |
+| com.zaifears.locreminder | Flutter | 5 | 0 / 0 / 29 | 9/18, 16/18, 12/18 | 90 % / 100 % / 90 % | 130 (0) | 34 |
+| de.ph1b.audiobook | Android | 3 | 0 / 2 / 0 | 7/7, 7/7, 6/7 | 0 % / 0 % / 0 % | 4 (0) | 20 |
+| de.salomax.currencies | Android | 5 | 7 / 7 / 62 | 13/30, 13/30, 13/30 | 90 % / 90 % / 93 % | 19 (0) | 101 |
+| dev.fiedri.vibe | Capacitor (página web) | 5 | 134 / 0 / 74 | 12/12, 12/12, 12/12 | 26 % / 100 % / 100 % | 13 (0) | 41 |
+| io.github.kotchwane.bonavortaro | Android | 5 | 4 / 15 / 24 | 45/46, 46/46, 45/46 | 96 % / 70 % / 52 % | 15 (0) | 64 |
+| io.github.pintofi.beanbook.expert | Android | 5 | 149 / 132 / 105 | 14/14, 14/14, 14/14 | 47 % / 47 % / 47 % | 53 (21) | 18 |
+| org.grakovne.lissen | Android | 5 | 21 / 19 / 24 | 19/19, 19/19, 19/19 | 5 % / 5 % / 5 % | 201 (0) | 25 |
+| org.tasks | Android y recursos de Compose Multiplatform | 5 | 0 / 0 / 25 | 8/11, 9/11, 9/11 | 100 % / 100 % / 100 % | 2710 (9) | 19 |
+
+"Interfaz" dice dónde está el texto de la app; `Android` son los recursos y el código Dalvik, que es lo que ITDroid traduce. "Replay" son las acciones del recorrido grabado que se pudieron reproducir. "Texto igual al origen" es la parte de los textos distintos de las pantallas origen que aparece letra por letra en las pantallas traducidas, calculada aparte sobre los volcados guardados: es alta cuando no se tradujo nada, y también cuando la pantalla son datos, como una lista de divisas.
+
+| | es | ru | ar |
+|---|---|---|---|
+| Hallazgos | 657 | 468 | 497 |
+| Pantallas comparadas, de 57 grabadas | 56 | 57 | 56 |
+| Elementos comparados | 2670 | 2690 | 2656 |
+| Cambiaron de sitio o de tamaño | 376 | 312 | 206 |
+| Siguen igual, cambió un vecino | 277 | 156 | 270 |
+| Componentes perdidos | 4 | 0 | 12 |
+| Componentes añadidos | 0 | 0 | 9 |
+| Hallazgos con falta de espejado | no aplica | no aplica | 345 |
+| Acciones del replay reproducidas, de 284 | 254 | 263 | 255 |
+
+En árabe se revisaron 2081 pares de elementos hermanos y 1003 no se intercambiaron.
+
+Lo que quedó comprobado:
+
+- El flujo completo en las 12 apps: decodificar, analizar, traducir, reconstruir, instalar, explorar, reproducir en cada idioma, comparar y cerrar. Las 12 terminan en `finished` y con su APK internacionalizado construido. La mediana es de 35 minutos por app con tres idiomas (entre 18 y 101).
+- Reconstrucción. Cinco de las 12 (rereminder, locreminder, audiobook, lissen y tasks) solo se construyen con los ajustes automáticos de la sección "Construcción con apktool", entre uno y nueve ajustes por app, que quedan en `buildAdjustments`. `de.ph1b.audiobook`, cuya versión anterior apktool no reconstruía en el lote de octubre, ahora se evalúa.
+- Hardcoded con la política `ui`. En 9 de las 12 apps ningún literal del código llega a la interfaz por una llamada que la tabla reconozca, y no se traduce ninguno: los que hay van a logs, datos y llamadas de librería. En las otras tres se movieron a recursos y se tradujeron: beanbook, 5 literales del código y 16 del XML; tasks, 9 del código; superproductivity, 20 del código en 23 lugares. Los recursos `itdroid_code_*` e `itdroid_hc_*` están en el APK internacionalizado de las tres con su traducción a los tres idiomas (comprobado con `aapt2 dump resources`), y las tres apps construyen, arrancan y se reproducen con la clase que ITDroid les añade. No se pudieron ver en pantalla: son textos de notificaciones, de widgets de escritorio y de errores de inicio de sesión, adonde la exploración no llega.
+- Traductor. 3366 textos enviados, 37 respuestas descartadas por los controles y 18 textos que se quedaron en el idioma origen. 35 de los 37 descartes son de bonavortaro, un diccionario cuyos textos por defecto están en esperanto.
+- Comparador. La única pantalla no comparada es de audiobook en árabe: el volcado capturó un diálogo del sistema ("System UI isn't responding") en lugar de la app, con 1 de sus 12 elementos en común con los 21 del origen, y quedó en `statesNotCompared` con su motivo en vez de compararse con una pantalla que no era la suya. `amIPFs` es la suma de sus cuatro partes en las 36 evaluaciones.
+- Privacidad. Ningún archivo que ITDroid escribe en las 12 carpetas contiene el nombre de usuario ni una ruta absoluta, y todos los informes llevan `apkSha256`.
+- Cifras que se repiten. superproductivity se evaluó dos veces, con el emulador dibujando por GPU y por software, y da lo mismo: 59 / 0 / 69.
+
+Lo que la validación enseñó, que no se sabía:
+
+- Apps hechas con un framework multiplataforma. En 4 de las 12 el texto de la interfaz no está ni en `res/values` ni en el código Dalvik: vibe y superproductivity son una página web dentro de la app (Capacitor), locreminder es Flutter, y tasks tiene parte de su interfaz en recursos de Compose Multiplatform. ITDroid tradujo sus recursos de Android, que en ellas son poco más que permisos y notificaciones, y la pantalla no cambió. En tasks los 35 textos de las pantallas exploradas son los mismos en inglés, español, ruso y árabe. vibe y superproductivity traen su propia traducción al español y la mostraron; en ruso y árabe se quedaron en inglés (31 de 31 y 30 de 30 textos iguales). En locreminder, entre 19 y 21 de 21. En esos casos 0 hallazgos no quiere decir que la traducción quepa, sino que no hubo traducción en pantalla; y en árabe los hallazgos de tasks, vibe y superproductivity (25, 74 y 69) son todos falta de espejado. El informe no lo avisa.
+- Apps cuyo recorrido no se repite. salomax reproduce 13 de 30 acciones en los tres idiomas, con las mismas 17 divergencias, que parten del selector de fecha del sistema, al que el replay no consigue volver tras reiniciar la app. locreminder reproduce entre 6 y 18 de 18 según el idioma y la corrida. En esas dos apps las cifras cambian de una corrida a otra: locreminder dio 66 / 0 / 10 en la primera pasada y 0 / 0 / 29 en la repetición; salomax, 2 / 2 / 58 y 7 / 7 / 62. Sus hallazgos hay que leerlos junto a la tasa de replay.
+- Apps que se quedan en la puerta. audiobook llega a 3 pantallas, las de bienvenida, porque sin una carpeta de audiolibros no tiene más; lissen no pasa de la conexión a su servidor y de sus ajustes; tasks, de la bienvenida, las condiciones de uso y el inicio de sesión. Sin datos o sin una cuenta la exploración evalúa la entrada de la app, no la app.
+- El idioma de origen. bonavortaro tiene sus textos por defecto en esperanto y se tradujo como si fueran inglés, que es el `defaultLng` de `settings.properties` para todas las apps; lo que pasó los controles es transliteración.
+- Calidad del modelo. Con un modelo de 0,8 mil millones de parámetros, en los hardcoded traducidos `Balances` (saldos) sale como `Equilibro`, `Resume` (reanudar) como `Resumen` y `Snooze 1h` como `Desconectar 1h`. Y reescribe las cifras con el formato del idioma: `6,568.65 EUR` da `6.568,65 EUR` en español y `6 568,65 евро` en ruso; los controles de la respuesta no lo detectan.
+- El emulador. En unas 11 horas de dispositivo se colgó dos veces y se cerró solo una; tras el cierre hubo que arrancarlo sin ventana y con dibujo por software (`-no-window -gpu swangle_indirect`). ITDroid no se recupera de eso por sí mismo: en ambio, durante la primera pasada, el idioma en curso quedó a medias y los dos siguientes con el error `could not install`, y la corrida terminó como `finished` con esos errores anotados por idioma. La repetición salió completa.
+- Tiempo. Lo caro son los reinicios del replay: una app que es una página web tarda en estar lista cada vez (superproductivity, 57 minutos, y más de 75 en la primera pasada), y cada divergencia añade reintentos (salomax, 101).
+
+Comparación con corridas anteriores. Solo tres de las 15 tenían antecedente, en otra versión: ambio se evaluaba y se evalúa; superproductivity, que en los lotes de octubre tardó 70 minutos una vez y agotó un límite de 110 otra, aquí agotó el de 75 en la primera pasada y terminó en 57 en la repetición; y audiobook pasa de no reconstruirse a evaluarse. Las otras 12 son nuevas, así que no hay cifras previas con las que contrastarlas, y las de este lote no son comparables con las de antes de la sección "Comparador de layouts".
+
+# Límites conocidos y trabajo pendiente
+
+Límites de una evaluación, hoy:
+
+- Solo se traduce lo que está en los recursos de Android y en los literales del código Dalvik de la app. El texto de una app web (Capacitor, Cordova), de Flutter, de React Native o de los recursos de Compose Multiplatform no se traduce, y el informe no avisa cuando las pantallas traducidas muestran el mismo texto que el origen.
+- La exploración solo ve lo que la app enseña por sí sola. No carga datos ni inicia sesión; `exploration.fillForms` solo escribe en los campos de texto que encuentra.
+- El presupuesto por defecto es pequeño: 5 pantallas y 8 toques por pantalla.
+- El replay supone que la app se comporta igual en cada arranque. Donde no (contenido que llega de la red, un mapa que tarda, un diálogo de primer uso) el recorrido diverge, las pantallas no reproducidas no se comparan y las cifras varían entre corridas.
+- Un hardcoded que se muestra fuera de las pantallas de la app (notificación, widget) se traduce y se construye, pero su layout no se compara.
+- Con `hardcoded.translate=ui` no se traduce el texto que llega a la pantalla a través de objetos de datos de la app; `ui+unknown` lo alcanza y traduce también algunos datos.
+- El idioma de origen es el mismo para todas las apps (`defaultLng`); solo se detecta si esa línea falta.
+- La traducción es tan buena como el modelo: sentido equivocado en palabras sueltas, cifras reescritas, y nombres propios traducidos si no están en `protected-terms.txt`.
+- Una app con solo código nativo ARM no corre en un emulador x86_64. Una app que apktool no reconstruye, fuera de los dos casos que ITDroid ajusta, se rechaza.
+- La falta de espejado en un idioma de derecha a izquierda se reporta, no se repara.
+- Un proceso matado desde fuera no puede escribir su estado: el informe queda en `running` y es el servidor del informe web quien lo muestra como interrumpido.
+
+No verificado en dispositivo: el gancho de cierre con un Ctrl+C real en la consola (se probó matando el proceso); el caso en que el APK internacionalizado no se construye; los hardcoded traducidos de esta validación vistos en pantalla; y un dispositivo físico o ARM, porque todo se corrió en un emulador x86_64.
+
+Trabajo pendiente, por orden de lo que más cambiaría la lectura de un resultado:
+
+- Avisar cuando el idioma no llegó a la pantalla: contar por idioma cuántos textos de las pantallas origen siguen idénticos en las traducidas y dejarlo en `report.json` y en el informe (se puede calcular también en `--reanalyze`, porque los volcados ya están guardados), y detectar en el preflight el framework de la app.
+- Datos previos por app: una forma de dejar contenido o una cuenta en la app antes de explorar, igual en todos los idiomas, y un aviso cuando la exploración se queda en menos pantallas de las pedidas.
+- Reparación de RTL (port de `supportRTL` de la rama `repairments`): añadir `supportsRtl`, pasar `Left`/`Right` a `Start`/`End` y comparar la app original con la reparada.
+- Presupuesto de exploración: medir cobertura (actividades visitadas sobre las declaradas) y decidir un valor por defecto mayor o un tope por tiempo.
+- Rendimiento del explorador: un solo proceso `adb` por captura y esperar el cambio de pantalla en lugar de pausas fijas.
+- Traductor: proteger las cifras como se protegen los placeholders, y detectar el idioma de origen por app aunque `defaultLng` esté puesto.
+- Explorador: descartar una captura cuyo volcado no es de la app (un diálogo del sistema), y esperar al dispositivo o abortar con un mensaje claro cuando desaparece a mitad de una corrida.

@@ -102,13 +102,11 @@ public final class SmaliScan {
     private static final int MAX_STEPS = 200;
     private static final Pattern GOTO = Pattern.compile("^goto(?:/16|/32)?\\s+(:\\S+)$");
 
-    private final String decodedPath;
     private final List<String> packageRoots;
     private final List<File> files;
     private final List<Occurrence> occurrences = new ArrayList<>();
 
-    private SmaliScan(String decodedPath, List<String> packageRoots, List<File> files) {
-        this.decodedPath = decodedPath;
+    private SmaliScan(List<String> packageRoots, List<File> files) {
         this.packageRoots = packageRoots;
         this.files = files;
     }
@@ -119,7 +117,7 @@ public final class SmaliScan {
 
     public static SmaliScan scan(String decodedPath, String applicationId, ConsumerRules rules) {
         List<String> roots = AppCode.packageRoots(decodedPath, applicationId);
-        SmaliScan scan = new SmaliScan(decodedPath, roots, AppCode.smaliFiles(decodedPath, roots));
+        SmaliScan scan = new SmaliScan(roots, AppCode.smaliFiles(decodedPath, roots));
         java.nio.file.Path base = Paths.get(decodedPath).toAbsolutePath();
         for (File file : scan.files) {
             String relative = base.relativize(file.toPath().toAbsolutePath()).toString().replace('\\', '/');
@@ -145,10 +143,6 @@ public final class SmaliScan {
     /** The package roots the app's code was found under. */
     public List<String> packageRoots() {
         return Collections.unmodifiableList(packageRoots);
-    }
-
-    public String decodedPath() {
-        return decodedPath;
     }
 
     // ------------------------------------------------------------------ scanning

@@ -27,7 +27,7 @@ Paquete `translator/` (traducción, patrón Strategy):
 
 - `TranslationInterface`: interfaz `translate(xmlPath, in, out)`.
 - `Translator`: contexto Strategy que envuelve la estrategia.
-- `LLMTranslator`: estrategia real; traduce los textos del inventario por HTTP OpenAI-compatible, en lotes globales de 25 en JSON (modelos de chat) o un texto por petición con el prompt propio del modelo (`translation.style` = `translategemma` o `template`, con los placeholders enmascarados como `<phN>`), usa el inventario como memoria, escribe `values-<lang>/strings.xml`, traduce los labels hardcodeados y sugiere valores para formularios.
+- `LLMTranslator`: estrategia real; traduce los textos del inventario por HTTP OpenAI-compatible, en lotes globales de 25 en JSON (modelos de chat) o un texto por petición con el prompt propio del modelo (`translation.style` = `translategemma`, `template` o `plamo`, con los placeholders enmascarados como `<phN>`), protege los términos que no se traducen, descarta las respuestas que no son una traducción, usa el inventario como memoria, escribe `values-<lang>/strings.xml`, traduce los labels hardcodeados y sugiere valores para formularios.
 
 Paquete `explorer/` (exploración del app en el dispositivo, sin root):
 
@@ -58,7 +58,7 @@ Paquete `helper/` (infraestructura):
 - `ExplorationHelper`: lanza `AdbExplorer` por versión de idioma (exploración o replay).
 - `LanguageBundle`: lee `settings.properties` (idiomas seleccionados).
 - `NotTranslatableStringsDictionary`: strings que no se deben traducir.
-- `Helper`: singleton con el directorio de trabajo y el nombre de paquete.
+- `Helper`: el directorio de trabajo, qué idiomas se escriben de derecha a izquierda (`languageIsRTL`) y la distancia de Levenshtein que usa el emparejamiento de pantallas sin replay.
 - `XMLComparator`: decide qué idiomas ya trae traducidos la app y guarda, por idioma, los strings que le faltan.
 - `ExplorationException`, `ITDroidException`: excepciones.
 
@@ -144,7 +144,7 @@ Por cada idioma (`ITDroid.processLanguage`), con la app fuera del dispositivo:
 
 # Fase 4, cierre
 
-Restaura el APK con nombre por defecto desde la construcción origen, reinstala el APK original en el dispositivo y escribe el `report.json` final. Si algo abortó, el código de salida es 1 y `report.json` conserva lo terminado.
+Quita los parches del último idioma y construye una vez más la app decodificada tal como quedó: el código sin parches, los recursos de todos los idiomas procesados y los literales movidos a recursos. Esa construcción es el APK internacionalizado, el de nombre por defecto; si falla, no queda archivo con ese nombre y `internationalizedApk` en `report.json` lo dice (`built: false`) y nombra la construcción origen. Después reinstala el APK original en el dispositivo y escribe el `report.json` final, con estado `finished`. Si algo abortó, el estado es `aborted`, el código de salida es 1 y `report.json` conserva lo terminado; si el proceso se cierra desde fuera, un gancho de cierre deja el estado en `interrupted`.
 
 # El servidor LLM
 
@@ -154,7 +154,7 @@ ITDroid es agnóstico al motor: solo habla un endpoint HTTP OpenAI-compatible. E
 - Con espacios (ej. `llama-server -m m.gguf --port 8080`): modo comando. Ejecuta el comando vía shell y espera al endpoint de `.env`.
 - Vacío: pre-flight; el server debe estar arriba o aborta con mensaje claro.
 
-El estilo de petición lo fija `translation.style`: `json` (lotes de 25 textos en un objeto JSON, para modelos de chat), `translategemma` (un texto por petición con el prompt fijo de TranslateGemma) o `template` (un texto por petición con `translation.promptTemplate`, por defecto el prompt de Hy-MT2); `auto` lo deduce del nombre del modelo. En los estilos de un texto por petición los placeholders viajan enmascarados como `<phN>` (`translation.maskPlaceholders`) y cada respuesta pasa por la comprobación de placeholders; si los pierde dos veces, el texto se queda en el idioma origen. Un GGUF del Hub servido por Ollama puede traer la plantilla de chat corrupta: comprobar `ollama show <modelo> --template` y, si hace falta, envolverlo en un Modelfile con la plantilla oficial (ver `eval/Modelfile.hy-mt2`).
+El estilo de petición lo fija `translation.style`: `json` (lotes de 25 textos en un objeto JSON, para modelos de chat), `translategemma` (un texto por petición con el prompt fijo de TranslateGemma), `template` (un texto por petición con `translation.promptTemplate`, por defecto el prompt de Hy-MT2) o `plamo` (un texto por petición, con los códigos de idioma en el mensaje de sistema); `auto` lo deduce del nombre del modelo. En los estilos de un texto por petición van cuatro peticiones en paralelo, los placeholders viajan enmascarados como `<phN>` (`translation.maskPlaceholders`) y cada respuesta pasa por la comprobación de placeholders; si los pierde dos veces, el texto se queda en el idioma origen. Un GGUF del Hub servido por Ollama puede traer la plantilla de chat corrupta: comprobar `ollama show <modelo> --template` y, si hace falta, crear con `ollama create` un modelo derivado cuyo Modelfile tenga un `FROM hf.co/<repo>:<cuantización>` y un `TEMPLATE` con la plantilla oficial del repositorio del modelo.
 
 Qué viaja al modelo y qué se acepta de vuelta (`LLMTranslator`), igual en todos los estilos:
 
@@ -170,7 +170,7 @@ Un server que ITDroid arrancó se apaga al final (shutdown hook, mata el árbol 
 
 `java -jar ITDroid.jar --report [carpeta] [--port N] [--no-browser]` arranca `ReportServer` (el `HttpServer` del JDK, solo en 127.0.0.1): sirve `webreport/` en `/`, la carpeta de resultados en `/results/` y dos consultas:
 
-- `/api/results`, un índice que recorre las subcarpetas con `report.json` y resume cada evaluación (estado, idiomas, IPFs, fecha, dispositivo, modelo, y la telemetría del harness si hay `meta.json`). De cada idioma dice en qué carpeta está su exploración (`trnsResults` o `noTrnsResults`), mirando el disco. El estado lo calcula el servidor (`effectiveStatus`): un informe que dice `running` se muestra como `interrupted` si el proceso que lo escribía ya no existe (el informe lleva su `pid` y la hora en que arrancó, para no confundirlo con otro proceso que reciba el mismo número) o, en informes antiguos sin `pid`, si lleva más de tres horas sin reescribirse.
+- `/api/results`, un índice que recorre las subcarpetas con `report.json` y resume cada evaluación (estado, idiomas, IPFs, fecha, dispositivo, modelo, y, si hay un `meta.json` junto al informe, la telemetría que dejó el harness de evaluación por lotes, que no forma parte del repositorio). De cada idioma dice en qué carpeta está su exploración (`trnsResults` o `noTrnsResults`), mirando el disco. El estado lo calcula el servidor (`effectiveStatus`): un informe que dice `running` se muestra como `interrupted` si el proceso que lo escribía ya no existe (el informe lleva su `pid` y la hora en que arrancó, para no confundirlo con otro proceso que reciba el mismo número) o, en informes antiguos sin `pid`, si lleva más de tres horas sin reescribirse.
 - `/api/files/<evaluación>`, los archivos de una evaluación con su ruta y tamaño (las capturas se cuentan por carpeta, no se listan). Solo admite una subcarpeta directa de la carpeta servida.
 
 La página (`webreport/js/main.js`, sin dependencias) lista las apps y muestra la seleccionada en pestañas:
@@ -195,7 +195,7 @@ La página (`webreport/js/main.js`, sin dependencias) lista las apps y muestra l
 `mvn test` corre las pruebas unitarias (JUnit 5), que viven en `test/` con los mismos paquetes que `src/`. No necesitan dispositivo ni LLM.
 
 - `model/`: relaciones entre los nodos de una pantalla (`StateRelationsTest`), emparejamiento de los elementos de dos pantallas (`NodePairingTest`), reglas de la comparación sobre pantallas hechas a mano (`ComparisonRulesTest`, y `RtlComparisonTest` para los idiomas de derecha a izquierda), carga de `result.json` (`LayoutGraphTest`) y la comparación de cuatro evaluaciones reales guardadas en `test/fixtures/evaluations` (`StoredEvaluationsComparisonTest`), cuyos conteos de IPFs y su desglose quedan fijados: un cambio en el comparador que los mueva tiene que ser intencionado.
-- `helper/`: localización del código (`AppCodeTest`), escaneo y clasificación de cada literal (`SmaliScanTest`), literales del XML (`XmlLiteralFinderTest`), strings que le faltan a cada idioma (`XMLComparatorTest`), detección de hardcoded e inventario sobre una app escrita a mano (`test/fixtures/decoded/shop`: smali en dos dex, código fuera de la carpeta del `applicationId`, recursos y un layout), parcheo del smali, el modo de re-análisis, las rutas portables (`PortablePathsTest`), el servidor del informe (`ReportServerTest`: estado de las corridas, carpeta de cada idioma y listado de archivos) y el cierre del informe de una corrida detenida (`ITDroidReportTest`).
+- `helper/`: localización del código (`AppCodeTest`), escaneo y clasificación de cada literal (`SmaliScanTest`), literales del XML (`XmlLiteralFinderTest`), strings que le faltan a cada idioma (`XMLComparatorTest`), detección de hardcoded e inventario sobre una app escrita a mano (`test/fixtures/decoded/shop`: smali en dos dex, código fuera de la carpeta del `applicationId`, recursos y un layout), extracción de literales a recursos (`XmlLiteralExtractorTest`, `CodeLiteralExtractorTest`), parcheo del smali (`SmaliPatcherTest`), el registro por idioma (`HardcodedLogTest`), la lectura de la configuración (`RunConfigTest`), los ajustes de construcción y las copias de APK (`APKToolWrapperTest`), el modo de re-análisis (`ReanalysisTest`), las rutas portables (`PortablePathsTest`), el servidor del informe (`ReportServerTest`: estado de las corridas, carpeta de cada idioma y listado de archivos) y el cierre del informe de una corrida detenida (`ITDroidReportTest`).
 - `translator/`: el traductor contra `FakeLlmServer`, un servidor local que imita el endpoint OpenAI-compatible, para probar lotes, reintentos, enmascarado de placeholders y la escritura de `values-<lang>/strings.xml`.
 
 La página del informe tiene su propia comprobación, fuera de Maven porque necesita Node (18 o posterior): `node webreport/test/smoke.js` arranca el servidor del informe sobre `webreport/test/sample`, ejecuta `webreport/js/main.js` con un sustituto mínimo del DOM y comprueba lo que muestra cada pestaña (los hallazgos por pantalla y por tipo, los grupos de hardcoded, la búsqueda, los enlaces de artefactos, el estado de las corridas). La carpeta de ejemplo es una app inventada cuyas pantallas están escritas a mano y cuyos hallazgos calculó ITDroid con `--reanalyze`; si cambia el comparador, se vuelven a calcular igual. Con `--url` comprueba lo que sirva un servidor ya arrancado.
@@ -218,6 +218,42 @@ Las pruebas llamadas `knownGap_...` fijan un comportamiento que la auditoría de
 - `<output>/hardcoded_<lang>.csv`: una fila por aparición de cada hardcoded: parcheado, extraído, revertido o no traducido y por qué.
 - `<output>/hcs.txt`: textos hardcoded detectados, por clase y método, cada uno con su uso; después los del XML, por archivo y elemento.
 - `<output>/llm-server.log`: salida del servidor LLM (si ITDroid lo arrancó).
+
+# Valores por defecto y dónde se cambian
+
+Cada comportamiento que se puede querer distinto es una línea del archivo de config. `RunConfig` tiene un método por clave, con su valor por defecto, y `itdroid.config.example.properties` las trae todas escritas con ese valor; el README explica cada una.
+
+| Clave | Por defecto | Qué decide |
+|---|---|---|
+| `hardcoded.translate` | `ui` | qué usos de un literal del código se traducen (`ui`, `ui+unknown`, `all`) |
+| `hardcoded.extractCode` | `true` | mover a recursos los literales del código que se traducen, o solo parchearlos por idioma |
+| `hardcoded.codePackages` | vacío | raíces de paquete añadidas a mano al código propio de la app |
+| `translation.model` | `qwen2.5:3b` | el modelo; la validación final usó `hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M` |
+| `translation.style` | `auto` | cómo se le pide la traducción al modelo (`json`, `translategemma`, `template`, `plamo`) |
+| `translation.promptTemplate` | prompt de Hy-MT2 | el prompt del estilo `template` |
+| `translation.maskPlaceholders` | `true` en los estilos de un texto por petición | enmascarar los placeholders como `<phN>` |
+| `translation.context` | una frase que dice que el texto es una etiqueta de una app | el contexto que recibe PLaMo con los textos cortos; `none` lo quita |
+| `translation.reuseInventory` | `true` | reutilizar las traducciones de un inventario anterior |
+| `translation.timeoutSeconds`, `translation.temperature` | 180, 0 | tope por petición y temperatura |
+| `alpha` | 0 | strings sin traducir que se toleran antes de dar un idioma por no traducido |
+| `preflight.launchTest` | `true` | probar que la app original arranca antes de procesarla |
+| `exploration.maxStates`, `exploration.maxClickables` | 5, 8 | pantallas que se capturan y toques por pantalla |
+| `exploration.settleSeconds` | 3 | espera tras cada arranque |
+| `exploration.fillForms` | `false` | pedir al LLM valores para los campos de texto |
+| `comparison.minSimilarity` | 0,5 | proporción de elementos que hay que emparejar para comparar dos pantallas |
+| `output.keepLanguageApks` | `true` | conservar el APK de cada idioma destino |
+| `debug.graphDumps` | `false` | escribir `graph.txt` y `graph.json` |
+
+Cuatro archivos de la carpeta de settings se editan sin recompilar: `settings.properties` (los idiomas destino, uno por línea), `strings.xml` (recursos que no se traducen), `protected-terms.txt` (nombres que no se traducen) y `hardcoded-consumers.txt` (qué hace cada API con un string; sus reglas se prueban antes que las empaquetadas).
+
+Lo que no es configuración son constantes del código, cada una en una línea:
+
+- `LLMTranslator`: `TRANSLATOR_PACKAGE_SIZE` (25 textos por lote), `BATCH_CHAR_BUDGET` (2500 caracteres por lote) y `NATIVE_PARALLELISM` (4 peticiones a la vez en los estilos de un texto por petición).
+- `APKToolWrapper.MAX_BUILD_ATTEMPTS` (6 intentos de construcción con ajustes).
+- `AdbExplorer.FOREGROUND_WAIT_SECONDS` (15 s para que la app llegue a primer plano).
+- `LLMServerManager.STARTUP_TIMEOUT_SECONDS` (180 s para que responda un servidor que ITDroid arrancó).
+- `ReportServer.STALE_HOURS` (3 horas sin reescribirse para dar por interrumpido un informe antiguo sin `pid`) y `MAX_LISTED_FILES` (500 archivos por evaluación en la pestaña de artefactos).
+- `webreport/js/main.js`: 50 filas por página en las tablas (`pagedTable`) y `DIFF_THRESHOLD` (32, cuánto debe diferir un píxel para pintarse en la diferencia visual).
 
 # Decisiones de diseño clave
 

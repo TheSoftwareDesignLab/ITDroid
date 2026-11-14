@@ -22,10 +22,6 @@ public class Transition {
 		return origin;
 	}
 
-	public void setOrigin(State origin) {
-		this.origin = origin;
-	}
-
 	public State getDestination() {
 		return destination;
 	}
@@ -36,10 +32,6 @@ public class Transition {
 
 	public TransitionType getType() {
 		return type;
-	}
-
-	public void setType(TransitionType type) {
-		this.type = type;
 	}
 
 	public AndroidNode getOriginNode() {

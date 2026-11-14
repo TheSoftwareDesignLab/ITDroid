@@ -107,9 +107,6 @@ public class AdbExplorer {
         String clazz = "";
         int occurrence;
 
-        Selector() {
-        }
-
         Selector(String resourceId, String clazz, int occurrence) {
             this.resourceId = nz(resourceId);
             this.clazz = nz(clazz);

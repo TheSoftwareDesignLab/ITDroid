@@ -270,10 +270,6 @@ public class LLMTranslator implements TranslationInterface {
         return o;
     }
 
-    public StringInventory getInventory() {
-        return inventory;
-    }
-
     /**
      * Writes {@code values-<outputLang>/strings.xml} next to the given default {@code strings.xml}
      * with every translatable resource of the inventory (strings, plurals and string-arrays,

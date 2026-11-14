@@ -2,25 +2,16 @@ package uniandes.tsdl.itdroid.helper;
 
 import java.io.UnsupportedEncodingException;
 
-/** Process-wide singleton holding the working directory and app package, plus a Levenshtein helper. */
+/** The working directory, which languages are written from right to left, and a Levenshtein distance. */
 public class Helper {
 
 	private static Helper instance = null;
-	private static String packageName = "";
 
 	public static Helper getInstance() {
 		if (instance == null) {
 			instance = new Helper();
 		}
 		return instance;
-	}
-
-	public static String getPackageName() {
-		return packageName;
-	}
-
-	public static void setPackageName(String packageName) {
-		Helper.packageName = packageName;
 	}
 
 	/**

@@ -70,7 +70,8 @@ import uniandes.tsdl.itdroid.translator.Translator;
  *       from the inventory, patch, rebuild, sign; then install, REPLAY the recorded path, uninstall,
  *       and compare against the source graph (IPFs). {@code report.json} is rewritten after each
  *       language, so a run cut short still leaves the finished languages.</li>
- *   <li>Close: restore the default-named APK, reinstall the original app on the device.</li>
+ *   <li>Close: build the internationalized APK (the default-named one, with the resources of every
+ *       language) and reinstall the original app on the device.</li>
  * </ol>
  */
 public class ITDroid {
@@ -307,8 +308,6 @@ public class ITDroid {
 		if (!extraPath.endsWith(File.separator)) {
 			extraPath = extraPath + File.separator;
 		}
-		Helper.getInstance();
-		Helper.setPackageName(appName);
 
 		// Ensure the output directory exists before anything writes into it (hcs.txt, report.json,
 		// ipfs.csv, the LLM server log, ...).
@@ -677,11 +676,13 @@ public class ITDroid {
 		}
 
 		// ------------------------------------------------------------------ close
-		// The per-language builds overwrote the default-named APK. It becomes the internationalized
-		// APK: one build of the decoded app as it is now, with the pristine code, the resources of
-		// every language processed and the literals moved out of the XML. It follows the language of
-		// the device (or the per-app language) like any app; the hardcoded strings of the code are
-		// only translated in the per-language APKs. If it cannot be built, the source build is kept.
+		// Every build of the run is signed under the default name and copied to its own. The last one
+		// is the internationalized APK: one build of the decoded app as it is now, without the patches
+		// of any language, with the resources of every language processed and the literals moved to
+		// resources, from the XML and from the code. It follows the language of the device (or the
+		// per-app language) like any app; a literal of the code that could not be moved is only
+		// translated in the per-language APKs. If it cannot be built there is no file under that name
+		// and the report names the source build.
 		metrics.begin("close");
 		patcher.restoreOriginal();
 		JSONObject i18nApk = new JSONObject();
