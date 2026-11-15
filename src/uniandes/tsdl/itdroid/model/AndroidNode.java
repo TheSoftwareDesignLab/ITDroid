@@ -117,6 +117,11 @@ public class AndroidNode {
 		return text;
 	}
 
+	/** What a screen reader announces for the element: the label of an icon, of an image, of a button without text. */
+	public String getContentDesc() {
+		return contentDesc;
+	}
+
 	/** True when the element shows or announces some text (its own text or its content description). */
 	public boolean hasText() {
 		return !text.isEmpty() || !contentDesc.isEmpty();

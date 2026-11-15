@@ -44,4 +44,30 @@ class AdbExplorerTest {
         assertFalse(AdbExplorer.differsLittle(SETTINGS, muchMore), "six elements more is a part of the screen that opened, not a message");
         assertFalse(AdbExplorer.differsLittle(SETTINGS, ":FrameLayout;"), "nearly everything is gone");
     }
+
+    /**
+     * What "cmd locale get-app-locales" answers once the app is up. An app that copies its own
+     * stored choice over the one of the system on its first start leaves the list empty.
+     */
+    @Test
+    void anAppThatTookTheLanguageAwayIsSeenInTheAnswerOfTheSystem() {
+        assertTrue(AdbExplorer.holdsLanguage("Locales for org.tasks for user 0 are [ru]", "ru"));
+        assertFalse(AdbExplorer.holdsLanguage("Locales for org.tasks for user 0 are []", "ru"), "the app emptied it");
+        assertFalse(AdbExplorer.holdsLanguage("Locales for org.tasks for user 0 are [de]", "ru"), "the app chose another");
+    }
+
+    @Test
+    void theLanguageIsComparedAsAndroidWritesIt() {
+        assertTrue(AdbExplorer.holdsLanguage("Locales for org.example for user 0 are [pt_BR]", "pt-BR"));
+        assertTrue(AdbExplorer.holdsLanguage("Locales for org.example for user 0 are [pt_BR,en_US]", "pt"));
+        assertTrue(AdbExplorer.holdsLanguage("Locales for org.example for user 0 are [iw]", "he"), "Hebrew under its old code");
+        assertTrue(AdbExplorer.holdsLanguage("Locales for org.example for user 0 are [in_ID]", "id"), "Indonesian under its old code");
+    }
+
+    @Test
+    void anAnswerThatCannotBeReadDoesNotRestartTheApp() {
+        assertTrue(AdbExplorer.holdsLanguage(null, "ru"));
+        assertTrue(AdbExplorer.holdsLanguage("", "ru"));
+        assertTrue(AdbExplorer.holdsLanguage("Error: unknown command 'get-app-locales'", "ru"));
+    }
 }

@@ -144,8 +144,9 @@ class StoredEvaluationsComparisonTest {
 
         assertTrue(lines.get(0).endsWith(";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;positionLost;positionAdded;"
                 + "alignmentLost;alignmentAdded;overlapAdded;overlapRemoved;missingMirroring;componentLost;componentAdded;"
-                + "siblingPairsChecked;siblingPairsNotMirrored"), lines.get(0));
-        assertTrue(lines.contains("org.birthdayadapter_31304;ar;157;44;false;5;5;;228;35;9;0;0;0;0;0;0;0;0;44;0;0;61;61"),
+                + "siblingPairsChecked;siblingPairsNotMirrored;sourceTexts;unchangedTexts;sameTextAsSource"), lines.get(0));
+        // the last three: of the 37 texts of the source screens, the Arabic screens keep 1, so the language was shown
+        assertTrue(lines.contains("org.birthdayadapter_31304;ar;157;44;false;5;5;;228;35;9;0;0;0;0;0;0;0;0;44;0;0;61;61;37;1;false"),
                 String.join("\n", lines));
     }
 

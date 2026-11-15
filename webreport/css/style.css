@@ -62,6 +62,10 @@ body {
   border: 1px solid #dee2e6;
   background: #fff;
 }
+/* the screenshot and the boxes drawn over it; the caption of the shot is outside */
+.shot-frame {
+  position: relative;
+}
 .shot img {
   display: block;
   width: 100%;

@@ -40,6 +40,24 @@ public class ExplorationHelper {
 	}
 
 	/**
+	 * Replays the source script on another build of a language and stores it in its own folder of the
+	 * results ({@code <folder>/<language>}), next to the evaluation of the language as it is: the
+	 * build with the layouts repaired for a right-to-left language goes to {@code rtlResults}.
+	 */
+	public static String replayInto(String folderName, String language, String outputFolder, String apkLocation,
+			String appName, String scriptPath, AdbExplorer.Options options) throws ExplorationException {
+		try {
+			File folder = stateFolder(outputFolder, folderName, language);
+			String serial = AdbExplorer.resolveSerial();
+			System.out.println("Exploring '" + appName + "' on device " + serial + " with locale '" + language + "' (replaying the source path, " + folderName + ")");
+			new AdbExplorer(serial, appName, apkLocation, folder.getAbsolutePath(), language, options).replay(scriptPath);
+			return folder.getCanonicalPath();
+		} catch (Exception e) {
+			throw wrap(language, e);
+		}
+	}
+
+	/**
 	 * Wraps every failure in ExplorationException so the caller can record it per language and keep
 	 * going, instead of letting an IOException abort the whole multi-language run. Falls back to the
 	 * exception type when there is no message (e.g. a bare NPE) so the log never reads "null".
@@ -54,12 +72,16 @@ public class ExplorationHelper {
 
 	/** Fresh per-language output folder under the run's results directory. */
 	private static File stateFolder(String outputFolder, boolean translated, String language) throws IOException {
+		return stateFolder(outputFolder, translated ? "trnsResults" : "noTrnsResults", language);
+	}
+
+	private static File stateFolder(String outputFolder, String folderName, String language) throws IOException {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		// resolve(), not Paths.get(a, b): Paths.get JOINS its arguments, so an ABSOLUTE outputFolder
 		// would be appended to the working directory ("C:\work\C:/out") and throw InvalidPathException
 		// on Windows. Path.resolve returns the operand unchanged when it is already absolute.
 		File tempFolder = new File(Paths.get(decodedPath).resolve(outputFolder)
-				.resolve(translated ? "trnsResults" : "noTrnsResults").resolve(language)
+				.resolve(folderName).resolve(language)
 				.toAbsolutePath().toString());
 		if (tempFolder.exists()) {
 			// File.delete() cannot remove a non-empty directory; wipe stale results recursively.

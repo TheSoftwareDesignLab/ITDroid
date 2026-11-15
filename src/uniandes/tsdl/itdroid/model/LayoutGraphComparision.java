@@ -121,6 +121,12 @@ public class LayoutGraphComparision {
 	private final Map<Integer, NodePairing> nodePairings = new HashMap<>();
 	/** True when one language is written left to right and the other right to left. */
 	private final boolean mirrorExpected;
+	/**
+	 * Width of the device screen: the furthest right any element of either exploration reaches. The
+	 * dump of one screen does not tell it, because that of a dialog only reaches the edges of the
+	 * dialog, and the mirror image of an element is taken across the middle of the screen.
+	 */
+	private final int screenWidth;
 	private final List<Finding> findings = new ArrayList<>();
 	private long nodesCompared;
 	private long siblingPairsChecked;
@@ -140,19 +146,30 @@ public class LayoutGraphComparision {
 		destLanguage = lang;
 		destLangLayoutGraph = langGraph;
 		mirrorExpected = Helper.languageIsRTL(deftLanguage) != Helper.languageIsRTL(rawLang);
+		screenWidth = Math.max(widthOf(defltGraph), widthOf(langGraph));
 
 		pairStates(dfltLangJSONTrans);
 
 		List<Integer> dfltIndexes = new ArrayList<>(statePairing.keySet());
 		java.util.Collections.sort(dfltIndexes);
+		ScreenTexts texts = new ScreenTexts();
 		for (int defltState : dfltIndexes) {
 			State source = defltLayoutGraph.getState(defltState);
 			State language = destLangLayoutGraph.getState(statePairing.get(defltState));
 			NodePairing pairing = nodePairings.get(defltState);
 			if (pairing == null) {
-				pairing = NodePairing.of(source, language, mirrorExpected);
+				pairing = NodePairing.of(source, language, mirrorExpected, screenWidth);
 			}
 			findings.addAll(compareStates(source, language, pairing));
+			texts.add(source, language);
+		}
+		// Did this version show other text than the source? When it did not, nothing was translated on
+		// screen, and "no findings" says nothing about how a translation would fit.
+		dfltLangJSONTrans.put("screenText", texts.toJson());
+		if (texts.sameAsSource()) {
+			System.out.println("WARNING: the "+destLanguage+" version shows the same text as the source on the screens compared ("
+					+texts.unchanged()+" of "+texts.sourceTexts()+" texts): the language did not reach those screens, or they are mostly data."
+					+" Finding nothing there does not mean a translation fits.");
 		}
 
 		// Most affected first; then by screen and element, so the same data always gives the same file.
@@ -319,13 +336,9 @@ public class LayoutGraphComparision {
 			}
 		}
 
-		int screenWidth = 1;
-		for (AndroidNode n : sourceNodes) {
-			screenWidth = Math.max(screenWidth, n.getPoint2()[0]);
-		}
 		List<Finding> out = new ArrayList<>();
 		for (Finding f : byNode.values()) {
-			f.geometry = geometry(sourceNodes.get(f.sourceNode), languageNodes.get(f.languageNode), screenWidth);
+			f.geometry = geometry(sourceNodes.get(f.sourceNode), languageNodes.get(f.languageNode));
 			out.add(f);
 		}
 
@@ -400,8 +413,19 @@ public class LayoutGraphComparision {
 		return missing;
 	}
 
+	/** The furthest right any element of the screens of an exploration reaches. */
+	private static int widthOf(LayoutGraph graph) {
+		int width = 1;
+		for (State state : graph.getStates()) {
+			for (AndroidNode n : state.getStateNodes()) {
+				width = Math.max(width, n.getPoint2()[0]);
+			}
+		}
+		return width;
+	}
+
 	/** Whether the element itself is where and as it was: same, moved, resized, moved+resized, or mirrored. */
-	private String geometry(AndroidNode source, AndroidNode language, int screenWidth) {
+	private String geometry(AndroidNode source, AndroidNode language) {
 		boolean sameSize = source.getWidth() == language.getWidth() && source.getHeight() == language.getHeight();
 		boolean sameY = source.getPoint1()[1] == language.getPoint1()[1];
 		boolean sameX = source.getPoint1()[0] == language.getPoint1()[0];
@@ -484,7 +508,7 @@ public class LayoutGraphComparision {
 				if (!dfltState.matchesReplayed(langState)) {
 					why = "is on another activity ("+langState.getActivityName()+")";
 				} else {
-					NodePairing pairing = NodePairing.of(dfltState, langState, mirrorExpected);
+					NodePairing pairing = NodePairing.of(dfltState, langState, mirrorExpected, screenWidth);
 					if (pairing.similarity() < minSimilarity) {
 						why = "shows a different screen (only "+pairing.paired+" of its "+langState.getStateNodes().size()
 								+" elements match the "+dfltState.getStateNodes().size()+" of the source)";

@@ -15,7 +15,7 @@
  * the visual difference between screenshots is the one thing a browser has to be asked for.
  *
  * webreport/test/sample holds one made-up app, org.example.shop, in the shape a run leaves it: three
- * screens explored in English and four languages that between them show every case of the report
+ * screens explored in English and five languages that between them show every case of the report
  * (see the expectations at the end of this file), plus a run that was killed. Its screens were
  * written by hand; its findings were computed by ITDroid from those screens (--reanalyze) and
  * copied into report.json. If the comparison changes, compute them again the same way.
@@ -188,7 +188,7 @@ function languageCards(page) {
 }
 
 const screensOf = card => card.querySelectorAll('details').filter(d => /^Screen \d+/.test(text(d.querySelector('summary'))));
-const findingsIn = screens => screens.reduce((sum, d) => sum + Number((/· (\d+) elements? with a finding/.exec(text(d.querySelector('summary'))) || [0, 0])[1]), 0);
+const findingsIn = screens => screens.reduce((sum, d) => sum + Number((/, (\d+) elements? with a finding/.exec(text(d.querySelector('summary'))) || [0, 0])[1]), 0);
 const buttonOf = (card, label) => card.querySelectorAll('button').find(b => text(b).replace(/\s*\d+$/, '') === label);
 
 async function openScreen(page, details) {
@@ -210,6 +210,9 @@ async function checkEvaluation(base, dir) {
     const page = await openPage(base, link(dir, tab));
     const content = text(page.$('#tabContent'));
     check(at('the ' + tab + ' tab renders'), content.length > 20 && !/Could not (render|read)/.test(content) && !/undefined|NaN|\[object/.test(content), short(content, 140));
+    if (tab === 'performance') {
+      check(at('the performance tab says it is that of ITDroid, not of the app'), /ITDroid performance/.test(text(page.$('#tabs'))) && (!page.$('#tabContent p.perf-note') || /Nothing here measures how the app itself performs/.test(content)), text(page.$('#tabs')));
+    }
   }
 
   // every finding of a language is in one screen, and each kind of change narrows the screens to its own count
@@ -308,7 +311,7 @@ async function checkSample(base) {
   buttonOf(cards.es, 'every screen').click();
   await page.settle();
   const esAll = screensOf(cards.es).map(d => text(d.querySelector('summary')));
-  check('sample es: the screen without findings is listed as such', esAll.length === 3 && /Screen 2 · no findings/.test(esAll[1]), esAll.join(' | '));
+  check('sample es: the screen without findings is listed as such', esAll.length === 3 && /Screen 2, no findings/.test(esAll[1]), esAll.join(' | '));
 
   // ar: shipped by the app and mirrored, except one row of buttons
   check('sample ar: shipped by the app', /shipped by the app/.test(text(cards.ar.querySelector('div.card-header'))));
@@ -318,7 +321,17 @@ async function checkSample(base) {
   check('sample ar: the two buttons carry the mark and their estimated mirrored position is drawn',
     arMain.querySelectorAll('span.badge').filter(b => text(b) === 'Missing mirroring').length === 2 && arMain.querySelectorAll('div.box.mirror').length === 2,
     arMain.querySelectorAll('div.box.mirror').map(b => b.attrs.style).join(' | '));
-  check('sample ar: source, translated, estimated position and visual difference', arMain.querySelectorAll('div.shot').length === 4);
+  const arShots = arMain.querySelectorAll('div.shot').map(s => text(s.querySelector('div.shot-caption')));
+  check('sample ar: source, translated, after the RTL repair, estimated position and visual difference',
+    arShots.length === 5 && /^Source/.test(arShots[0]) && /^Translated/.test(arShots[1]) && /^After the RTL repair/.test(arShots[2]), arShots.join(' | '));
+  // the same language evaluated again with the layouts repaired: what was changed, and before and after
+  const repair = cards.ar.querySelector('div.rtl-repair');
+  check('sample ar: the RTL repair says what it changed in the app', !!repair && /2 attributes of 1 layout renamed/.test(text(repair)) && /3 layouts given a right-to-left copy/.test(text(repair)),
+    repair ? short(text(repair), 300) : 'no block');
+  const repairRows = repair ? repair.querySelectorAll('tbody tr').map(text) : [];
+  check('sample ar: and the findings as the app is and after the repair', repairRows.some(r => /^Findings20$/.test(r)) && repairRows.some(r => /kept their sides1 of 100 of 10$/.test(r)),
+    repairRows.join(' | '));
+  check('sample es: a language that is not right-to-left has no repair', !cards.es.querySelector('div.rtl-repair'));
 
   // ru: an error dialog where the second screen should be, and the third one never reached
   buttonOf(cards.ru, 'every screen').click();
@@ -331,6 +344,24 @@ async function checkSample(base) {
 
   // pt: the translation model does not support it
   check('sample pt: not evaluated, with the reason', /does not support the language/.test(text(cards.pt)), short(text(cards.pt), 160));
+
+  // fr: the build was made and replayed, and its screens show the English texts: nothing to find, and the report says why
+  check('sample fr: no findings, and marked as showing the same text as the source',
+    /0 IPFs/.test(text(cards.fr.querySelector('div.card-header'))) && /same text as source/.test(text(cards.fr.querySelector('div.card-header'))),
+    short(text(cards.fr.querySelector('div.card-header')), 200));
+  check('sample fr: with the count of texts and what it means', /15 of the 15 texts/.test(text(cards.fr)) && /does not mean a translation fits/.test(text(cards.fr)),
+    short(text(cards.fr), 300));
+  check('sample es: a language that was shown carries the count without the warning',
+    /0 of the 15 texts/.test(text(cards.es)) && !/same text as source/.test(text(cards.es.querySelector('div.card-header'))), short(text(cards.es), 200));
+
+  // the overview: how the exploration ended, and the same mark per language
+  const overview = await openPage(base, link(shop, 'overview'));
+  const overviewText = text(overview.$('#tabContent'));
+  check('sample: the overview says the exploration ran out of things to tap, and how much of the app it saw',
+    /nothing left to tap/.test(overviewText) && /3 of 4 activities/.test(overviewText) && /needs content or an account/.test(overviewText), short(overviewText, 300));
+  const perLanguage = overview.$$('#tabContent div.card').find(c => /Per language/.test(text(c.querySelector('div.card-header'))));
+  const frRow = perLanguage ? perLanguage.querySelectorAll('tbody tr').map(text).find(r => /French/.test(r)) : '';
+  check('sample: the table per language has the texts that stayed the same', !!perLanguage && /Same text as source/.test(text(perLanguage)) && /15\/15/.test(frRow || ''), frRow);
 
   // an address opens one screen, also one without findings
   const linked = await openPage(base, link(shop, 'languages', 'es', '2'));
@@ -364,12 +395,12 @@ async function checkSample(base) {
   use.dispatch('change');
   check('sample: the filter by use keeps the strings of that use', count('Not translated') === '2 of 3' && count('Extracted from the code') === '0 of 2');
   const applied = hardcoded.$$('#tabContent div.card').find(c => /Applied in each language build/.test(text(c.querySelector('div.card-header'))));
-  check('sample: what was applied is told per language, and pt is told as not evaluated', !!applied && applied.querySelectorAll('tbody tr').length === 4 && /not evaluated/.test(text(applied)));
+  check('sample: what was applied is told per language, and pt is told as not evaluated', !!applied && applied.querySelectorAll('tbody tr').length === 5 && /not evaluated/.test(text(applied)));
 
   // the strings each language lacks
   const strings = await openPage(base, link(shop, 'strings'));
   const rows = strings.$$('#tabContent div.card tbody tr').map(text);
-  check('sample: the strings each language lacks, and which language the app shipped', rows.length === 4 && rows.some(r => /Arabic.*shipped by the app/.test(r)) && rows.some(r => /Spanish.*translated by ITDroid/.test(r)), rows.join(' | '));
+  check('sample: the strings each language lacks, and which language the app shipped', rows.length === 5 && rows.some(r => /Arabic.*shipped by the app/.test(r)) && rows.some(r => /Spanish.*translated by ITDroid/.test(r)), rows.join(' | '));
   const lacking = strings.$$('#tabContent details')[0];
   lacking.open = true;
   lacking.dispatch('toggle');
@@ -418,6 +449,13 @@ async function startServer(java, jar, folder) {
   try {
     const index = await getJson(server.base + '/api/results');
     console.log('Checking ' + index.apps.length + ' evaluation' + (index.apps.length === 1 ? '' : 's') + ' at ' + server.base + (url ? '' : ' (webreport/test/sample)'));
+    // The page separates the parts of a line with commas. Looked for in what the page itself writes,
+    // not in what it shows: a text of an app may well have a middle dot of its own.
+    for (const file of [path.join('js', 'main.js'), 'index.html']) {
+      const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      const dot = source.indexOf('·');
+      check('the page writes no middle dot (' + file.replace(/\\/g, '/') + ')', dot < 0, dot < 0 ? '' : short(source.substring(Math.max(0, dot - 40)), 90));
+    }
     for (const a of index.apps) {
       if (a.status === 'unreadable') { check(a.dir + ': report.json can be read', false, a.error); continue; }
       await checkEvaluation(server.base, a.dir);

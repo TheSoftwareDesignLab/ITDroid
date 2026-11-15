@@ -141,4 +141,32 @@ class RtlComparisonTest {
         assertEquals(0, summary(report, "nodesChanged"));
         assertEquals(2, summary(report, "nodesAffected"));
     }
+
+    /** A dialog from 100 to 900 of the screen: its dump only reaches its own edges. */
+    private static String dialog(String... children) {
+        return "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation=\"0\">"
+                + TestGraphs.node(0, "android.widget.FrameLayout", "", 100, 500, 900, 1200, children) + "</hierarchy>";
+    }
+
+    /**
+     * The mirror image of an element is taken across the middle of the screen. The screen is as wide
+     * as the widest screen of the exploration, not as the dialog whose elements are compared.
+     */
+    @Test
+    void anElementOfADialogIsMirroredAcrossTheMiddleOfTheScreen() throws Exception {
+        String main = screen(button(0, 50, 100, 450, 200));
+        String mainInArabic = screen(button(0, 550, 100, 950, 200));
+        // two buttons over a line of text; in Arabic the buttons swap sides and the text went above them
+        String sourceDialog = dialog(button(0, 150, 600, 400, 700), button(1, 600, 600, 850, 700), textView(2, 150, 800, 850, 900));
+        String arabicDialog = dialog(button(0, 600, 600, 850, 700), button(1, 150, 600, 400, 700), textView(2, 150, 520, 850, 580));
+
+        JSONObject report = compare(writeResult(tmp.resolve("en"), false, ".Main", main, sourceDialog),
+                writeResult(tmp.resolve("ar"), true, ".Main", mainInArabic, arabicDialog), tmp.resolve("out"), "ar", "Arabic");
+
+        assertEquals(2, count(report, "pairedStates"));
+        // the buttons have a finding because of the text, and they themselves are where a mirrored screen has them
+        assertEquals("mirrored", finding(report, 1).get("geometry"));
+        assertEquals("mirrored", finding(report, 2).get("geometry"));
+        assertEquals(0, summary(report, "siblingPairsNotMirrored"));
+    }
 }

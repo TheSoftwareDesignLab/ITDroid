@@ -45,6 +45,8 @@ public class Reanalysis {
         public String note = "";
         /** The breakdown of the recomputed comparison (the ipfSummary of the language), or null. */
         public JSONObject summary;
+        /** How much of the text of the source screens the translated screens still show (screenText), or null. */
+        public JSONObject screenText;
 
         public boolean same() {
             return reportedIpfs != null && reportedIpfs.equals(recomputedIpfs);
@@ -189,6 +191,7 @@ public class Reanalysis {
                         row.recomputedIpfs = asLong(recomputed.get("amIPFs"));
                         row.recomputedPaired = asLong(recomputed.get("pairedStates"));
                         row.summary = recomputed.get("ipfSummary") instanceof JSONObject ? (JSONObject) recomputed.get("ipfSummary") : null;
+                        row.screenText = recomputed.get("screenText") instanceof JSONObject ? (JSONObject) recomputed.get("screenText") : null;
                     } catch (Exception e) {
                         row.note = "comparison failed: " + describe(e);
                     }
@@ -254,7 +257,7 @@ public class Reanalysis {
         try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             w.write("evaluation;language;reportedIPFs;recomputedIPFs;same;reportedPaired;recomputedPaired;note"
                     + ";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;" + String.join(";", TYPES)
-                    + ";siblingPairsChecked;siblingPairsNotMirrored");
+                    + ";siblingPairsChecked;siblingPairsNotMirrored;sourceTexts;unchangedTexts;sameTextAsSource");
             w.newLine();
             for (Row r : rows) {
                 StringBuilder line = new StringBuilder();
@@ -272,6 +275,11 @@ public class Reanalysis {
                 }
                 for (String key : new String[] {"siblingPairsChecked", "siblingPairsNotMirrored"}) {
                     Object v = r.summary == null ? null : r.summary.get(key);
+                    line.append(';').append(v == null ? "" : String.valueOf(v));
+                }
+                // did the language reach the screen: texts of the source screens, and how many are still there
+                for (String key : new String[] {"sourceTexts", "unchanged", "sameAsSource"}) {
+                    Object v = r.screenText == null ? null : r.screenText.get(key);
                     line.append(';').append(v == null ? "" : String.valueOf(v));
                 }
                 w.write(line.toString());

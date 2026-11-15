@@ -53,6 +53,8 @@ public class AdbExplorer {
         public int maxClickables = 8;
         /** Minutes the exploration of the source language may take; 0 for no limit. */
         public int maxMinutes = 0;
+        /** adb commands run after every clean start of the app (each as its arguments), to leave content on the device. */
+        public List<String[]> setup = new ArrayList<>();
         public int settleSeconds = 3;
         public boolean fillForms = false;
         /** Only needed when {@link #fillForms} is on: suggests the values typed into text fields. */
@@ -324,11 +326,19 @@ public class AdbExplorer {
     private String limitReached;
     /** Set when some screen had more elements than the limit per screen allows to tap. */
     private boolean clickablesLeft;
+    /** Set once the setup commands were run and their answers printed. */
+    private boolean setupShown;
     /** Every tap, BACK and restart of this exploration or replay: what the time went into. */
     private int tapCount;
     private int backCount;
     private int restartCount;
     private int dumpCount;
+    /** Clean starts that were repeated because the app took its language away while it started. */
+    private int languageRestarts;
+    /** Set when the app took the language away on the repeated start too: repeating again is useless. */
+    private boolean languageRefused;
+    /** The settled dump of the first screen after the last clean start; null when it did not settle. */
+    private String startDump;
 
     // ================================================================= explore (record)
 
@@ -339,20 +349,17 @@ public class AdbExplorer {
         prepareFolders();
         install();
         runAdb(8000, "logcat", "-b", "crash", "-c");   // so a crash found later belongs to THIS run
-        cleanReset();   // pristine state for this language: no leftover data/cache/locale/permissions
-        launch();
-        sleep(1500);
+        // Pristine state for this language: no leftover data/cache/locale/permissions.
         // If the app never came to the foreground the launch effectively failed (it crashed, or monkey
         // printed "No activities found to run" and still returned 0). Do NOT capture/explore the
         // launcher or whatever else is on screen: fail so the failure is recorded upstream, and say
         // why when the crash log knows.
-        if (!waitForForeground()) {
+        if (!startClean(1500, null)) {
             String crash = crashReason();
             throw new ExplorationException("App '" + pkg + "' did not reach the foreground after launch"
                     + (crash != null ? "; app crashed on launch: " + crash
                                      : "; refusing to explore off-app screens (launch likely failed)."));
         }
-        settleAfterLaunch(null);
 
         StateRec root = captureCurrent();
         if (root != null) {
@@ -430,8 +437,8 @@ public class AdbExplorer {
             if (childXml != null && !sigToId.containsKey(signatureOf(childXml))) {
                 childXml = outlastMessage(childXml, state.signature);
             }
-            if (!outside && childXml != null && !inApp()) {
-                outside = true;
+            if (!outside && childXml != null && (!inApp() || !showsApp(childXml))) {
+                outside = true;   // another app came to the front meanwhile, or a dialog that is not the app's covers it
             }
             if (outside) {
                 // The tap opened an external app (Play Store, Maps, a browser/chooser, ...). Go back
@@ -561,10 +568,10 @@ public class AdbExplorer {
             return null;
         }
         restartCount++;
-        cleanReset();
-        launch();
-        sleep(1000);
-        if (!waitForForeground()) {
+        // Every screen on the way is one that was captured before, so its structure is known and a
+        // first dump that shows it needs no second one to confirm it (see stableDump).
+        String rootSignature = states.isEmpty() ? null : states.get(0).signature;
+        if (!startClean(1000, rootSignature)) {
             relaunchFailed = true;
             String crash = crashReason();
             System.out.println("  [explorer] WARNING: app did not return to the foreground on relaunch"
@@ -572,10 +579,7 @@ public class AdbExplorer {
                     + "; keeping the " + states.size() + " states captured so far");
             return null;
         }
-        // Every screen on the way is one that was captured before, so its structure is known and a
-        // first dump that shows it needs no second one to confirm it (see stableDump).
-        String rootSignature = states.isEmpty() ? null : states.get(0).signature;
-        String xml = settleAfterLaunch(rootSignature);
+        String xml = startDump;
         if (xml != null && !signatureOf(xml).equals(rootSignature)) {
             xml = null;   // not the first screen yet (still loading, a notice): the next dump waits for it
         }
@@ -727,16 +731,12 @@ public class AdbExplorer {
         Script script = Script.load(scriptPath);
         install();
         runAdb(8000, "logcat", "-b", "crash", "-c");
-        cleanReset();
-        launch();
-        sleep(1500);
-        if (!waitForForeground()) {
+        if (!startClean(1500, null)) {
             String crash = crashReason();
             throw new ExplorationException("App '" + pkg + "' did not reach the foreground after launch"
                     + (crash != null ? "; app crashed on launch: " + crash
                                      : "; refusing to explore off-app screens (launch likely failed)."));
         }
-        settleAfterLaunch(null);
 
         List<String> divergences = new ArrayList<>();
         int reproduced = 0;
@@ -810,8 +810,8 @@ public class AdbExplorer {
                 if (after != null && a.to == a.from) {
                     after = outlastMessage(after, replaySig.get(a.from));
                 }
-                if (!outside && after != null && !inApp()) {
-                    outside = true;   // the other app only came to the front while the screen was read
+                if (!outside && after != null && (!inApp() || !showsApp(after))) {
+                    outside = true;   // the other app only came to the front while the screen was read, or its dialog covers the app
                 }
                 if (outside) {
                     backAndWait();
@@ -929,10 +929,9 @@ public class AdbExplorer {
             return null;
         }
         restartCount++;
-        cleanReset();
-        launch();
-        sleep(1000);
-        if (!waitForForeground()) {
+        // As in reposition: a screen of this build that was already captured is recognised by one dump.
+        String rootSignature = replaySig.get(script.rootId);
+        if (!startClean(1000, rootSignature)) {
             relaunchFailed = true;
             String crash = crashReason();
             System.out.println("  [explorer] WARNING: app did not return to the foreground on relaunch"
@@ -940,9 +939,7 @@ public class AdbExplorer {
                     + "; keeping the " + states.size() + " states captured so far");
             return null;
         }
-        // As in reposition: a screen of this build that was already captured is recognised by one dump.
-        String rootSignature = replaySig.get(script.rootId);
-        String xml = settleAfterLaunch(rootSignature);
+        String xml = startDump;
         if (xml != null && !signatureOf(xml).equals(rootSignature)) {
             xml = null;
         }
@@ -1024,11 +1021,104 @@ public class AdbExplorer {
                 + (out != null && out.toLowerCase().contains("exception") ? " (WARN: " + out.trim() + ")" : ""));
     }
 
+    /**
+     * Starts the app from scratch and waits for its first screen, whose settled dump is left in
+     * {@link #startDump}. False when the app did not come to the foreground.
+     *
+     * <p>Some apps take away the language the system holds for them the first time they start
+     * after being installed: AppCompat with {@code autoStoreLocales} copies the choice it keeps by
+     * itself, which is none on a new install, over the one of the system, and marks the copy as
+     * done in a place that a data wipe leaves alone and an uninstall does not. Their first screens
+     * were then captured in the language of the device and the rest in the language of the run. So
+     * the language is read back once the first screen is up, and when it is gone the start is
+     * repeated: the second one keeps it.
+     */
+    private boolean startClean(long pauseMs, String expected) throws Exception {
+        startDump = null;
+        for (int attempt = 0; ; attempt++) {
+            cleanReset();
+            launch();
+            sleep(pauseMs);
+            if (!waitForForeground()) {
+                return false;
+            }
+            startDump = settleAfterLaunch(expected);
+            if (languageRefused || !languageDropped()) {
+                return true;
+            }
+            if (attempt > 0) {
+                languageRefused = true;
+                System.out.println("  [explorer] WARNING: the app takes the language '" + locale
+                        + "' away every time it starts: its screens are in the language it chooses by itself");
+                return true;
+            }
+            languageRestarts++;
+            System.out.println("  [explorer] the app took the language '" + locale
+                    + "' away when it started; setting it again and starting over");
+        }
+    }
+
+    /** True when the system no longer holds for the app the language this run set. */
+    private boolean languageDropped() throws Exception {
+        if (locale == null || locale.isEmpty()) {
+            return false;
+        }
+        return !holdsLanguage(runAdb(8000, "shell", "cmd", "locale", "get-app-locales", pkg), locale);
+    }
+
+    /**
+     * Reads the answer of {@code cmd locale get-app-locales} ("Locales for org.example for user 0
+     * are [pt_BR]") and tells whether its first language is the one asked for. An answer that
+     * cannot be read counts as holding it: only a clear "another language, or none" repeats a start.
+     */
+    static boolean holdsLanguage(String answer, String locale) {
+        if (answer == null) {
+            return true;
+        }
+        int open = answer.lastIndexOf('[');
+        int close = open < 0 ? -1 : answer.indexOf(']', open);
+        if (close < 0) {
+            return true;
+        }
+        String first = answer.substring(open + 1, close).split(",")[0];
+        return languageOf(first).equals(languageOf(locale));
+    }
+
+    /** The language of a tag such as {@code pt-BR} or {@code pt_BR}, with the codes Android still writes the old way. */
+    private static String languageOf(String tag) {
+        String language = tag.trim().split("[-_]")[0].toLowerCase(java.util.Locale.ROOT);
+        switch (language) {
+            case "iw": return "he";
+            case "in": return "id";
+            case "ji": return "yi";
+            default:   return language;
+        }
+    }
+
     /** Wipes app data/cache and re-applies the per-app locale, so each (re)start is pristine (no leftover state). */
     private void cleanReset() throws Exception {
         runAdb(15000, "shell", "pm", "clear", pkg);   // clears data + cache and stops the app
         setAppLocale();                               // pm clear also resets the per-app locale, so re-apply it
         grantRuntimePermissions();                    // ...and revokes the runtime permissions
+        runSetup();                                   // ...and the content the app was given goes with its data
+    }
+
+    /**
+     * Runs the commands of {@code exploration.setup}: the content an app needs before it has screens
+     * to show (a file in shared storage, a row of a content provider). After every reset and in every
+     * language, so each version starts from the same content. What each command answered is printed
+     * the first time.
+     */
+    private void runSetup() throws Exception {
+        for (String[] command : opts.setup) {
+            String out = runAdb(120000, command);
+            if (!setupShown) {
+                String answer = out == null ? "no answer" : out.trim().replace('\n', ' ');
+                System.out.println("  [explorer] setup: adb " + String.join(" ", command)
+                        + (answer.isEmpty() ? "" : " -> " + (answer.length() > 160 ? answer.substring(0, 160) + "..." : answer)));
+            }
+        }
+        setupShown = true;
     }
 
     /** Grants the runtime permissions the app requests, so no system permission dialog covers it. */
@@ -1378,6 +1468,11 @@ public class AdbExplorer {
             if (dump == null) {
                 return null;
             }
+            if (dismissNotResponding(dump)) {
+                prevSig = null;   // what was dumped was the system's dialog, not the app
+                sleep(intervalMs);
+                continue;
+            }
             String sig = signatureOf(dump);
             if (sig.equals(prevSig) || sig.equals(expected)) {
                 return dump;   // two consecutive identical structures, or the known one: UI settled
@@ -1386,6 +1481,61 @@ public class AdbExplorer {
             sleep(intervalMs);
         }
         return dump;
+    }
+
+    /** The "Wait" button of the dialog Android shows when an app (often the system's own interface) does not respond. */
+    private static final Pattern NOT_RESPONDING_WAIT = Pattern.compile(
+            "resource-id=\"android:id/aerr_wait\"[^>]*?bounds=\"(\\[\\d+,\\d+\\]\\[\\d+,\\d+\\])\"");
+
+    /**
+     * A slow emulator shows "System UI isn't responding" over whatever is on screen. The dialog is not
+     * an activity, so the app still counts as being in front, and its dump was stored as a screen of
+     * the app. Taps "Wait" when the dump is that dialog; true when it was.
+     */
+    private boolean dismissNotResponding(String xml) throws Exception {
+        Matcher m = NOT_RESPONDING_WAIT.matcher(xml);
+        if (!m.find()) {
+            return false;
+        }
+        int[] c = boundsCenter(m.group(1));
+        if (c == null) {
+            return false;
+        }
+        System.out.println("  [explorer] the system's \"not responding\" dialog covered the screen: dismissed");
+        runAdb(8000, "shell", "input", "tap", String.valueOf(c[0]), String.valueOf(c[1]));
+        return true;
+    }
+
+    /**
+     * True when the dump has some element of the app. A dump made only of elements of another package
+     * is a dialog of the system or of another app drawn over it: not a screen of the app.
+     */
+    private boolean showsApp(String xml) {
+        return xml.contains("package=\"" + pkg + "\"");
+    }
+
+    /** True when the device answers a command of its package service within 20 s. */
+    public static boolean deviceAnswers(String serial) {
+        try {
+            String out = execAdb(serial, 20000, "shell", "pm", "path", "android");
+            return out != null && out.contains("package:");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Waits up to {@code seconds} for the device to answer; true when it does. */
+    public static boolean waitForDevice(String serial, int seconds) {
+        long end = System.nanoTime() + seconds * 1_000_000_000L;
+        while (true) {
+            if (deviceAnswers(serial)) {
+                return true;
+            }
+            if (System.nanoTime() >= end) {
+                return false;
+            }
+            sleep(5000);
+        }
     }
 
     private String captureScreenshot(String name) {
@@ -1706,6 +1856,9 @@ public class AdbExplorer {
         o.put("backs", (long) backCount);
         o.put("restarts", (long) restartCount);
         o.put("dumps", (long) dumpCount);
+        // starts repeated because the app took its language away, and whether it did so every time
+        o.put("languageRestarts", (long) languageRestarts);
+        o.put("languageRefused", languageRefused);
         return o;
     }
 

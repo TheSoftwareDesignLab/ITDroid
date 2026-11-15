@@ -178,8 +178,8 @@
         el('div', { class: 'd-flex justify-content-between align-items-center' },
           el('span', { class: 'app-name' }, a.appName || a.dir),
           badge(status, statusKind(status))),
-        el('div', { class: 'app-meta' }, (a.apkName || '') + (a.versionName ? ' · v' + a.versionName : '')),
-        el('div', { class: 'app-meta' }, (isNum(a.totalIPFs) ? a.totalIPFs + ' IPFs' : '') + (isNum(a.hardcoded) ? ' · ' + a.hardcoded + ' hardcoded' : '') + (a.finishedAt ? ' · ' + date(a.finishedAt) : '')));
+        el('div', { class: 'app-meta' }, (a.apkName || '') + (a.versionName ? ', v' + a.versionName : '')),
+        el('div', { class: 'app-meta' }, (isNum(a.totalIPFs) ? a.totalIPFs + ' IPFs' : '') + (isNum(a.hardcoded) ? ', ' + a.hardcoded + ' hardcoded' : '') + (a.finishedAt ? ', ' + date(a.finishedAt) : '')));
       list.appendChild(item);
     }
     $('#appCount').textContent = shown + ' of ' + state.apps.length + ' evaluation' + (state.apps.length === 1 ? '' : 's');
@@ -240,7 +240,7 @@
     h.appendChild(el('h3', null, r.appName || state.dir));
     h.appendChild(badge(status, statusKind(status)));
     if (state.meta && state.meta.status) h.appendChild(badge('harness: ' + state.meta.status, statusKind(state.meta.status)));
-    h.appendChild(el('span', { class: 'text-muted small' }, (r.apkName || '') + (it.finishedAt ? ' · finished ' + date(it.finishedAt) : '') + (isNum(it.durationSec) ? ' · ' + sec(it.durationSec) : '')));
+    h.appendChild(el('span', { class: 'text-muted small' }, (r.apkName || '') + (it.finishedAt ? ', finished ' + date(it.finishedAt) : '') + (isNum(it.durationSec) ? ', ' + sec(it.durationSec) : '')));
     if (r.error) {
       h.appendChild(el('div', { class: 'alert alert-danger w-100 mt-2 mb-0 py-2' }, el('strong', null, 'Run error: '), r.error));
     }
@@ -254,7 +254,7 @@
 
   const TABS = [
     ['overview', 'Overview'], ['languages', 'Languages & IPFs'], ['hardcoded', 'Hardcoded strings'], ['strings', 'Non-internationalized strings'],
-    ['performance', 'Performance'], ['environment', 'Environment'], ['artifacts', 'Artifacts']];
+    ['performance', 'ITDroid performance'], ['environment', 'Environment'], ['artifacts', 'Artifacts']];
 
   function renderTabs() {
     const ul = $('#tabs');
@@ -333,15 +333,28 @@
       ['Version', app.versionName ? app.versionName + (app.versionCode ? ' (' + app.versionCode + ')' : '') : null],
       ['SDK', app.minSdk != null ? 'min ' + app.minSdk + (app.targetSdk != null ? ', target ' + app.targetSdk : '') : null],
       ['Native code', pre.apkAbis ? pre.apkAbis : (pre.apkAbis === '' ? 'none (pure Java/Kotlin)' : null)],
+      ['Built with', Array.isArray(app.frameworks) && app.frameworks.length ? app.frameworks.map(f => FRAMEWORKS[f] || f).join(', ') : null],
       ['Source language', r.dfltLang],
       ['Launch test', pre.launchTest],
       ['Results folder', state.dir]]))));
+    if (Array.isArray(app.frameworks) && app.frameworks.length) {
+      // the texts of such an app are not where ITDroid translates: say it before the figures are read
+      root.appendChild(el('div', { class: 'alert alert-warning py-2' }, 'This app is built with ' + app.frameworks.map(f => FRAMEWORKS[f] || f).join(' and ') +
+        '. The texts of its interface are not in Android string resources or in its Dalvik code, which is what ITDroid translates: ' +
+        'each language shows what the app does by itself with the language of the device. See "Same text as source" per language.'));
+    }
+    const sourceCheck = r.sourceLanguageCheck;
+    if (sourceCheck && sourceCheck.mismatch) {
+      root.appendChild(el('div', { class: 'alert alert-warning py-2' }, 'The default strings of this app do not look like "' + sourceCheck.configured +
+        '", the source language of the run (' + pct(sourceCheck.share * 100, 100) + ' of ' + sourceCheck.sentences + ' sentences have a common word of that language). ' +
+        'They were translated as "' + sourceCheck.configured + '" all the same; a text translated from the wrong language comes back transliterated.'));
+    }
     row.appendChild(el('div', { class: 'col-lg-6' }, card('Run', kvTable([
       ['Status', status + (note ? ' (' + note + ')' : '')],
       ['Started', date(it.startedAt)],
       ['Finished', status === 'interrupted' && !it.finishedAt ? 'never: the run was interrupted' : date(it.finishedAt)],
       ['Duration', sec(it.durationSec)],
-      ['Device', [dev.manufacturer, dev.model].filter(Boolean).join(' ') + (dev.sdk != null ? ' · Android ' + (dev.androidVersion || '') + ' (API ' + dev.sdk + ')' : '') + (dev.serial ? ' · ' + dev.serial : '')],
+      ['Device', [dev.manufacturer, dev.model].filter(Boolean).join(' ') + (dev.sdk != null ? ', Android ' + (dev.androidVersion || '') + ' (API ' + dev.sdk + ')' : '') + (dev.serial ? ', ' + dev.serial : '')],
       ['Emulator', r.emulatorName],
       ['Translation model', llm.model ? llm.model + (llm.style ? ' (' + llm.style + ')' : '') : null],
       ['Adjusted to build', Array.isArray(r.buildAdjustments) && r.buildAdjustments.length ? r.buildAdjustments.join('; ') : null],
@@ -351,11 +364,21 @@
     const totals = el('div', { class: 'row' });
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('IPFs (all languages)', num(total), total > 0 ? 'text-danger' : 'text-success')));
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded strings', num(r.hardcoded), hardcodedBreakdown(inv))));
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Screens explored (' + (dflt || 'source') + ')', num(lr[dflt] ? lr[dflt].amStates : null), lr[dflt] ? num(lr[dflt].amTrans) + ' transitions' : '')));
+    const explored = lr[dflt] ? lr[dflt].exploration : null;
+    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Screens explored (' + (dflt || 'source') + ')', num(lr[dflt] ? lr[dflt].amStates : null),
+      lr[dflt] ? num(lr[dflt].amTrans) + ' transitions' + (explored ? ', ' + explorationEnd(explored) : '') : '')));
     root.appendChild(totals);
+    if (explored && explored.stop === 'exhausted') {
+      // nothing was cut by a limit: this is all the app shows to someone who just installed it
+      root.appendChild(el('div', { class: 'alert alert-warning py-2' }, 'The exploration ended at ' + num(explored.states) +
+        ' screens with nothing left to tap. Either the app is this small, or it needs content or an account before it shows more: ' +
+        'the evaluation covers what a new user sees.'));
+    }
 
     // The breakdown of the findings exists in reports of the element-by-element comparison.
     const broken = targets.some(c => lr[c].ipfSummary);
+    // Whether each language reached the screen exists in reports that counted the texts.
+    const counted = targets.some(c => lr[c].screenText);
     const rows = [];
     for (const c of targets) {
       const l = lr[c], rep = l.replay || {}, s = l.ipfSummary;
@@ -364,11 +387,16 @@
         rep.actions != null ? rep.reproduced + '/' + rep.actions + ' (' + pct(rep.reproduced, rep.actions) + ')' : '–',
         isNum(l.amIPFs) ? l.amIPFs : (l.error ? '–' : 0)]
         .concat(broken ? [s ? s.nodesChanged : '–', s ? s.nodesAffected : '–', s ? (s.componentsLost + s.componentsAdded) : '–',
-          s && s.mirrorExpected ? (s.byType || {}).missingMirroring : '–'] : [], [outcome]));
+          s && s.mirrorExpected ? (s.byType || {}).missingMirroring : '–'] : [],
+          counted ? [sameTextCell(l.screenText)] : [], [outcome]));
     }
     const headers = ['Language', 'Screens', 'Paired', 'Unpaired', 'Replay', 'IPFs'].concat(
-      broken ? ['Moved or resized', 'Neighbour changed', 'Missing or extra', 'Not mirrored'] : [], ['Outcome']);
+      broken ? ['Moved or resized', 'Neighbour changed', 'Missing or extra', 'Not mirrored'] : [],
+      counted ? ['Same text as source'] : [], ['Outcome']);
     root.appendChild(card('Per language', table(headers, rows, broken ? [1, 2, 3, 5, 6, 7, 8, 9] : [1, 2, 3, 5])));
+    if (targets.some(c => lr[c].screenText && lr[c].screenText.sameAsSource)) {
+      root.appendChild(el('div', { class: 'alert alert-warning py-2' }, SAME_TEXT_NOTE));
+    }
     if (inv.uniqueTranslatableTexts != null) {
       root.appendChild(card('String inventory', kvTable([
         ['Resource strings', num(inv.resources) + ' (' + num(inv.resourcesTranslatable) + ' translatable)'],
@@ -382,12 +410,43 @@
     }
   }
 
+  /** The cross-platform frameworks ITDroid recognises in an APK (preflight.app.frameworks). */
+  const FRAMEWORKS = { flutter: 'Flutter', 'react-native': 'React Native', capacitor: 'Capacitor (a web page)', cordova: 'Cordova (a web page)',
+    'compose-multiplatform': 'Compose Multiplatform resources', xamarin: 'Xamarin / .NET MAUI', unity: 'Unity' };
+
+  /** What ended the exploration of the source language (langsReport.<source>.exploration.stop). */
+  const EXPLORATION_STOP = { maxStates: 'stopped at the limit of screens', maxMinutes: 'stopped at the time limit',
+    maxClickables: 'every screen tapped up to the limit per screen', exhausted: 'nothing left to tap', relaunchFailed: 'the app stopped coming back' };
+
+  function explorationEnd(explored) {
+    const parts = [EXPLORATION_STOP[explored.stop] || explored.stop];
+    if (Array.isArray(explored.activities) && isNum(explored.activitiesDeclared) && explored.activitiesDeclared > 0) {
+      parts.push(explored.activities.length + ' of ' + explored.activitiesDeclared + ' activities');
+    }
+    if (isNum(explored.seconds)) parts.push(sec(explored.seconds));
+    return parts.filter(Boolean).join(', ');
+  }
+
+  /**
+   * A language whose screens show the text of the source was not translated on screen: its findings,
+   * or the lack of them, do not describe a translation (langsReport.<lang>.screenText).
+   */
+  const SAME_TEXT_NOTE = 'A language marked "same text as source" showed, on the screens compared, the texts of the source language. ' +
+    'Either the language did not reach those screens (an interface built with a cross-platform framework keeps its texts where ITDroid does not translate), ' +
+    'or the screens are mostly data. Finding nothing there does not mean a translation fits.';
+
+  function sameTextCell(t) {
+    if (!t || !isNum(t.sourceTexts)) return '–';
+    const text = t.unchanged + '/' + t.sourceTexts + ' (' + pct(t.unchanged, t.sourceTexts) + ')';
+    return t.sameAsSource ? el('span', { class: 'text-warning font-weight-bold', title: SAME_TEXT_NOTE }, text) : text;
+  }
+
   // One breakdown of the hardcoded strings, shared by the overview and the hardcoded tab. Reports made
   // before the breakdown existed only have the totals.
   function hardcodedBreakdown(inv) {
     if (!inv) return '';
     if (isNum(inv.hardcodedCode)) {
-      return inv.hardcodedCode + ' in code, ' + inv.hardcodedXml + ' in XML, in ' + inv.hardcodedOccurrences + ' places · ' + inv.hardcodedTranslatable + ' translated';
+      return inv.hardcodedCode + ' in code, ' + inv.hardcodedXml + ' in XML, in ' + inv.hardcodedOccurrences + ' places, ' + inv.hardcodedTranslatable + ' translated';
     }
     return isNum(inv.hardcodedTranslatable) ? inv.hardcodedTranslatable + ' look like UI text' : '';
   }
@@ -395,7 +454,7 @@
   function hardcodedByUse(inv) {
     const by = inv && inv.hardcodedByConsumer;
     if (!by) return null;
-    return Object.keys(by).sort((a, b) => by[b] - by[a]).map(k => k + ' ' + by[k]).join(' · ');
+    return Object.keys(by).sort((a, b) => by[b] - by[a]).map(k => k + ' ' + by[k]).join(', ');
   }
 
   function stat(label, value, sub) {
@@ -447,9 +506,18 @@
         l.patchedHardcoded != null ? badge(l.patchedHardcoded + ' hardcoded patched', 'secondary') : null,
         l.extractedCodeLiterals ? badge(l.extractedCodeLiterals + ' hardcoded read from resources', 'secondary') : null,
         shippedByApp(c) ? badge('shipped by the app', 'info') : null,
+        l.screenText && l.screenText.sameAsSource ? badge('same text as source', 'warning') : null,
         l.error ? badge('error', 'danger') : null);
       const body = el('div');
       if (l.error) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, l.error));
+      if (l.screenText && isNum(l.screenText.sourceTexts)) {
+        const t = l.screenText;
+        const counts = t.unchanged + ' of the ' + t.sourceTexts + ' texts of the source screens are on the ' + (l.lang || c) + ' screens letter for letter';
+        body.appendChild(t.sameAsSource
+          ? el('div', { class: 'alert alert-warning py-2' }, el('strong', null, 'Same text as the source. '), counts + '. ' +
+              'The language did not reach these screens, or they are mostly data: finding nothing here does not mean a translation fits.')
+          : el('p', { class: 'small text-muted mb-2' }, counts + ' (' + pct(t.unchanged, t.sourceTexts) + ').'));
+      }
       if (l.hardcodedFallback) body.appendChild(el('div', { class: 'alert alert-warning py-2' }, l.hardcodedFallback + (isNum(l.revertedHardcoded) ? ' (' + l.revertedHardcoded + ' patched places reverted)' : '')));
       if (Array.isArray(l.crashes) && l.crashes.length) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, 'The app crashed during the replay: ' + l.crashes.join(' | ')));
       if (rep.divergences && rep.divergences.length) {
@@ -466,6 +534,7 @@
       const screens = screensView(c, l, dflt, lr[dflt] ? lr[dflt].amStates : null);
       // One kind of change at a time: the summary of the language picks it, the screens follow.
       if (l.ipfSummary) body.appendChild(ipfSummaryView(l, screens.setType));
+      if (l.rtlRepair) body.appendChild(rtlRepairView(l));
       body.appendChild(screens.node);
       root.appendChild(el('div', { class: 'card' }, el('div', { class: 'card-header py-2' }, head), el('div', { class: 'card-body py-2' }, body)));
     }
@@ -501,7 +570,7 @@
     const screen = (group, status, kind, note) => {
       const det = el('details', { class: 'mb-2' });
       const notMirrored = group.ipfs.filter(i => hasType(i, 'missingMirroring')).length;
-      det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, 'Screen ' + group.stateId), ' · ',
+      det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, 'Screen ' + group.stateId), ', ',
         kind ? badge(status, kind) : status + ' ', notMirrored ? badge(notMirrored + ' not mirrored', 'danger') : null));
       const holder = el('div', { class: 'mt-2' }, el('p', { class: 'text-muted small' }, 'Loading screens…'));
       det.appendChild(holder);
@@ -607,6 +676,39 @@
     return box;
   }
 
+  /**
+   * rtl.repair: the same language evaluated again on a build whose layouts were repaired to follow
+   * the direction of the language (langsReport.<lang>.rtlRepair). What was changed in the app, and
+   * the findings before and after; each screen below also shows the screenshot of the repaired build.
+   */
+  function rtlRepairView(l) {
+    const fix = l.rtlRepair, done = fix.applied || {};
+    const box = el('div', { class: 'card mb-3 rtl-repair' });
+    const body = el('div', { class: 'card-body py-2' });
+    const changes = [];
+    if (done.supportsRtlAdded) changes.push('the application now declares android:supportsRtl="true"');
+    if (done.attributesRenamed) changes.push(plural(done.attributesRenamed, 'attribute') + ' of ' + plural(done.layoutsChanged, 'layout') + ' renamed from left/right to start/end');
+    if (done.forcedLayouts) changes.push(plural(done.forcedLayouts, 'layout') + ' given a right-to-left copy');
+    body.appendChild(el('p', { class: 'small mb-2' }, el('strong', null, 'RTL repair. '),
+      changes.length ? 'The app was built once more with its layouts repaired: ' + changes.join('; ') + '.' : (fix.note || 'Nothing was changed.')));
+    if (fix.error) body.appendChild(el('div', { class: 'alert alert-danger py-2 mb-2' }, fix.error));
+    const before = l.ipfSummary, after = fix.ipfSummary;
+    if (before && after) {
+      const mirror = s => isNum(s.siblingPairsChecked) ? num(s.siblingPairsNotMirrored) + ' of ' + num(s.siblingPairsChecked) : '–';
+      body.appendChild(table(['', 'As the app is', 'After the repair'], [
+        ['Findings', l.amIPFs, fix.amIPFs],
+        ['Pairs of siblings that kept their sides', mirror(before), mirror(after)],
+        ['Elements not mirrored', (before.byType || {}).missingMirroring, (after.byType || {}).missingMirroring],
+        ['Moved or resized', before.nodesChanged, after.nodesChanged],
+        ['Missing or extra', before.componentsLost + before.componentsAdded, after.componentsLost + after.componentsAdded],
+        ['Replay', l.replay && l.replay.actions != null ? l.replay.reproduced + '/' + l.replay.actions : '–',
+          fix.replay && fix.replay.actions != null ? fix.replay.reproduced + '/' + fix.replay.actions : '–']], [1, 2]));
+      body.appendChild(el('p', { class: 'small text-muted mb-0' }, 'Open a screen below to see the source, the app as it is and the app after the repair side by side.'));
+    }
+    box.appendChild(body);
+    return box;
+  }
+
   function groupIpfs(ipfs) {
     const byState = new Map();
     for (const i of ipfs) {
@@ -632,6 +734,15 @@
     return parsed;
   }
 
+  /** The exploration of the build of a language with the RTL repair, stored in its own folder of the results. */
+  async function loadRepaired(lang, folder) {
+    const key = lang + ':' + folder;
+    if (state.results[key] !== undefined) return state.results[key];
+    const data = await fetchJson(resultsUrl(folder + '/' + lang + '/result.json'), true);
+    state.results[key] = data ? parseResult(data, folder, lang) : null;
+    return state.results[key];
+  }
+
   /** States of a result.json as {id -> {id, activity, shot, nodes[], bySource}} plus the screen size. */
   function parseResult(data, folder, lang) {
     const states = {};
@@ -646,6 +757,15 @@
       states[st.id] = st;
       if (st.sourceStateId != null && !bySource[st.sourceStateId]) bySource[st.sourceStateId] = st;
     }
+    // The size of the device screen is the furthest any dump of the exploration reaches. One dump
+    // alone does not tell: that of a dialog only reaches the edges of the dialog.
+    let width = 0, height = 0;
+    for (const st of Object.values(states)) {
+      const [w, h] = extent(st.nodes);
+      width = Math.max(width, w);
+      height = Math.max(height, h);
+    }
+    for (const st of Object.values(states)) st.screen = [width || 1080, height || 2400];
     return { states, bySource };
   }
 
@@ -665,10 +785,11 @@
     return out;
   }
 
-  function screenSize(nodes) {
+  /** How far right and down the elements of a dump reach; 0 when it has none. */
+  function extent(nodes) {
     let w = 0, h = 0;
     for (const n of nodes) if (n.bounds) { w = Math.max(w, n.bounds[2]); h = Math.max(h, n.bounds[3]); }
-    return [w || 1080, h || 2400];
+    return [w, h];
   }
 
   function nodeLabel(n) {
@@ -685,27 +806,40 @@
    */
   function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes) {
     if (!st) return el('div', { class: 'shot' }, el('div', { class: 'shot-caption' }, caption + ': screen not captured'));
-    const [w, h] = screenSize(st.nodes);
     const wrap = el('div', { class: 'shot' });
-    if (st.shot) wrap.appendChild(el('img', { src: st.shot, alt: caption }));
-    else wrap.appendChild(el('div', { class: 'p-3 text-muted small' }, 'no screenshot'));
+    // The boxes are placed as shares of the screen, over the image alone: the caption is outside.
+    const frame = el('div', { class: 'shot-frame' });
+    wrap.appendChild(frame);
+    const img = st.shot ? el('img', { src: st.shot, alt: caption }) : null;
+    frame.appendChild(img || el('div', { class: 'p-3 text-muted small' }, 'no screenshot'));
+    const boxes = [];
+    const place = (w, h) => {
+      for (const b of boxes) {
+        const [x1, y1, x2, y2] = b.bounds(w);
+        b.div.setAttribute('style', 'left:' + (100 * x1 / w) + '%;top:' + (100 * y1 / h) + '%;width:' + (100 * (x2 - x1) / w) + '%;height:' + (100 * (y2 - y1) / h) + '%');
+      }
+    };
     const box = (bounds, cls, title) => {
-      const [x1, y1, x2, y2] = bounds;
-      wrap.appendChild(el('div', { class: 'box ' + cls, title,
-        style: 'left:' + (100 * x1 / w) + '%;top:' + (100 * y1 / h) + '%;width:' + (100 * (x2 - x1) / w) + '%;height:' + (100 * (y2 - y1) / h) + '%' }));
+      const div = el('div', { class: 'box ' + cls, title });
+      boxes.push({ div, bounds });
+      frame.appendChild(div);
     };
     const draw = (idx, cls) => {
       const n = st.nodes[idx];
-      if (n && n.bounds) box(n.bounds, cls, '#' + idx + ' ' + nodeLabel(n));
+      if (n && n.bounds) box(() => n.bounds, cls, '#' + idx + ' ' + nodeLabel(n));
     };
     for (const i of relIndexes) draw(i, 'rel');
     for (const i of (mirrorIndexes || [])) {
       const n = st.nodes[i];
-      if (n && n.bounds) box(mirroredBounds(n.bounds, w), 'mirror', 'Estimated position of #' + i + ' ' + nodeLabel(n) + ' in a mirrored screen');
+      if (n && n.bounds) box(w => mirroredBounds(n.bounds, w), 'mirror', 'Estimated position of #' + i + ' ' + nodeLabel(n) + ' in a mirrored screen');
     }
     for (const i of ipfIndexes) draw(i, 'ipf');
     for (const i of (onlyIndexes || [])) draw(i, 'only');
-    wrap.appendChild(el('div', { class: 'shot-caption' }, caption + (st.activity ? ' · ' + st.activity.replace(/}$/, '') : '')));
+    const [w, h] = st.screen || [1080, 2400];
+    place(w, h);
+    // The screenshot is the whole screen, so once it is loaded its own size is the one that counts.
+    if (img) img.onload = () => { if (img.naturalWidth && img.naturalHeight) place(img.naturalWidth, img.naturalHeight); };
+    wrap.appendChild(el('div', { class: 'shot-caption' }, caption + (st.activity ? ', ' + st.activity.replace(/}$/, '') : '')));
     return wrap;
   }
 
@@ -816,6 +950,16 @@
     const shots = el('div', { class: 'shot-pair mb-2' },
       shotView(srcState, 'Source (' + dflt + ')', srcIpf, srcRel, null, srcOnly),
       shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel, null, tgtOnly));
+    // rtl.repair: the same screen in the build with the layouts repaired, with what still did not mirror
+    const repair = languages().lr[lang] ? languages().lr[lang].rtlRepair : null;
+    if (repair && repair.resultsFolder) {
+      let fixed = null;
+      try { fixed = await loadRepaired(lang, repair.resultsFolder); } catch (e) { /* shown as not captured */ }
+      const fixedState = fixed ? (fixed.bySource[group.stateId] || fixed.states[group.stateId]) : null;
+      const still = (repair.ipfs || []).filter(i => String(i.stateID) === String(group.stateId) && i.kind !== 'componentLost')
+        .map(tgtPos).filter(n => n >= 0);
+      shots.appendChild(shotView(fixedState, 'After the RTL repair (' + lang + ')', still, [], null, null));
+    }
     if (notMirrored.length) shots.appendChild(shotView(tgtState, 'Estimated position (' + lang + ')', notMirrored, [], notMirrored));
     if (srcState && tgtState) shots.appendChild(diffView(srcState.shot, tgtState.shot, mirrorExpected));
     holder.appendChild(shots);
@@ -896,7 +1040,7 @@
         : (p.element ? '<' + p.element + '> ' + (p.attribute || '') + (p.id ? ' ' + p.id : '') : '');
       const mark = !marks ? null : p.extracted ? badge('resource', 'success') : p.translated ? badge('patched', 'info') : badge('kept', 'secondary');
       return el('div', { class: 'small', title: [p.class, p.origin, p.via ? 'handed to ' + p.via : ''].filter(Boolean).join('\n') },
-        mark, where, el('span', { class: 'text-muted' }, (where ? ' · ' : '') + (p.origin || '') + (p.consumer && p.consumer !== e.consumer ? ' · ' + p.consumer : '')));
+        mark, where, el('span', { class: 'text-muted' }, (where ? ', ' : '') + (p.origin || '') + (p.consumer && p.consumer !== e.consumer ? ', ' + p.consumer : '')));
     };
     if (places.length === 1) return line(places[0]);
     return el('div', null, line(places[0]),
@@ -952,7 +1096,7 @@
       + (inv.counts && isNum(inv.counts.hardcodedOccurrences) ? ', in ' + inv.counts.hardcodedOccurrences + ' places' : ''))));
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Translated', num(translated),
       detailed ? groups.code.length + ' read from resources (code), ' + groups.xml.length + ' from XML, ' + groups.patched.length + ' patched in each build'
-        + (anyReverted ? ' · not in every language, see below' : '')
+        + (anyReverted ? ', not in every language, see below' : '')
         : 'patched into the build of each language')));
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Kept verbatim', num(groups.kept.length), hardcodedByUse(inv.counts) || '')));
     root.appendChild(totals);
@@ -1070,7 +1214,7 @@
             : el('span', { class: 'small text-muted' }, i.entry && i.entry.translatable === false ? 'kept: ' + (i.entry.skipReason || 'not translatable') : (v.shippedByApp ? 'shown in the default language' : '')) }];
       const search = el('input', { class: 'form-control form-control-sm mb-2', type: 'search', placeholder: 'Search name or text', 'aria-label': 'Search strings of ' + c });
       const det = el('details', { class: 'mb-2' });
-      det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, ((lr[c] || {}).lang || c) + ' (' + c + ')'), ' · ' + plural(names.length, 'string') + ' it lacks'));
+      det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, ((lr[c] || {}).lang || c) + ' (' + c + ')'), ', ' + plural(names.length, 'string') + ' it lacks'));
       const holder = el('div', { class: 'mt-2' });
       det.appendChild(holder);
       det.addEventListener('toggle', () => {
@@ -1099,6 +1243,8 @@
         : 'This report has no performance section (it was produced by an older ITDroid, or the run has not finished).'));
       return;
     }
+    root.appendChild(el('p', { class: 'text-muted small perf-note' },
+      'What it cost ITDroid to evaluate this app: how long each phase of the run took and what it used of the machine. Nothing here measures how the app itself performs.'));
     if (p) {
       const phases = p.phases || {};
       const names = Object.keys(phases);
@@ -1107,7 +1253,7 @@
       const ph = table(['Phase', '', 'Time', 'Share'], rows, [2, 3]);
       ph.querySelector('tbody').querySelectorAll('tr').forEach(tr => tr.classList.add('phase-row'));
       const row = el('div', { class: 'row' });
-      row.appendChild(el('div', { class: 'col-lg-7' }, card('Phases (total ' + sec(p.totalSec) + ')', ph)));
+      row.appendChild(el('div', { class: 'col-lg-7' }, card('Phases of the ITDroid run (total ' + sec(p.totalSec) + ')', ph)));
       const llm = p.llm || {};
       const jvm = p.jvm || {};
       const host = p.host || {};
@@ -1135,7 +1281,7 @@
       const res = meta.resources || {};
       const tm = meta.timing || {};
       root.appendChild(card('Evaluation harness telemetry (meta.json)', kvTable([
-        ['Status', meta.status + (meta.note ? ' · ' + meta.note : '')],
+        ['Status', meta.status + (meta.note ? ', ' + meta.note : '')],
         ['Wall time', sec(meta.wallSec)],
         ['Process tree RAM (peak / mean)', mb(res.ramPeakMB) + ' / ' + mb(res.ramMeanMB)],
         ['Process tree CPU (mean cores / peak cores)', isNum(res.cpuCoresMean) ? res.cpuCoresMean + ' / ' + res.cpuCoresPeak : '–'],
@@ -1194,7 +1340,7 @@
     const used = new Set();
     const take = test => { const out = files.filter(f => !used.has(f.path) && test(f.path)); for (const f of out) used.add(f.path); return out; };
     const link = (f, label) => el('li', null, el('a', { href: resultsUrl(f.path), target: '_blank' }, basename(f.path)),
-      label ? ' · ' + label : '', isNum(f.size) ? el('span', { class: 'text-muted small' }, ' · ' + fileSize(f.size)) : null);
+      label ? ', ' + label : '', isNum(f.size) ? el('span', { class: 'text-muted small' }, ', ' + fileSize(f.size)) : null);
     const section = (title, items, note) => {
       if (!items.length && !note) return;
       const ul = el('ul', { class: 'mb-0' }, ...items);
@@ -1235,22 +1381,22 @@
     for (const c of order) {
       const folder = resultsFolder(c);
       const l = lr[c] || {};
-      const head = el('span', null, badge(c, 'info'), (l.lang || c) + (c === dflt ? ' · source language' : (shippedByApp(c) ? ' · shipped by the app' : ' · translated by ITDroid')));
+      const head = el('span', null, badge(c, 'info'), (l.lang || c) + (c === dflt ? ', source language' : (shippedByApp(c) ? ', shipped by the app' : ', translated by ITDroid')));
       const prefix = folder ? folder + '/' + c + '/' : null;
       const mine = prefix ? take(p => p.startsWith(prefix)) : [];
       if (!mine.length) {
-        explorations.push(el('li', null, head, el('span', { class: 'text-muted' }, ' · no exploration' + (l.error ? ': ' + l.error : ' was written'))));
+        explorations.push(el('li', null, head, el('span', { class: 'text-muted' }, ', no exploration' + (l.error ? ': ' + l.error : ' was written'))));
         continue;
       }
       const names = { 'result.json': 'screens and transitions', 'exploration_script.json': 'recorded path', 'replay_report.json': 'what the replay reproduced' };
       const shots = listing && listing.screenshots ? listing.screenshots[prefix + 'screenshots'] : null;
-      explorations.push(el('li', null, head, el('span', { class: 'text-muted small' }, ' · ' + prefix + (isNum(shots) ? ' · ' + plural(shots, 'screenshot') : '')),
+      explorations.push(el('li', null, head, el('span', { class: 'text-muted small' }, ', ' + prefix + (isNum(shots) ? ', ' + plural(shots, 'screenshot') : '')),
         el('ul', null, ...mine.map(f => link(f, names[basename(f.path)] || '')))));
     }
     section('Explorations', explorations, 'Languages the app already shipped are explored under trnsResults/, the ones ITDroid translated under noTrnsResults/.');
 
     const rest = take(() => true);
-    section('Other files', rest.map(f => el('li', null, el('a', { href: resultsUrl(f.path), target: '_blank' }, f.path), isNum(f.size) ? el('span', { class: 'text-muted small' }, ' · ' + fileSize(f.size)) : null)),
+    section('Other files', rest.map(f => el('li', null, el('a', { href: resultsUrl(f.path), target: '_blank' }, f.path), isNum(f.size) ? el('span', { class: 'text-muted small' }, ', ' + fileSize(f.size)) : null)),
       listing && listing.truncated ? 'The folder has more files than are listed here.' : null);
   }
 

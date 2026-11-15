@@ -24,7 +24,8 @@
   "uniqueTranslatableTexts": 10,
   "translationsPerLanguage": {
    "es": 10,
-   "ru": 10
+   "ru": 10,
+   "fr": 10
   }
  },
  "entries": [
@@ -37,7 +38,8 @@
    "translatable": true,
    "translations": {
     "es": "Tienda",
-    "ru": "Магазин"
+    "ru": "Магазин",
+    "fr": "Boutique"
    }
   },
   {
@@ -49,7 +51,8 @@
    "translatable": true,
    "translations": {
     "es": "Comprar ahora",
-    "ru": "Купить"
+    "ru": "Купить",
+    "fr": "Acheter"
    }
   },
   {
@@ -61,7 +64,8 @@
    "translatable": true,
    "translations": {
     "es": "Cancelar",
-    "ru": "Отмена"
+    "ru": "Отмена",
+    "fr": "Annuler"
    }
   },
   {
@@ -73,7 +77,8 @@
    "translatable": true,
    "translations": {
     "es": "Total: %1$d artículos",
-    "ru": "Итого: %1$d товара"
+    "ru": "Итого: %1$d товара",
+    "fr": "Total : %1$d articles"
    }
   },
   {
@@ -85,7 +90,8 @@
    "translatable": true,
    "translations": {
     "es": "Añadir al carrito",
-    "ru": "Добавить в корзину"
+    "ru": "Добавить в корзину",
+    "fr": "Ajouter au panier"
    }
   },
   {
@@ -97,7 +103,8 @@
    "translatable": true,
    "translations": {
     "es": "Finalizar la compra",
-    "ru": "Оформить заказ"
+    "ru": "Оформить заказ",
+    "fr": "Passer la commande"
    }
   },
   {
@@ -120,7 +127,8 @@
    "origin": "smali/org/example/shop/ui/CartAdapter.smali:88 (+1 more)",
    "translations": {
     "es": "Quitar",
-    "ru": "Удалить"
+    "ru": "Удалить",
+    "fr": "Retirer"
    },
    "places": [
     {
@@ -154,7 +162,8 @@
    "origin": "smali/org/example/shop/ui/DetailActivity.smali:210",
    "translations": {
     "es": "No se pudo cargar el producto",
-    "ru": "Не удалось загрузить товар"
+    "ru": "Не удалось загрузить товар",
+    "fr": "Impossible de charger le produit"
    },
    "places": [
     {
@@ -178,7 +187,8 @@
    "origin": "smali_classes2/org/example/shop/billing/Plans.smali:57 (+1 more)",
    "translations": {
     "es": "Premium",
-    "ru": "Премиум"
+    "ru": "Премиум",
+    "fr": "Premium"
    },
    "places": [
     {
@@ -275,7 +285,8 @@
    "origin": "res/layout/activity_main.xml:14",
    "translations": {
     "es": "Buscar productos",
-    "ru": "Поиск товаров"
+    "ru": "Поиск товаров",
+    "fr": "Rechercher des produits"
    },
    "places": [
     {

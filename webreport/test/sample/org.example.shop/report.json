@@ -31,7 +31,8 @@
   "uniqueTranslatableTexts": 10,
   "translationsPerLanguage": {
    "es": 10,
-   "ru": 10
+   "ru": 10,
+   "fr": 10
   }
  },
  "codePackages": [
@@ -48,8 +49,15 @@
   "languages": [
    "ar",
    "es",
-   "ru"
-  ]
+   "ru",
+   "fr"
+  ],
+  "rtlRepair": {
+   "supportsRtlAdded": false,
+   "layoutsChanged": 1,
+   "attributesRenamed": 2,
+   "forcedLayouts": 3
+  }
  },
  "itdroid": {
   "version": "1.0.0",
@@ -70,7 +78,8 @@
    "minSdk": 26,
    "targetSdk": 35,
    "launchable": true,
-   "hasStrings": true
+   "hasStrings": true,
+   "activities": 4
   },
   "device": {
    "serial": "emulator-5554",
@@ -110,6 +119,7 @@
     "es": "Spanish",
     "ar": "Arabic",
     "ru": "Russian",
+    "fr": "French",
     "pt": "Portuguese"
    },
    "alpha": 0,
@@ -122,7 +132,9 @@
    "graphDumps": false,
    "minSimilarity": 0.5,
    "hardcodedTranslate": "ui",
-   "emulator": "Pixel_API_33"
+   "emulator": "Pixel_API_33",
+   "maxMinutes": 0,
+   "rtlRepair": true
   }
  },
  "performance": {
@@ -145,7 +157,13 @@
    "replay:ru": 61.0,
    "compare:ru": 0.1,
    "build:all": 40.3,
-   "close": 18.9
+   "close": 18.9,
+   "translate:fr": 4.0,
+   "build:fr": 36.1,
+   "replay:fr": 97.9,
+   "compare:fr": 0.1,
+   "rtlBuild:ar": 35.2,
+   "rtlReplay:ar": 96.8
   },
   "llm": {
    "requests": 20,
@@ -188,7 +206,26 @@
      "check_out"
     ]
    },
+   "ar": {
+    "shippedByApp": true,
+    "stringsFile": true,
+    "missing": 0,
+    "missingNames": []
+   },
    "ru": {
+    "shippedByApp": false,
+    "stringsFile": false,
+    "missing": 6,
+    "missingNames": [
+     "app_title",
+     "buy",
+     "cancel",
+     "total_items",
+     "add_to_cart",
+     "check_out"
+    ]
+   },
+   "fr": {
     "shippedByApp": false,
     "stringsFile": false,
     "missing": 6,
@@ -213,12 +250,6 @@
      "add_to_cart",
      "check_out"
     ]
-   },
-   "ar": {
-    "shippedByApp": true,
-    "stringsFile": true,
-    "missing": 0,
-    "missingNames": []
    }
   }
  },
@@ -227,7 +258,25 @@
    "dflt": true,
    "lang": "English",
    "amStates": 3,
-   "amTrans": 2
+   "amTrans": 2,
+   "exploration": {
+    "seconds": 96,
+    "taps": 5,
+    "backs": 2,
+    "restarts": 1,
+    "dumps": 19,
+    "stop": "exhausted",
+    "states": 3,
+    "maxStates": 5,
+    "maxClickables": 8,
+    "maxMinutes": 0,
+    "activities": [
+     ".MainActivity",
+     ".DetailActivity",
+     ".CartActivity"
+    ],
+    "activitiesDeclared": 4
+   }
   },
   "es": {
    "lang": "Spanish",
@@ -362,7 +411,13 @@
    "missingLangStates": 0,
    "missingDfltStates": 0,
    "statesNotCompared": [],
-   "amTrans": 0
+   "amTrans": 0,
+   "screenText": {
+    "unchanged": 0,
+    "sourceTexts": 15,
+    "share": 0.0,
+    "sameAsSource": false
+   }
   },
   "ar": {
    "lang": "Arabic",
@@ -448,7 +503,66 @@
    "missingLangStates": 0,
    "missingDfltStates": 0,
    "statesNotCompared": [],
-   "amTrans": 0
+   "amTrans": 0,
+   "screenText": {
+    "unchanged": 0,
+    "sourceTexts": 15,
+    "share": 0.0,
+    "sameAsSource": false
+   },
+   "rtlRepair": {
+    "applied": {
+     "supportsRtlAdded": false,
+     "layoutsChanged": 1,
+     "attributesRenamed": 2,
+     "forcedLayouts": 3
+    },
+    "apk": "org.example.shop-ar-rtl-aligned-debugSigned.apk",
+    "resultsFolder": "rtlResults",
+    "replay": {
+     "actions": 2,
+     "reproduced": 2,
+     "statesCaptured": 3,
+     "divergences": [],
+     "crashes": []
+    },
+    "ipfSummary": {
+     "nodesAffected": 0,
+     "siblingPairsNotMirrored": 0,
+     "siblingPairsChecked": 10,
+     "componentsAdded": 0,
+     "nodesChanged": 0,
+     "nodesCompared": 33,
+     "byType": {
+      "alignmentAdded": 0,
+      "componentLost": 0,
+      "overlapAdded": 0,
+      "positionLost": 0,
+      "positionAdded": 0,
+      "missingMirroring": 0,
+      "componentAdded": 0,
+      "alignmentLost": 0,
+      "overlapRemoved": 0
+     },
+     "mirrorExpected": true,
+     "componentsLost": 0
+    },
+    "amStates": 3,
+    "pairing": "replay",
+    "screenText": {
+     "unchanged": 0,
+     "sourceTexts": 15,
+     "share": 0.0,
+     "sameAsSource": false
+    },
+    "missingLangStates": 0,
+    "amIPFs": 0,
+    "missingDfltStates": 0,
+    "pairedStates": 3,
+    "lang": "Arabic",
+    "statesNotCompared": [],
+    "amTrans": 0
+   }
   },
   "ru": {
    "lang": "Russian",
@@ -681,7 +795,61 @@
      "stateID": 2
     }
    ],
-   "amTrans": 0
+   "amTrans": 0,
+   "screenText": {
+    "unchanged": 0,
+    "sourceTexts": 7,
+    "share": 0.0,
+    "sameAsSource": false
+   }
+  },
+  "fr": {
+   "lang": "French",
+   "shippedByApp": false,
+   "resultsFolder": "noTrnsResults",
+   "patchedHardcoded": 1,
+   "extractedCodeLiterals": 2,
+   "extractedXmlLiterals": 1,
+   "amIPFs": 0,
+   "pairedStates": 3,
+   "amStates": 3,
+   "pairing": "replay",
+   "missingLangStates": 0,
+   "missingDfltStates": 0,
+   "amTrans": 0,
+   "replay": {
+    "actions": 2,
+    "reproduced": 2,
+    "statesCaptured": 3,
+    "divergences": [],
+    "crashes": []
+   },
+   "screenText": {
+    "unchanged": 15,
+    "sourceTexts": 15,
+    "share": 1.0,
+    "sameAsSource": true
+   },
+   "ipfSummary": {
+    "nodesAffected": 0,
+    "componentsAdded": 0,
+    "nodesChanged": 0,
+    "nodesCompared": 33,
+    "byType": {
+     "alignmentAdded": 0,
+     "componentLost": 0,
+     "overlapAdded": 0,
+     "positionLost": 0,
+     "positionAdded": 0,
+     "missingMirroring": 0,
+     "componentAdded": 0,
+     "alignmentLost": 0,
+     "overlapRemoved": 0
+    },
+    "mirrorExpected": false,
+    "componentsLost": 0
+   },
+   "statesNotCompared": []
   },
   "pt": {
    "lang": "Portuguese",

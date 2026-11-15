@@ -152,6 +152,14 @@ public class RunConfig {
         return Math.max(0, intOptional("exploration.maxMinutes", 0));
     }
 
+    /**
+     * A file of adb commands run after every clean start of the app, to leave content on the device
+     * before it is explored (config key exploration.setup, default none). See {@link SetupScript}.
+     */
+    public String getSetupFile() {
+        return props.getProperty("exploration.setup", "").trim();
+    }
+
     /** Seconds to wait after each launch before the first capture, on top of the stability check (default 3). */
     public int getSettleSeconds() {
         return intOptional("exploration.settleSeconds", 3);
@@ -195,6 +203,15 @@ public class RunConfig {
      */
     public boolean isKeepLanguageApks() {
         return boolOptional("output.keepLanguageApks", true);
+    }
+
+    /**
+     * For each right-to-left language, also build and evaluate the app with its layouts repaired to
+     * follow the direction of the language, next to the app as it is (config key rtl.repair, default
+     * false). It adds one build and one replay per right-to-left language.
+     */
+    public boolean isRtlRepair() {
+        return boolOptional("rtl.repair", false);
     }
 
     /**

@@ -548,6 +548,49 @@ class LLMTranslatorTest {
         assertFalse(LLMTranslator.looksLikeBrand("Tasks"), "an ordinary word is only protected when the user lists it");
     }
 
+    /**
+     * A translation model writes a figure the way the target language does: "6,568.65 EUR" came back
+     * as "6.568,65 EUR" in Spanish and "6 568,65" in Russian. A figure of the app is data, so it
+     * travels as a token and comes back as it was written.
+     */
+    @Test
+    void aFigureTravelsMaskedAndComesBackAsWritten() throws IOException {
+        useTemplateStyle(true);
+        server.responder = r -> r.text.replace("Balance on", "Saldo al").replace("at", "a las");
+
+        Map<String, String> out = translator().translateUiLabels(List.of("Balance on 20/09/2026 at 09:41: 6,568.65 EUR"), "en", "es");
+
+        assertEquals("Balance on <ph0> at <ph1>: <ph2> EUR", server.requests.get(0).text);
+        assertEquals("Saldo al 20/09/2026 a las 09:41: 6,568.65 EUR", out.get("Balance on 20/09/2026 at 09:41: 6,568.65 EUR"));
+    }
+
+    @Test
+    void whatCountsAsAFigureHasASeparatorBetweenItsDigits() throws IOException {
+        LLMTranslator t = translator();
+
+        assertEquals("Version <ph0> of <ph1>", t.maskTerms("Version 1.13.0 of 2026-11-14", new ArrayList<>()));
+        assertEquals("Call <ph0> or <ph1>", t.maskTerms("Call 300 123 4567 or 192.168.1.1", new ArrayList<>()));
+        assertEquals("2 items of 3 in 5 minutes", t.maskTerms("2 items of 3 in 5 minutes", new ArrayList<>()),
+                "a bare number stays: the words around it agree with it");
+        assertEquals("Chapters 1, 2 and 3 in 4K", t.maskTerms("Chapters 1, 2 and 3 in 4K", new ArrayList<>()));
+        assertEquals("50% of users at %.2f", t.maskTerms("50% of users at %.2f", new ArrayList<>()), "a format is not a figure");
+
+        assertTrue(LLMTranslator.figuresKept("Total: 6,568.65 EUR", "Total: 6,568.65 EUR"));
+        assertFalse(LLMTranslator.figuresKept("Total: 6,568.65 EUR", "Total: 6.568,65 EUR"));
+        assertTrue(LLMTranslator.figuresKept("Step 2 of 4", "Paso 2 de 4"));
+    }
+
+    @Test
+    void aTranslationThatRewritesAFigureIsKeptInTheSourceLanguage() throws IOException {
+        useTemplateStyle(true);
+        server.responder = r -> "6.568,65 EUR en total";     // the model wrote the figure itself instead of the token
+
+        Map<String, String> out = translator().translateUiLabels(List.of("6,568.65 EUR in total"), "en", "es");
+
+        assertEquals("6,568.65 EUR in total", out.get("6,568.65 EUR in total"));
+        assertEquals(2, server.requests.size(), "asked again once, then the source text is kept");
+    }
+
     // ------------------------------------------------------------------ placeholder helpers
 
     @Test

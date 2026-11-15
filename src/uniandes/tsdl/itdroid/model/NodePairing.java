@@ -36,7 +36,7 @@ public final class NodePairing {
 	private final boolean mirrored;
 	private int count;
 
-	private NodePairing(State sourceState, State targetState, boolean mirrored) {
+	private NodePairing(State sourceState, State targetState, boolean mirrored, int screenWidth) {
 		this.mirrored = mirrored;
 		source = sourceState.getStateNodes();
 		target = targetState.getStateNodes();
@@ -46,7 +46,7 @@ public final class NodePairing {
 		Arrays.fill(sourceOfTarget, -1);
 		sourceSubtree = subtreeSizes(source);
 		targetSubtree = subtreeSizes(target);
-		int w = 1;
+		int w = Math.max(1, screenWidth);
 		int h = 1;
 		for (AndroidNode n : source) {
 			w = Math.max(w, n.getPoint2()[0]);
@@ -60,7 +60,7 @@ public final class NodePairing {
 
 	/** Pairs the elements of two screens of languages written in the same direction. */
 	public static NodePairing of(State source, State target) {
-		return new NodePairing(source, target, false);
+		return new NodePairing(source, target, false, 0);
 	}
 
 	/**
@@ -69,7 +69,16 @@ public final class NodePairing {
 	 * the mirrored place, since the app may or may not mirror its layout.
 	 */
 	public static NodePairing of(State source, State target, boolean mirrored) {
-		return new NodePairing(source, target, mirrored);
+		return new NodePairing(source, target, mirrored, 0);
+	}
+
+	/**
+	 * As {@link #of(State, State, boolean)}, with the width of the device screen. Without it the
+	 * width is taken from the source screen, which is narrower than the device when that screen is a
+	 * dialog, and the mirrored place of an element is then looked for off its true position.
+	 */
+	public static NodePairing of(State source, State target, boolean mirrored, int screenWidth) {
+		return new NodePairing(source, target, mirrored, screenWidth);
 	}
 
 	/**

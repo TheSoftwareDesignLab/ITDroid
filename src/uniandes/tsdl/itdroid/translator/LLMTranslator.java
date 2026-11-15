@@ -114,6 +114,15 @@ public class LLMTranslator implements TranslationInterface {
     /** E-mail addresses and URLs inside a text: data, masked the same way. */
     private static final java.util.regex.Pattern EMAIL_OR_URL = java.util.regex.Pattern.compile(
             "[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+|https?://[^\\s<>\"]+|www\\.[^\\s<>\"]+");
+    /**
+     * A figure written with separators: an amount (6,568.65), a time (09:41), a date (20/09/2026), a
+     * version (1.13.0), a phone number in groups. A model rewrites these the way the target language
+     * writes them (6.568,65 in Spanish, 6 568,65 in Russian), and a figure of the app is data: it is
+     * masked like an address. A bare number ("2 items") stays in sight, because the words around it
+     * have to agree with it.
+     */
+    private static final java.util.regex.Pattern FIGURE = java.util.regex.Pattern.compile(
+            "\\d+(?:[.,:/'\\u00a0\\u202f -]\\d+)+");
 
     /**
      * What PLaMo Translate is told about a short text (up to three words), which on its own is
@@ -656,13 +665,39 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Replaces protected terms, e-mail addresses and URLs with the same numbered tokens used for
-     * placeholders ({@code <ph0>}...), adding the originals to {@code originals}.
+     * Replaces protected terms, e-mail addresses, URLs and figures with the same numbered tokens used
+     * for placeholders ({@code <ph0>}...), adding the originals to {@code originals}.
      */
     String maskTerms(String text, List<String> originals) {
         String out = maskMatches(EMAIL_OR_URL, text, originals);
         java.util.regex.Pattern terms = protectedPattern;
-        return terms == null ? out : maskMatches(terms, out, originals);
+        if (terms != null) {
+            out = maskMatches(terms, out, originals);
+        }
+        return maskMatches(FIGURE, out, originals);
+    }
+
+    /** True when every figure of the source is in the translation as it was written, as many times. */
+    static boolean figuresKept(String source, String translated) {
+        Map<String, Integer> needed = new HashMap<>();
+        java.util.regex.Matcher m = FIGURE.matcher(source);
+        while (m.find()) {
+            needed.merge(m.group(), 1, Integer::sum);
+        }
+        return allIn(needed, translated);
+    }
+
+    private static boolean allIn(Map<String, Integer> needed, String translated) {
+        for (Map.Entry<String, Integer> e : needed.entrySet()) {
+            int found = 0;
+            for (int at = translated.indexOf(e.getKey()); at >= 0; at = translated.indexOf(e.getKey(), at + e.getKey().length())) {
+                found++;
+            }
+            if (found < e.getValue()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String maskMatches(java.util.regex.Pattern pattern, String text, List<String> originals) {
@@ -690,16 +725,7 @@ public class LLMTranslator implements TranslationInterface {
                 needed.merge(m.group(), 1, Integer::sum);
             }
         }
-        for (Map.Entry<String, Integer> e : needed.entrySet()) {
-            int found = 0;
-            for (int at = translated.indexOf(e.getKey()); at >= 0; at = translated.indexOf(e.getKey(), at + e.getKey().length())) {
-                found++;
-            }
-            if (found < e.getValue()) {
-                return false;
-            }
-        }
-        return true;
+        return allIn(needed, translated);
     }
 
     // ------------------------------------------------------------------ is the answer a translation?
@@ -762,6 +788,9 @@ public class LLMTranslator implements TranslationInterface {
         }
         if (!termsKept(source, out)) {
             return "a protected term was lost";
+        }
+        if (!figuresKept(source, out)) {
+            return "a figure was rewritten";
         }
         String s = source.trim();
         String o = out.trim();

@@ -39,6 +39,17 @@ class RunConfigTest {
         assertEquals(5, cfg.getMaxStates());
         assertEquals(8, cfg.getMaxClickables());
         assertEquals(0, cfg.getMaxMinutes());
+        assertEquals("", cfg.getSetupFile());
+        assertEquals(false, cfg.isRtlRepair());
+    }
+
+    @Test
+    void theContentOfTheDeviceAndTheRepairOfRightToLeftLayoutsAreOneLineEach() throws Exception {
+        RunConfig cfg = config("exploration.setup = data/setup.txt ", "rtl.repair=true");
+
+        assertEquals("data/setup.txt", cfg.getSetupFile());
+        assertTrue(cfg.isRtlRepair());
+        assertEquals("", config("exploration.setup=").getSetupFile(), "the empty line of the example file means none");
     }
 
     @Test

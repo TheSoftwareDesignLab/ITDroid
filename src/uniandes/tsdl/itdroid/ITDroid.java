@@ -25,6 +25,7 @@ import org.json.simple.parser.JSONParser;
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.AppCode;
+import uniandes.tsdl.itdroid.helper.AppFramework;
 import uniandes.tsdl.itdroid.helper.CodeLiteralExtractor;
 import uniandes.tsdl.itdroid.helper.ConsumerRules;
 import uniandes.tsdl.itdroid.helper.ExplorationException;
@@ -42,9 +43,12 @@ import uniandes.tsdl.itdroid.helper.Reanalysis;
 import uniandes.tsdl.itdroid.helper.ReportServer;
 import uniandes.tsdl.itdroid.helper.RunConfig;
 import uniandes.tsdl.itdroid.helper.PortablePaths;
+import uniandes.tsdl.itdroid.helper.RtlRepair;
 import uniandes.tsdl.itdroid.helper.RunMetrics;
+import uniandes.tsdl.itdroid.helper.SetupScript;
 import uniandes.tsdl.itdroid.helper.SmaliPatcher;
 import uniandes.tsdl.itdroid.helper.SmaliScan;
+import uniandes.tsdl.itdroid.helper.SourceLanguageCheck;
 import uniandes.tsdl.itdroid.helper.StringInventory;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
 import uniandes.tsdl.itdroid.helper.XmlLiteralExtractor;
@@ -98,6 +102,11 @@ public class ITDroid {
 	static boolean extractCode = true;
 	/** Keep the APK built for each language after it was evaluated (config key output.keepLanguageApks). */
 	static boolean keepLanguageApks = true;
+	/** Evaluate each right-to-left language a second time with the layouts repaired (config key rtl.repair). */
+	static boolean rtlRepair = false;
+	/** The decoded app and its minSdk, for the repair of the layouts. */
+	static String decodedApp;
+	static int appMinSdk;
 
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
@@ -253,6 +262,11 @@ public class ITDroid {
 			explorerOptions.maxStates = cfg.getMaxStates();
 			explorerOptions.maxClickables = cfg.getMaxClickables();
 			explorerOptions.maxMinutes = cfg.getMaxMinutes();
+			try {
+				explorerOptions.setup = SetupScript.load(cfg.getSetupFile());
+			} catch (IOException e) {
+				throw new ITDroidException(e.getMessage());
+			}
 			explorerOptions.settleSeconds = cfg.getSettleSeconds();
 			explorerOptions.fillForms = cfg.isFillForms();
 			launchTest = cfg.isLaunchTest();
@@ -263,6 +277,7 @@ public class ITDroid {
 			hardcodedPolicy = cfg.getHardcodedPolicy();
 			extractCode = cfg.isExtractCode();
 			keepLanguageApks = cfg.isKeepLanguageApks();
+			rtlRepair = cfg.isRtlRepair();
 		} else if (staticOnly && args.length == 5) {
 			// --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>
 			apkPath = args[0];
@@ -393,12 +408,22 @@ public class ITDroid {
 		JSONObject appInfo = Preflight.describeDecodedApp(decodedFolderPath);
 		readVersionInfo(decodedFolderPath, appInfo);
 		preflight.put("app", appInfo);
+		decodedApp = decodedFolderPath;
+		appMinSdk = ((Number) appInfo.get("minSdk")).intValue();
 		// With another app's package nothing fails at once: the launch finds no activity and the
 		// explorer ends up tapping the launcher. Say what is wrong while it is cheap.
 		String realPackage = String.valueOf(appInfo.get("package"));
 		if (!realPackage.isEmpty() && !realPackage.equals(appName)) {
 			throw new ITDroidException("PREFLIGHT: the package given is '" + appName + "' but the package of this APK is '"
 					+ realPackage + "'. Pass the APK's own package (appPackage in the config file).");
+		}
+		// An interface that is not made of Android resources and Dalvik code is not translated by
+		// ITDroid: say it before anything is measured, so the figures are read for what they are.
+		List<String> frameworks = AppFramework.detect(decodedFolderPath);
+		if (!frameworks.isEmpty()) {
+			System.out.println("NOTE: this app is built with a cross-platform framework. " + AppFramework.describe(frameworks)
+					+ ". ITDroid translates Android string resources and the literals of the Dalvik code: the texts of this"
+					+ " interface stay as the app ships them, and each language shows what the app does by itself.");
 		}
 
 		// Hardcoded strings: one scan of the app's smali plus its XML, shared by hcs.txt, the inventory
@@ -533,6 +558,13 @@ public class ITDroid {
 		}
 		System.out.println("Source language: " + sourceLang);
 		report.put("dfltLang", sourceLang);
+		// The source language is one for every app. An app whose default strings are in another
+		// language would be translated from the wrong one: warn, without the model and without changing it.
+		SourceLanguageCheck.Result sourceCheck = SourceLanguageCheck.of(stringFiles[0], sourceLang);
+		report.put("sourceLanguageCheck", sourceCheck.toJson());
+		if (sourceCheck.mismatch) {
+			System.out.println("WARNING: " + sourceCheck.message());
+		}
 		writeReport();
 
 		LLMTranslator llm = new LLMTranslator(langsDir, inventory);
@@ -568,12 +600,14 @@ public class ITDroid {
 		config.put("maxStates", explorerOptions.maxStates);
 		config.put("maxClickables", explorerOptions.maxClickables);
 		config.put("maxMinutes", explorerOptions.maxMinutes);
+		config.put("setupCommands", (long) explorerOptions.setup.size());
 		config.put("settleSeconds", explorerOptions.settleSeconds);
 		config.put("fillForms", explorerOptions.fillForms);
 		config.put("launchTest", launchTest);
 		config.put("reuseInventory", reuseInventory);
 		config.put("graphDumps", graphDumps);
 		config.put("keepLanguageApks", keepLanguageApks);
+		config.put("rtlRepair", rtlRepair);
 		config.put("minSimilarity", LayoutGraphComparision.getMinSimilarity());
 		config.put("hardcodedTranslate", hardcodedPolicy.key);
 		config.put("emulator", emulatorName);
@@ -676,6 +710,7 @@ public class ITDroid {
 			if (lang.equals(sourceLang)) {
 				continue;
 			}
+			requireDevice(serial, lang);
 			processLanguage(lang, true, sourceLang, stringFiles[0], llm, inventory, inventoryFile, patcher, extraPath, appName,
 					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction);
 		}
@@ -686,6 +721,7 @@ public class ITDroid {
 				System.out.println("Skipping " + lang + ": it is the source language.");
 				continue;
 			}
+			requireDevice(serial, lang);
 			processLanguage(lang, false, sourceLang, stringFiles[0], llm, inventory, inventoryFile, patcher, extraPath, appName,
 					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction);
 		}
@@ -710,10 +746,30 @@ public class ITDroid {
 		i18nApk.put("languages", i18nLanguages);
 		String allLanguagesApk = null;
 		metrics.begin("build:all");
+		// rtl.repair: the APK that is delivered carries the repair, so it mirrors in every right-to-left
+		// language. If the app does not build with it, it is built without and the report says so.
+		RtlRepair finalRepair = null;
+		if (rtlRepair) {
+			try {
+				finalRepair = RtlRepair.apply(decodedFolderPath, appMinSdk);
+			} catch (Exception e) {
+				System.out.println("WARNING: the RTL repair could not be applied to the internationalized APK: " + e.getMessage());
+			}
+		}
 		try {
 			allLanguagesApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+			if ((allLanguagesApk == null || allLanguagesApk.isEmpty()) && finalRepair != null && finalRepair.changedSomething()) {
+				System.out.println("WARNING: the app does not build with the RTL repair; building the internationalized APK without it.");
+				finalRepair.revert();
+				finalRepair = null;
+				i18nApk.put("rtlRepairError", "the app does not build with the repair: built without it");
+				allLanguagesApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+			}
 		} catch (Exception e) {
 			System.out.println("WARNING: building the internationalized APK failed: " + e.getMessage());
+		}
+		if (finalRepair != null) {
+			i18nApk.put("rtlRepair", finalRepair.toJson());
 		}
 		metrics.end("build:all");
 		if (allLanguagesApk == null || allLanguagesApk.isEmpty()) {
@@ -743,6 +799,90 @@ public class ITDroid {
 		metrics.end("close");
 	}
 
+	/** Seconds a device that stopped answering is waited for before the run gives up on it. */
+	static final int DEVICE_WAIT_SECONDS = 120;
+
+	/**
+	 * A device that stops answering in the middle of a run (an emulator that hangs) makes every
+	 * language after it fail the same way, each with an error that reads as if the language were
+	 * the problem. Before each language the device is asked whether it is there; if it does not come
+	 * back, the run stops and says so. What was evaluated until then stays in the report.
+	 */
+	private static void requireDevice(String serial, String nextLanguage) throws ITDroidException {
+		if (AdbExplorer.deviceAnswers(serial)) {
+			return;
+		}
+		System.out.println("WARNING: the device " + serial + " does not answer; waiting up to " + DEVICE_WAIT_SECONDS + " s for it");
+		if (!AdbExplorer.waitForDevice(serial, DEVICE_WAIT_SECONDS)) {
+			throw new ITDroidException("the device " + serial + " stopped answering before the '" + nextLanguage
+					+ "' version could be evaluated (waited " + DEVICE_WAIT_SECONDS + " s). The languages evaluated until then are in the"
+					+ " report; this one and the ones after it were not evaluated.");
+		}
+	}
+
+	/**
+	 * rtl.repair, the build: applies the repair of the layouts to the decoded app as it is now (with
+	 * the translation and the patches of this language), builds it, copies the APK to
+	 * {@code <package>-<lang>-rtl-aligned-debugSigned.apk} and puts the decoded app back. What was
+	 * done goes to {@code info}; null when there was nothing to repair or the repaired app does not build.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Path buildRtlRepaired(String lang, String extraPath, String appName, JSONObject info) {
+		RtlRepair repair = null;
+		try {
+			repair = RtlRepair.apply(decodedApp, appMinSdk);
+			info.put("applied", repair.toJson());
+			if (!repair.changedSomething()) {
+				info.put("note", "nothing to repair: the app declares supportsRtl and its layouts name no side");
+				System.out.println("RTL repair for " + lang + ": nothing to repair");
+				return null;
+			}
+			System.out.println("RTL repair for " + lang + ": " + repair.toJson().toJSONString() + "; building the repaired app");
+			String built = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+			if (built == null || built.isEmpty()) {
+				info.put("error", "apktool could not rebuild the app with the repair");
+				return null;
+			}
+			Path apk = Paths.get(outputPath, appName + "-" + lang + "-rtl-aligned-debugSigned.apk").toAbsolutePath();
+			Files.copy(Paths.get(built), apk, StandardCopyOption.REPLACE_EXISTING);
+			info.put("apk", apk.getFileName().toString());
+			return apk;
+		} catch (Exception e) {
+			info.put("error", "the repair failed: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+			return null;
+		} finally {
+			if (repair != null) {
+				try {
+					repair.revert();
+				} catch (IOException e) {
+					System.out.println("WARNING: could not undo the RTL repair in the decoded app: " + e.getMessage());
+				}
+			}
+		}
+	}
+
+	/**
+	 * rtl.repair, the evaluation: replays the recorded path on the repaired build and compares it
+	 * with the source like the build without the repair, into {@code info}: the same fields a
+	 * language has (amIPFs, ipfSummary, ipfs, replay...), under {@code rtlResults/<lang>}.
+	 */
+	@SuppressWarnings("unchecked")
+	private static void evaluateRtlRepaired(String lang, Path apk, JSONObject info, String appName, String scriptPath,
+			String deftLanguage, LayoutGraph defltGraph, String languageName) {
+		try {
+			String folder = ExplorationHelper.replayInto("rtlResults", lang, outputPath, apk.toString(), appName, scriptPath, explorerOptions);
+			info.put("resultsFolder", "rtlResults");
+			info.put("replay", readJson(Paths.get(folder, AdbExplorer.REPLAY_REPORT_FILE)));
+			LayoutGraph repaired = new LayoutGraph(lang, folder, graphDumps);
+			info.put("amStates", repaired.getStates().size());
+			info.put("amTrans", repaired.getTransitions().size());
+			new LayoutGraphComparision(deftLanguage, defltGraph, languageName + " (RTL repaired)", lang, repaired, folder, outputPath, info);
+		} catch (Exception e) {
+			info.put("error", "the repaired build could not be evaluated: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+			System.out.println("WARNING: the " + lang + " build with the RTL repair could not be evaluated: " + e.getMessage());
+		}
+	}
+
 	/**
 	 * One target language end to end: translate (while the app is off the device), rebuild, install,
 	 * replay the recorded path, uninstall, compare. Failures are recorded for this language only.
@@ -761,6 +901,9 @@ public class ITDroid {
 		int patched = 0;
 		RunMetrics metrics = RunMetrics.get();
 		Path apkForLang = Paths.get(outputPath, appName + "-" + lang + "-aligned-debugSigned.apk").toAbsolutePath();
+		// rtl.repair: the build of a right-to-left language with its layouts repaired, and what came of it
+		Path repairedApk = null;
+		JSONObject repairInfo = null;
 		try {
 			String unsupported = llm.unsupportedLanguage(lang);
 			if (unsupported != null) {
@@ -804,6 +947,19 @@ public class ITDroid {
 			String built;
 			try {
 				built = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+				if (built != null && !built.isEmpty()) {
+					Files.copy(Paths.get(built), apkForLang, StandardCopyOption.REPLACE_EXISTING);
+					if (rtlRepair && Helper.languageIsRTL(lang)) {
+						// The same build once more with its layouts repaired, while the tree still has
+						// the translation and the patches of this language: the two builds differ in
+						// the repair and in nothing else.
+						metrics.end("build:" + lang);
+						metrics.begin("rtlBuild:" + lang);
+						repairInfo = new JSONObject();
+						repairedApk = buildRtlRepaired(lang, extraPath, appName, repairInfo);
+						metrics.end("rtlBuild:" + lang);
+					}
+				}
 			} finally {
 				if (patched > 0) {
 					patcher.restoreOriginal();
@@ -812,7 +968,6 @@ public class ITDroid {
 			if (built == null || built.isEmpty()) {
 				throw new ExplorationException("apktool could not rebuild the " + lang + " version of the app");
 			}
-			Files.copy(Paths.get(built), apkForLang, StandardCopyOption.REPLACE_EXISTING);
 
 			metrics.end("build:" + lang);
 			metrics.begin("replay:" + lang);
@@ -879,6 +1034,20 @@ public class ITDroid {
 			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
 					String.valueOf(langJson.get("lang")), lang, langGraph, resultFolder, outputPath, langJson);
 			lgcomparisions.put(lang, lgc);
+
+			// 6. rtl.repair: the same path on the repaired build, compared with the source like the other.
+			if (repairInfo != null) {
+				langJson.put("rtlRepair", repairInfo);
+				if (repairedApk != null && patchProblem != null) {
+					repairInfo.put("error", "not evaluated: the build of this language had to be made again without its hardcoded strings");
+				} else if (repairedApk != null) {
+					metrics.end("compare:" + lang);
+					metrics.begin("rtlReplay:" + lang);
+					evaluateRtlRepaired(lang, repairedApk, repairInfo, appName, scriptPath, deftLanguage, defltGraph,
+							String.valueOf(langJson.get("lang")));
+					metrics.end("rtlReplay:" + lang);
+				}
+			}
 		} catch (ExplorationException e) {
 			langJson.put("error", e.getMessage());
 			System.out.println("This translated version of the app is not suitable for reproducing the steps recorded over default app version. It is possible that your automated tests might not work over this language version");
@@ -889,11 +1058,17 @@ public class ITDroid {
 		for (String phase : new String[] {"translate:", "build:", "replay:", "compare:"}) {
 			metrics.end(phase + lang);   // a phase cut short by an error still gets its time
 		}
+		if (repairInfo != null && !langJson.containsKey("rtlRepair")) {
+			langJson.put("rtlRepair", repairInfo);   // the language failed before the repaired build was evaluated
+		}
 		if (!keepLanguageApks) {
 			// It was only needed to be installed and replayed. The internationalized APK built at the
 			// end has the resources of every language; what only this file had is the hardcoded
 			// strings patched into its code, which hardcoded_<lang>.csv lists.
 			try {
+				if (repairedApk != null) {
+					Files.deleteIfExists(repairedApk);
+				}
 				if (Files.deleteIfExists(apkForLang)) {
 					langJson.put("apkKept", false);
 				}

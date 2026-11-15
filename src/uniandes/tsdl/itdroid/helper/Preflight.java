@@ -107,6 +107,10 @@ public class Preflight {
             activities++;
         }
         o.put("activities", activities);   // what the exploration is measured against
+        // an interface built with a cross-platform framework keeps its texts where ITDroid does not translate
+        org.json.simple.JSONArray frameworks = new org.json.simple.JSONArray();
+        frameworks.addAll(AppFramework.detect(decodedPath));
+        o.put("frameworks", frameworks);
         Matcher pkg = Pattern.compile("<manifest[^>]*\\spackage=\"([^\"]+)\"").matcher(manifestText);
         o.put("package", pkg.find() ? pkg.group(1) : "");
 
