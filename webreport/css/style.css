@@ -161,3 +161,12 @@ pre.small {
 .badge-lang {
   font-size: 0.75rem;
 }
+/* a graphic of the app (an arrow, an icon, a border) that a translated text is drawn over */
+.shot .box.graphic {
+  border: 3px solid #ffc107;
+  background: rgba(255, 193, 7, 0.3);
+}
+.legend.graphic {
+  border: 3px solid #ffc107;
+  background: rgba(255, 193, 7, 0.3);
+}

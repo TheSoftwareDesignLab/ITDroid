@@ -41,6 +41,13 @@ class RunConfigTest {
         assertEquals(0, cfg.getMaxMinutes());
         assertEquals("", cfg.getSetupFile());
         assertEquals(false, cfg.isRtlRepair());
+        assertTrue(cfg.isTextOverGraphic());
+    }
+
+    @Test
+    void theLookAtThePixelsIsOneLine() throws Exception {
+        assertEquals(false, config("comparison.textOverGraphic=false").isTextOverGraphic());
+        assertTrue(config("comparison.textOverGraphic = true").isTextOverGraphic());
     }
 
     @Test

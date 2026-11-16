@@ -29,6 +29,12 @@ public class Preflight {
     /** Per-app locales ({@code cmd locale set-app-locales}) exist since Android 13. */
     public static final int MIN_DEVICE_SDK = 33;
 
+    /**
+     * Apps built for an older Android (targetSdk below 23, Android 5.1 or older) open behind a review
+     * of their permissions after every clean start, and Android 14 refuses to install them.
+     */
+    public static final int MIN_TARGET_SDK = 23;
+
     /** Device checks: Android version and supported ABIs. */
     @SuppressWarnings("unchecked")
     public static JSONObject checkDevice(String serial) throws Exception {
@@ -137,6 +143,14 @@ public class Preflight {
         if (!Boolean.TRUE.equals(app.get("launchable"))) {
             throw new ITDroidException("PREFLIGHT: the manifest declares no launchable activity (MAIN + LAUNCHER); "
                     + "the app cannot be started for exploration.");
+        }
+        // an app that does not say its targetSdk targets its minSdk
+        long targetSdk = app.get("targetSdk") instanceof Number ? ((Number) app.get("targetSdk")).longValue() : -1;
+        long target = targetSdk > 0 ? targetSdk : minSdk;
+        if (target > 0 && target < MIN_TARGET_SDK) {
+            throw new ITDroidException("PREFLIGHT: the app was built for Android 5.1 or older (targetSdk " + target + "). On Android 13 "
+                    + "it opens behind a review of its permissions and a notice that it was made for an older version of Android, "
+                    + "which ITDroid does not answer, and Android 14 and later do not install it: it cannot be evaluated.");
         }
         System.out.println("PREFLIGHT: app minSdk " + minSdk + ", targetSdk " + app.get("targetSdk") + ", launchable activity found, "
                 + (Boolean.TRUE.equals(app.get("hasStrings")) ? "strings.xml present"

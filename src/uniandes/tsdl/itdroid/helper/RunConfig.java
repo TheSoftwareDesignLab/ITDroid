@@ -245,6 +245,15 @@ public class RunConfig {
         return value;
     }
 
+    /**
+     * Also look at the screenshots for translated text drawn over a graphic of the app that is not an
+     * element of the dump, such as the arrow of a drop-down list (key comparison.textOverGraphic,
+     * default true).
+     */
+    public boolean isTextOverGraphic() {
+        return boolOptional("comparison.textOverGraphic", true);
+    }
+
     private int intOptional(String key, int defaultValue) {
         String raw = optional(key, "");
         if (raw.isEmpty()) {

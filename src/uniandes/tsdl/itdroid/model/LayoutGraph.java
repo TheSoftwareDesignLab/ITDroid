@@ -28,6 +28,8 @@ public class LayoutGraph {
 	public static String TRANSITIONS = "transitions";
 
 	private String scriptPath;
+	/** The folder of result.json; the screenshots of the states are relative to it. */
+	private String folder;
 	private ArrayList<State> states;
 	private ArrayList<Transition> transitions;
 	private String language;
@@ -46,6 +48,7 @@ public class LayoutGraph {
 	public LayoutGraph(String language, String resultFolderPath, boolean writeDumps) {
 
 		scriptPath = resultFolderPath+File.separator+"result.json";
+		folder = resultFolderPath;
 		this.language = language;
 		states = new ArrayList<State>();
 		transitions = new ArrayList<Transition>();
@@ -216,6 +219,11 @@ public class LayoutGraph {
 	/** The state at list position i (states are ordered by id). */
 	public State getState(int i) {
 		return states.get(i);
+	}
+
+	/** The folder of result.json: where the screenshots named by the states are, relative to it. */
+	public String getFolder() {
+		return folder;
 	}
 
 	public ArrayList<Transition> getTransitions() {

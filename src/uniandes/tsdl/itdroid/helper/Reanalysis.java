@@ -19,6 +19,7 @@ import org.json.simple.parser.JSONParser;
 
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
+import uniandes.tsdl.itdroid.model.ScreenTexts;
 
 /**
  * {@code java -jar ITDroid.jar --reanalyze <folder> [--out <folder>] [--min-similarity <0..1>]}: recomputes the layout
@@ -123,6 +124,40 @@ public class Reanalysis {
         return found;
     }
 
+    /**
+     * An APK the evaluation kept: the source-language build or the internationalized one, which carry
+     * the code and the files of the original. Null when none was kept.
+     */
+    static Path storedApk(Path evaluation) {
+        try (Stream<Path> files = Files.list(evaluation)) {
+            return files.filter(p -> p.getFileName().toString().endsWith("-aligned-debugSigned.apk")).sorted().findFirst().orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** The texts of the APK, from the evaluation's strings_inventory.json; null when it has none. */
+    static List<String> apkTexts(Path evaluation) {
+        Path file = evaluation.resolve("strings_inventory.json");
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        try {
+            JSONObject inventory = (JSONObject) new JSONParser().parse(Files.readString(file, StandardCharsets.UTF_8));
+            List<String> texts = new ArrayList<>();
+            if (inventory.get("entries") instanceof org.json.simple.JSONArray) {
+                for (Object o : (org.json.simple.JSONArray) inventory.get("entries")) {
+                    if (o instanceof JSONObject && ((JSONObject) o).get("text") instanceof String) {
+                        texts.add((String) ((JSONObject) o).get("text"));
+                    }
+                }
+            }
+            return texts;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Row> reanalyzeOne(Path evaluation, Path evalOut) throws Exception {
         List<Row> rows = new ArrayList<>();
@@ -141,6 +176,19 @@ public class Reanalysis {
             return rows;
         }
         JSONObject langs = (JSONObject) langsObj;
+        List<String> texts = apkTexts(evaluation);
+        String files = "";
+        Path apk = storedApk(evaluation);
+        if (texts != null && apk != null) {
+            try {
+                ApkContent content = ApkContent.read(apk.toString());
+                texts.addAll(content.codeStrings);
+                files = content.files;
+            } catch (IOException e) {
+                // only the inventory is known: the texts it lacks are counted as not in the APK
+            }
+        }
+        ScreenTexts.setApkTexts(texts, files);
         Files.createDirectories(evalOut);
         Path ipfsCsv = evalOut.resolve("ipfs.csv");
         Files.writeString(ipfsCsv, "language;state;nodePos;ipfScore;langNodePos;kind" + System.lineSeparator(), StandardCharsets.UTF_8);
@@ -251,13 +299,13 @@ public class Reanalysis {
 
     /** The kinds of change of the comparison, in the order of the columns of summary.csv. */
     private static final String[] TYPES = {"positionLost", "positionAdded", "alignmentLost", "alignmentAdded", "overlapAdded",
-            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded"};
+            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded", "textOverGraphic"};
 
     private static void writeSummaryCsv(List<Row> rows, Path file) throws IOException {
         try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             w.write("evaluation;language;reportedIPFs;recomputedIPFs;same;reportedPaired;recomputedPaired;note"
-                    + ";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;" + String.join(";", TYPES)
-                    + ";siblingPairsChecked;siblingPairsNotMirrored;sourceTexts;unchangedTexts;sameTextAsSource");
+                    + ";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;textOverGraphicOnly;" + String.join(";", TYPES)
+                    + ";siblingPairsChecked;siblingPairsNotMirrored;sourceTexts;unchangedTexts;sameTextAsSource;unchangedNotInApk");
             w.newLine();
             for (Row r : rows) {
                 StringBuilder line = new StringBuilder();
@@ -266,7 +314,7 @@ public class Reanalysis {
                         .append(';').append(cell(r.reportedPaired)).append(';').append(cell(r.recomputedPaired)).append(';')
                         .append(r.note.replace(';', ',').replace('\n', ' '));
                 // the breakdown of the recomputed comparison (empty for a row that could not be recomputed)
-                for (String key : new String[] {"nodesCompared", "nodesChanged", "nodesAffected", "componentsLost", "componentsAdded"}) {
+                for (String key : new String[] {"nodesCompared", "nodesChanged", "nodesAffected", "componentsLost", "componentsAdded", "textOverGraphic"}) {
                     line.append(';').append(r.summary == null ? "" : String.valueOf(r.summary.get(key)));
                 }
                 Object byType = r.summary == null ? null : r.summary.get("byType");
@@ -278,7 +326,7 @@ public class Reanalysis {
                     line.append(';').append(v == null ? "" : String.valueOf(v));
                 }
                 // did the language reach the screen: texts of the source screens, and how many are still there
-                for (String key : new String[] {"sourceTexts", "unchanged", "sameAsSource"}) {
+                for (String key : new String[] {"sourceTexts", "unchanged", "sameAsSource", "unchangedNotInApk"}) {
                     Object v = r.screenText == null ? null : r.screenText.get(key);
                     line.append(';').append(v == null ? "" : String.valueOf(v));
                 }

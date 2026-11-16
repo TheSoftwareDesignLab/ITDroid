@@ -441,6 +441,19 @@
     return t.sameAsSource ? el('span', { class: 'text-warning font-weight-bold', title: SAME_TEXT_NOTE }, text) : text;
   }
 
+  /**
+   * Texts that stayed the same and are not in the APK: they came from the network, the device or the
+   * app's data (an ad, a list, a date). ITDroid only translates what the APK has.
+   */
+  function notInApkNote(t) {
+    const quoted = (t.notInApkExamples || []).map(x => '"' + x + '"');
+    return el('div', { class: 'alert alert-info py-2 small not-in-apk' }, el('strong', null, 'Not in the APK. '),
+      t.unchangedNotInApk + ' of the ' + t.unchanged + " texts that stayed the same are not in the app's resources, code or files: they come from the network " +
+      "or the device, or the app puts them together while it runs (an ad, the name of another app, a date, a number and its unit), and ITDroid only translates what the APK has." +
+      (quoted.length ? ' For example: ' : ''), quoted.length ? el('span', { class: 'node-text' }, quoted.join(', ')) : null,
+      quoted.length ? '.' : null);
+  }
+
   // One breakdown of the hardcoded strings, shared by the overview and the hardcoded tab. Reports made
   // before the breakdown existed only have the totals.
   function hardcodedBreakdown(inv) {
@@ -468,7 +481,8 @@
 
   /** The kinds of change of the comparison (ipfs[].types), in the order they are shown, and what happened to the element itself (ipfs[].geometry). */
   const IPF_TYPES = { positionLost: 'position lost', positionAdded: 'position gained', alignmentLost: 'alignment lost', alignmentAdded: 'alignment gained',
-    overlapAdded: 'overlap', overlapRemoved: 'overlap gone', missingMirroring: 'not mirrored', componentLost: 'missing element', componentAdded: 'extra element' };
+    overlapAdded: 'overlap', overlapRemoved: 'overlap gone', missingMirroring: 'not mirrored', componentLost: 'missing element', componentAdded: 'extra element',
+    textOverGraphic: 'text over a graphic' };
   const IPF_TYPE_HELP = {
     positionLost: 'The element is no longer left of, right of, above, below or inside another one, as it was in the source.',
     positionAdded: 'The element is now left of, right of, above, below or inside another one, and it was not in the source.',
@@ -478,7 +492,8 @@
     overlapRemoved: 'The element stepped on another one in the source and no longer does.',
     missingMirroring: 'Right-to-left language: the element and a sibling next to it kept their sides instead of swapping them.',
     componentLost: 'The source screen has the element and the translated screen does not.',
-    componentAdded: 'The translated screen has the element and the source screen does not.' };
+    componentAdded: 'The translated screen has the element and the source screen does not.',
+    textOverGraphic: 'The text of the element is drawn over a graphic of the app that is not an element of its own (the arrow of a drop-down list, an icon, a border), which the source text did not touch. Every box is where it was, so only the pixels of the two screenshots show it.' };
   const IPF_GEOMETRY = { same: 'it stayed in place', mirrored: 'it was mirrored', moved: 'it moved', resized: 'it changed size', 'moved+resized': 'it moved and changed size' };
 
   const hasType = (ipf, type) => Array.isArray(ipf.types) && ipf.types.includes(type);
@@ -517,6 +532,7 @@
           ? el('div', { class: 'alert alert-warning py-2' }, el('strong', null, 'Same text as the source. '), counts + '. ' +
               'The language did not reach these screens, or they are mostly data: finding nothing here does not mean a translation fits.')
           : el('p', { class: 'small text-muted mb-2' }, counts + ' (' + pct(t.unchanged, t.sourceTexts) + ').'));
+        if (isNum(t.unchangedNotInApk) && t.unchangedNotInApk > 0) body.appendChild(notInApkNote(t));
       }
       if (l.hardcodedFallback) body.appendChild(el('div', { class: 'alert alert-warning py-2' }, l.hardcodedFallback + (isNum(l.revertedHardcoded) ? ' (' + l.revertedHardcoded + ' patched places reverted)' : '')));
       if (Array.isArray(l.crashes) && l.crashes.length) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, 'The app crashed during the replay: ' + l.crashes.join(' | ')));
@@ -545,19 +561,18 @@
   const isRtl = code => RTL_LANGUAGES.includes(String(code || '').toLowerCase().split(/[-_]/)[0]);
 
   /**
-   * The screens of one language. By default the ones with findings, straight from the report. On
-   * request every screen of the source exploration, read from the stored explorations: the ones
-   * compared without findings, the ones reached but not compared (with the reason) and the ones
-   * the replay never reached. Each opens with the two screenshots and their visual difference.
+   * The screens of one language. By default every screen of the source exploration, read from the
+   * stored explorations: the ones with findings, the ones compared without findings, the ones
+   * reached but not compared (with the reason) and the ones the replay never reached. On request
+   * only the ones with findings, straight from the report. Each opens with the two screenshots and
+   * their visual difference.
    */
   function screensView(lang, l, dflt, sourceScreens) {
     const ipfs = l.ipfs || [];
     // a right-to-left language against a left-to-right source, or the other way round
     const mirrorExpected = l.ipfSummary ? !!l.ipfSummary.mirrorExpected : isRtl(lang) !== isRtl(dflt);
-    const wantsOther = state.open && state.open.lang === lang && state.open.stateId != null
-      && !ipfs.some(i => String(i.stateID) === String(state.open.stateId));
     let type = null;
-    let all = !!wantsOther;   // a link to a screen without findings needs the whole list
+    let all = true;   // every screen; "with findings" narrows the list to the report's findings
     const list = el('div');
     const onlyFindings = el('button', { class: 'btn btn-sm btn-outline-secondary mr-1', type: 'button' }, 'with findings ', el('span', { class: 'badge badge-light' }, String(groupIpfs(ipfs).length)));
     const everyScreen = el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', title: 'Also the screens without findings, the ones not compared and the ones the replay did not reach' },
@@ -643,7 +658,8 @@
       el('div', { class: 'col-6 col-md' }, stat('Moved or resized', num(s.nodesChanged), 'the element itself' + share(s.nodesChanged))),
       el('div', { class: 'col-6 col-md' }, stat('Neighbour changed', num(s.nodesAffected), 'the element stayed as it was' + share(s.nodesAffected))),
       el('div', { class: 'col-6 col-md' }, stat('Missing', num(s.componentsLost), 'only in the source screen')),
-      el('div', { class: 'col-6 col-md' }, stat('Extra', num(s.componentsAdded), 'only in the translated screen'))));
+      el('div', { class: 'col-6 col-md' }, stat('Extra', num(s.componentsAdded), 'only in the translated screen')),
+      isNum(s.textOverGraphic) ? el('div', { class: 'col-6 col-md' }, stat('Text over a graphic', num(s.textOverGraphic), 'found in the pixels of the screenshots')) : null));
     const buttons = el('div', { class: 'd-flex flex-wrap align-items-center mb-2' }, el('span', { class: 'small text-muted mr-2' }, 'Findings by kind of change:'));
     const all = [];
     const press = (button, type) => {
@@ -661,7 +677,7 @@
     };
     add('all', null, isNum(l.amIPFs) ? l.amIPFs : 0).classList.add('active');
     for (const type of Object.keys(IPF_TYPES)) {
-      if (by[type] > 0) add(IPF_TYPES[type], type, by[type], type === 'missingMirroring');
+      if (by[type] > 0) add(IPF_TYPES[type], type, by[type], type === 'missingMirroring' || type === 'textOverGraphic');
     }
     box.appendChild(buttons);
     box.appendChild(el('p', { class: 'small text-muted mb-1' }, 'A finding can carry several kinds of change, so the kinds add up to more than the findings.'));
@@ -802,9 +818,10 @@
    * A screenshot with boxes over it. ipfIndexes: the elements with a finding; relIndexes: the
    * elements they relate to; mirrorIndexes: elements that were expected to be mirrored and were
    * not, for which the place they would have in the mirrored screen is drawn too; onlyIndexes:
-   * elements the other screen does not have.
+   * elements the other screen does not have; graphics: boxes (x1, y1, x2, y2) of graphics of the app
+   * that a translated text is drawn over.
    */
-  function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes) {
+  function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes, graphics) {
     if (!st) return el('div', { class: 'shot' }, el('div', { class: 'shot-caption' }, caption + ': screen not captured'));
     const wrap = el('div', { class: 'shot' });
     // The boxes are placed as shares of the screen, over the image alone: the caption is outside.
@@ -835,6 +852,7 @@
     }
     for (const i of ipfIndexes) draw(i, 'ipf');
     for (const i of (onlyIndexes || [])) draw(i, 'only');
+    for (const g of (graphics || [])) box(() => g, 'graphic', 'A graphic of the app the translated text is drawn over');
     const [w, h] = st.screen || [1080, 2400];
     place(w, h);
     // The screenshot is the whole screen, so once it is loaded its own size is the one that counts.
@@ -941,6 +959,8 @@
     // what only one of the two screens has: outlined in that screen, in its own colour
     const srcOnly = group.ipfs.filter(isLost).map(i => Number(i.nodeID)).filter(n => n >= 0);
     const tgtOnly = group.ipfs.filter(isAdded).map(tgtPos).filter(n => n >= 0);
+    // graphics of the app that a translated text is drawn over (in the translated screen)
+    const graphics = [].concat(...group.ipfs.map(i => Array.isArray(i.graphics) ? i.graphics : []));
     const srcRel = [], tgtRel = [];
     for (const i of group.ipfs) for (const r of (i.relations || [])) {
       if (!srcIpf.includes(Number(r.relNode))) srcRel.push(Number(r.relNode));
@@ -949,7 +969,7 @@
     const notMirrored = mirrorExpected ? group.ipfs.filter(i => hasType(i, 'missingMirroring')).map(tgtPos).filter(n => n >= 0) : [];
     const shots = el('div', { class: 'shot-pair mb-2' },
       shotView(srcState, 'Source (' + dflt + ')', srcIpf, srcRel, null, srcOnly),
-      shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel, null, tgtOnly));
+      shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel, null, tgtOnly, graphics));
     // rtl.repair: the same screen in the build with the layouts repaired, with what still did not mirror
     const repair = languages().lr[lang] ? languages().lr[lang].rtlRepair : null;
     if (repair && repair.resultsFolder) {
@@ -965,6 +985,7 @@
     holder.appendChild(shots);
     if (note) holder.appendChild(el('p', { class: 'small mb-1' }, note));
     const hasOnly = srcOnly.length + tgtOnly.length > 0;
+    const hasGraphics = graphics.length > 0;
     holder.appendChild(el('p', { class: 'text-muted small mb-1' },
       group.ipfs.length ? el('span', { class: 'legend ipf' }) : null,
       group.ipfs.length ? 'the elements with a finding, each outlined where it is in that screen. ' : null,
@@ -972,6 +993,8 @@
       srcRel.length + tgtRel.length ? 'the elements they relate to. ' : null,
       hasOnly ? el('span', { class: 'legend only' }) : null,
       hasOnly ? 'an element only that screen has: missing in the translated screen when it is outlined in the source, extra when it is outlined in the translated one. ' : null,
+      hasGraphics ? el('span', { class: 'legend graphic' }) : null,
+      hasGraphics ? 'a graphic of the app (an arrow, an icon, a border) that the translated text is drawn over, found from the pixels. ' : null,
       notMirrored.length ? el('span', { class: 'legend mirror' }) : null,
       notMirrored.length ? 'in the estimated position image, where each element that was not mirrored would be if the screen were mirrored: as far from the right edge as it is now from the left one. It is an estimate, the layout decides the real place. ' : null,
       srcState && tgtState ? el('span', { class: 'legend diff' }) : null,
@@ -987,6 +1010,7 @@
       let what;
       if (lost) what = 'The translated screen does not have it' + inside + '.';
       else if (added) what = 'The source screen does not have it' + inside + '.';
+      else if (i.kind === 'textOverGraphic') what = 'Its box is where it was, give or take a few pixels, and its text is drawn over ' + plural((i.graphics || []).length, 'graphic') + ' of the app (in yellow) that the source text did not touch.';
       else {
         what = el('div', null, ...(i.relations || []).map(r => {
           const other = srcState ? srcState.nodes[Number(r.relNode)] : null;

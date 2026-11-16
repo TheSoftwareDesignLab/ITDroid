@@ -135,4 +135,73 @@ class ScreenTextsTest {
         assertEquals(0L, translatedText.get("unchanged"));
         assertEquals(5L, translatedText.get("sourceTexts"));
     }
+
+    // ------------------------------------------------------------------ texts the APK does not have
+
+    @Test
+    void aTextComesFromTheApkAsItIsWithItsPlaceholdersFilledOrInCapitals() {
+        ScreenTexts.ApkTexts apk = new ScreenTexts.ApkTexts(java.util.List.of("Settings", "%d tasks", "\"Don\\'t ask again\"",
+                "<b>Bold</b> move", "Wallpaper Priority: %1$s", "Presets", "Not now"));
+
+        assertTrue(apk.has("Settings"));
+        assertTrue(apk.has("3 tasks"), "a plural with its number");
+        assertTrue(apk.has("Don't ask again"), "the quotes and escapes of a resource");
+        assertTrue(apk.has("Bold move"), "its markup");
+        assertTrue(apk.has("Wallpaper Priority: 90"));
+        assertTrue(apk.has("NOT NOW"), "a button that shows its text in capitals");
+        assertTrue(apk.has("Presets (PREVIEW)"), "made mostly of a text of the APK");
+        assertFalse(apk.has("Try my other apps:"), "an ad that comes from the network");
+        assertFalse(apk.has("Sun, Nov 15"), "a date");
+        assertFalse(apk.has("Settings of my numbers game, the full list"), "a text of the APK that is a small part of it");
+    }
+
+    @Test
+    void aFormatWithNoWordsOfItsOwnDoesNotMatchEveryText() {
+        ScreenTexts.ApkTexts apk = new ScreenTexts.ApkTexts(java.util.List.of("%s", "%1$s: %2$s", "%d / %d", "Settings"));
+
+        assertFalse(apk.has("Try my other apps:"));
+        assertFalse(apk.has("A little ad for my numbers game: DIGOLUX"));
+        assertTrue(apk.has("Settings"));
+    }
+
+    @Test
+    void aTextOfSeveralLinesIsInTheApkWhenEachLineIs() {
+        ScreenTexts.ApkTexts apk = new ScreenTexts.ApkTexts(java.util.List.of("Pick a place. Put your phone away.", "It rings when you arrive."));
+
+        assertTrue(apk.has("Pick a place. Put your phone away.\nIt rings when you arrive."));
+        assertFalse(apk.has("Pick a place. Put your phone away.\nAn ad that arrived from the network for this screen today."));
+    }
+
+    @Test
+    void aTextInTheFilesOfTheApkIsInTheApk() {
+        ScreenTexts.ApkTexts apk = new ScreenTexts.ApkTexts(java.util.List.of("Settings"), "const t={songs:\"songs\",openmenu:\"open menu\"};\n");
+
+        assertTrue(apk.has("Open menu"), "a web interface keeps its texts in the assets");
+        assertFalse(apk.has("Try my other apps:"));
+    }
+
+    @Test
+    void theReportNamesTheUnchangedTextsTheApkDoesNotHave() throws Exception {
+        ScreenTexts.setApkTexts(java.util.List.of("Settings", "Save", "Language"));
+        try {
+            ScreenTexts texts = new ScreenTexts();
+            texts.add(state(screen("Settings", "Save", "Language", "Try my other apps:", "Gmail")),
+                    state(screen("Ajustes", "Guardar", "Idioma", "Try my other apps:", "Gmail")));
+
+            JSONObject o = texts.toJson();
+            assertEquals(2L, o.get("unchanged"));
+            assertEquals(2L, o.get("unchangedNotInApk"));
+            assertEquals(java.util.List.of("Try my other apps:", "Gmail"), o.get("notInApkExamples"));
+        } finally {
+            ScreenTexts.setApkTexts(null);
+        }
+    }
+
+    @Test
+    void withoutTheTextsOfTheApkNothingIsSaidAboutThem() throws Exception {
+        ScreenTexts texts = new ScreenTexts();
+        texts.add(state(screen("Settings", "Try my other apps:")), state(screen("Ajustes", "Try my other apps:")));
+
+        assertFalse(texts.toJson().containsKey("unchangedNotInApk"));
+    }
 }

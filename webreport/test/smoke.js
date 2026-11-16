@@ -209,7 +209,11 @@ async function checkEvaluation(base, dir) {
   for (const tab of ['overview', 'languages', 'hardcoded', 'strings', 'performance', 'environment', 'artifacts']) {
     const page = await openPage(base, link(dir, tab));
     const content = text(page.$('#tabContent'));
-    check(at('the ' + tab + ' tab renders'), content.length > 20 && !/Could not (render|read)/.test(content) && !/undefined|NaN|\[object/.test(content), short(content, 140));
+    // the words a failing script leaves behind, looked for outside the app's own texts: a string of an
+    // app can say "undefined" (orWall logs "Just got an undefined action!")
+    let own = content;
+    for (const t of page.$$('#tabContent span.node-text').map(text).filter(Boolean)) own = own.split(t).join(' ');
+    check(at('the ' + tab + ' tab renders'), content.length > 20 && !/Could not (render|read)/.test(content) && !/undefined|NaN|\[object/.test(own), short(content, 140));
     if (tab === 'performance') {
       check(at('the performance tab says it is that of ITDroid, not of the app'), /ITDroid performance/.test(text(page.$('#tabs'))) && (!page.$('#tabContent p.perf-note') || /Nothing here measures how the app itself performs/.test(content)), text(page.$('#tabs')));
     }
@@ -234,7 +238,9 @@ async function checkEvaluation(base, dir) {
       check(at(code + ': "' + text(b) + '" narrows the screens to that many'), findingsIn(screensOf(card)) === expected, String(findingsIn(screensOf(card))));
     }
     if (summary) { summary.querySelectorAll('button')[0].click(); await page.settle(); }
-    const first = screensOf(card)[0];
+    // the list opens on every screen of the source exploration
+    check(at(code + ': the screens open on "every screen"'), buttonOf(card, 'every screen').classList.contains('active') && !buttonOf(card, 'with findings').classList.contains('active'));
+    const first = screensOf(card).find(d => /with a finding/.test(text(d.querySelector('summary'))));
     if (first) {
       await openScreen(page, first);
       const images = first.querySelectorAll('img');

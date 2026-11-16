@@ -1,5 +1,6 @@
 package uniandes.tsdl.itdroid.model;
 
+import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -13,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+
+import javax.imageio.ImageIO;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -48,7 +51,9 @@ public class LayoutGraphComparision {
 		OVERLAP_REMOVED("overlapRemoved"),
 		MISSING_MIRRORING("missingMirroring"),
 		COMPONENT_LOST("componentLost"),
-		COMPONENT_ADDED("componentAdded");
+		COMPONENT_ADDED("componentAdded"),
+		/** The text of the element is drawn over a graphic that is not an element (see {@link TextOverGraphic}). */
+		TEXT_OVER_GRAPHIC("textOverGraphic");
 
 		/** Name used in report.json. */
 		public final String key;
@@ -64,6 +69,22 @@ public class LayoutGraphComparision {
 	public static final String KIND_LOST = "componentLost";
 	/** An element of the translated screen that the source screen does not have. */
 	public static final String KIND_ADDED = "componentAdded";
+	/** An element that is where it was and whose text is now drawn over a graphic of the app. */
+	public static final String KIND_TEXT_OVER_GRAPHIC = "textOverGraphic";
+
+	/**
+	 * Whether the screenshots are looked at for text drawn over a graphic that is not an element
+	 * (default true). Config key {@code comparison.textOverGraphic}.
+	 */
+	private static boolean textOverGraphic = true;
+
+	public static void setTextOverGraphic(boolean on) {
+		textOverGraphic = on;
+	}
+
+	public static boolean isTextOverGraphic() {
+		return textOverGraphic;
+	}
 
 	/**
 	 * A screen reached by replaying the source path is taken for the same screen when at least this
@@ -100,6 +121,8 @@ public class LayoutGraphComparision {
 		String geometry = "";
 		/** Pairs in which this element changed; for a lost or added component, the elements it is made of. */
 		int score;
+		/** Graphics its text is drawn over, in the translated screen: x1, y1, x2, y2 each. */
+		final List<int[]> graphics = new ArrayList<>();
 
 		Finding(int stateId, int sourceNode, int languageNode, String kind) {
 			this.stateId = stateId;
@@ -160,7 +183,11 @@ public class LayoutGraphComparision {
 			if (pairing == null) {
 				pairing = NodePairing.of(source, language, mirrorExpected, screenWidth);
 			}
-			findings.addAll(compareStates(source, language, pairing));
+			List<Finding> found = compareStates(source, language, pairing);
+			if (textOverGraphic) {
+				addTextOverGraphic(found, source, language, pairing);
+			}
+			findings.addAll(found);
 			texts.add(source, language);
 		}
 		// Did this version show other text than the source? When it did not, nothing was translated on
@@ -170,6 +197,11 @@ public class LayoutGraphComparision {
 			System.out.println("WARNING: the "+destLanguage+" version shows the same text as the source on the screens compared ("
 					+texts.unchanged()+" of "+texts.sourceTexts()+" texts): the language did not reach those screens, or they are mostly data."
 					+" Finding nothing there does not mean a translation fits.");
+		}
+		if (!texts.notInApk().isEmpty()) {
+			System.out.println("NOTE: "+texts.notInApk().size()+" of the "+texts.unchanged()+" texts that stayed the same on the "+destLanguage
+					+" screens are not in the APK: they come from the network, the device or the app's data (ads, lists, dates), and ITDroid does not translate them. For example: "
+					+String.join(" | ", new ArrayList<>(texts.notInApk()).subList(0, Math.min(ScreenTexts.EXAMPLES, texts.notInApk().size()))));
 		}
 
 		// Most affected first; then by screen and element, so the same data always gives the same file.
@@ -211,6 +243,17 @@ public class LayoutGraphComparision {
 			JSONArray relations = new JSONArray();
 			relations.addAll(f.relations);
 			o.put("relations", relations);
+			if (!f.graphics.isEmpty()) {
+				JSONArray graphics = new JSONArray();
+				for (int[] g : f.graphics) {
+					JSONArray rect = new JSONArray();
+					for (int v : g) {
+						rect.add((long) v);
+					}
+					graphics.add(rect);
+				}
+				o.put("graphics", graphics);
+			}
 			ipfs.add(o);
 		}
 		dfltLangJSONTrans.put("ipfs", ipfs);
@@ -232,6 +275,7 @@ public class LayoutGraphComparision {
 		long affected = 0;
 		long lost = 0;
 		long added = 0;
+		long overGraphic = 0;
 		Map<Change, Long> byType = new EnumMap<>(Change.class);
 		for (Change c : Change.values()) {
 			byType.put(c, 0L);
@@ -244,6 +288,8 @@ public class LayoutGraphComparision {
 				lost++;
 			} else if (KIND_ADDED.equals(f.kind)) {
 				added++;
+			} else if (KIND_TEXT_OVER_GRAPHIC.equals(f.kind)) {
+				overGraphic++;
 			} else if (f.geometry.startsWith("moved") || f.geometry.equals("resized")) {
 				changed++;
 			} else {
@@ -258,6 +304,9 @@ public class LayoutGraphComparision {
 		o.put("nodesAffected", affected);
 		o.put("componentsLost", lost);
 		o.put("componentsAdded", added);
+		// ...or nothing moved and its text is drawn over a graphic of the app (only that; an element that
+		// also moved is counted above and carries textOverGraphic among its types)
+		o.put("textOverGraphic", overGraphic);
 		JSONObject types = new JSONObject();
 		for (Map.Entry<Change, Long> e : byType.entrySet()) {
 			types.put(e.getKey().key, e.getValue());
@@ -365,6 +414,58 @@ public class LayoutGraphComparision {
 		return out;
 	}
 
+	/**
+	 * Texts of the translated screen drawn over a graphic of the app that is not an element. An
+	 * element that already has a finding gets the type and the graphic; one that has none gets a
+	 * finding of its own. Nothing happens when a screenshot cannot be read.
+	 */
+	private void addTextOverGraphic(List<Finding> found, State source, State language, NodePairing pairing) {
+		BufferedImage sourceShot = screenshot(defltLayoutGraph, source);
+		BufferedImage languageShot = screenshot(destLangLayoutGraph, language);
+		for (TextOverGraphic.Hit hit : TextOverGraphic.find(source, sourceShot, language, languageShot, pairing)) {
+			Finding f = null;
+			for (Finding g : found) {
+				if (g.sourceNode == hit.sourceNode && KIND_RELATIONS.equals(g.kind)) {
+					f = g;
+					break;
+				}
+			}
+			if (f == null) {
+				for (Finding g : found) {
+					if (g.sourceNode == hit.sourceNode && KIND_TEXT_OVER_GRAPHIC.equals(g.kind)) {
+						f = g;
+						break;
+					}
+				}
+			}
+			if (f == null) {
+				f = new Finding(language.getId(), hit.sourceNode, hit.languageNode, KIND_TEXT_OVER_GRAPHIC);
+				f.geometry = geometry(source.getStateNodes().get(hit.sourceNode), language.getStateNodes().get(hit.languageNode));
+				found.add(f);
+			}
+			f.changes.add(Change.TEXT_OVER_GRAPHIC);
+			f.graphics.add(hit.graphic);
+			f.score++;
+		}
+	}
+
+	/** The screenshot of a state, from the folder of its exploration; null when it cannot be read. */
+	private static BufferedImage screenshot(LayoutGraph graph, State state) {
+		String name = state.getScreenShot();
+		if (name == null || name.isEmpty()) {
+			return null;
+		}
+		File file = new File(name.replace('\\', '/'));
+		if (!file.isAbsolute() && graph.getFolder() != null) {
+			file = new File(graph.getFolder(), name.replace('\\', '/'));
+		}
+		try {
+			return file.isFile() ? ImageIO.read(file) : null;
+		} catch (IOException e) {
+			return null;
+		}
+	}
+
 	/** Notes on the finding of one element what changed between it and another one. */
 	@SuppressWarnings("unchecked")
 	private static void record(Map<Integer, Finding> byNode, int stateId, int node, int languageNode, int other, int languageOther,
@@ -411,6 +512,51 @@ public class LayoutGraphComparision {
 			}
 		}
 		return missing;
+	}
+
+	@SuppressWarnings("unchecked")
+	private void notPaired(JSONArray notCompared, int sourceStateId, String why) {
+		System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || state "+sourceStateId
+				+" was reached in "+destLanguage+" but "+why+": not paired");
+		JSONObject skipped = new JSONObject();
+		skipped.put("stateID", sourceStateId);
+		skipped.put("reason", why);
+		notCompared.add(skipped);
+	}
+
+	/**
+	 * Of two source screens that got the same capture, the one it is: more of its elements paired,
+	 * then more of them in the same place (or the mirrored one), then the one captured first.
+	 */
+	private int[] better(int[] a, int[] b, Map<Integer, NodePairing> pairings, List<State> defltStates, List<State> langStates) {
+		NodePairing pa = pairings.get(a[0]), pb = pairings.get(b[0]);
+		if (pa.paired != pb.paired) {
+			return pa.paired > pb.paired ? a : b;
+		}
+		int ka = samePlace(pa, defltStates.get(a[0]), langStates.get(a[1]));
+		int kb = samePlace(pb, defltStates.get(b[0]), langStates.get(b[1]));
+		return kb > ka ? b : a;
+	}
+
+	/** Paired elements whose box is where it was in the source, or at its mirrored place. */
+	private int samePlace(NodePairing pairing, State source, State language) {
+		List<AndroidNode> sn = source.getStateNodes();
+		List<AndroidNode> ln = language.getStateNodes();
+		int same = 0;
+		for (int i = 0; i < sn.size(); i++) {
+			int k = pairing.targetOfSource[i];
+			if (k < 0) {
+				continue;
+			}
+			int[] s1 = sn.get(i).getPoint1(), s2 = sn.get(i).getPoint2(), l1 = ln.get(k).getPoint1(), l2 = ln.get(k).getPoint2();
+			boolean sameY = s1[1] == l1[1] && s2[1] == l2[1];
+			boolean sameX = s1[0] == l1[0] && s2[0] == l2[0];
+			boolean mirroredX = mirrorExpected && l1[0] == screenWidth - s2[0] && l2[0] == screenWidth - s1[0];
+			if (sameY && (sameX || mirroredX)) {
+				same++;
+			}
+		}
+		return same;
 	}
 
 	/** The furthest right any element of the screens of an exploration reaches. */
@@ -497,10 +643,14 @@ public class LayoutGraphComparision {
 			for (int i = 0; i < defltStates.size(); i++) {
 				dfltIndexById.put(defltStates.get(i).getId(), i);
 			}
+			// the screens that can be compared, in the order the replay captured them: {di, li}
+			List<int[]> candidates = new ArrayList<>();
+			Map<Integer, NodePairing> candidatePairings = new HashMap<>();
+			Set<Integer> taken = new HashSet<>();
 			for (int li = 0; li < langStates.size(); li++) {
 				State langState = langStates.get(li);
 				Integer di = dfltIndexById.get(langState.getSourceStateId());
-				if (di == null || statePairing.containsKey(di)) {
+				if (di == null || !taken.add(di)) {
 					continue;
 				}
 				State dfltState = defltStates.get(di);
@@ -513,17 +663,37 @@ public class LayoutGraphComparision {
 						why = "shows a different screen (only "+pairing.paired+" of its "+langState.getStateNodes().size()
 								+" elements match the "+dfltState.getStateNodes().size()+" of the source)";
 					} else {
-						statePairing.put(di, li);
-						nodePairings.put(di, pairing);
+						candidates.add(new int[] { di, li });
+						candidatePairings.put(di, pairing);
 					}
 				}
 				if (why != null) {
-					System.out.println("compareLayoutGraph :: "+defltLanguage+"->"+destLanguage+" || state "+langState.getSourceStateId()
-							+" was reached in "+destLanguage+" but "+why+": not paired");
-					JSONObject skipped = new JSONObject();
-					skipped.put("stateID", langState.getSourceStateId());
-					skipped.put("reason", why);
-					notCompared.add(skipped);
+					notPaired(notCompared, langState.getSourceStateId(), why);
+				}
+			}
+			// One capture standing for two screens of the source: a replay that lost its way can
+			// believe it reached a screen while it is still on another one, and keep the same dump for
+			// both. Comparing it with both would set a screen against one that is not the same (with
+			// elements reported missing and extra that are not). It is compared with the source screen
+			// it matches best; the other screen is left out, and says why.
+			Map<String, int[]> byCapture = new HashMap<>();
+			for (int[] c : candidates) {
+				String capture = langStates.get(c[1]).getRawXML();
+				int[] best = byCapture.get(capture);
+				if (best == null) {
+					byCapture.put(capture, c);
+					continue;
+				}
+				int[] keep = better(best, c, candidatePairings, defltStates, langStates);
+				int[] drop = keep == best ? c : best;
+				byCapture.put(capture, keep);
+				notPaired(notCompared, defltStates.get(drop[0]).getId(), "shows the same capture as screen " + defltStates.get(keep[0]).getId()
+						+ ", which it matches better: the replay did not tell the two apart");
+			}
+			for (int[] c : candidates) {
+				if (byCapture.get(langStates.get(c[1]).getRawXML()) == c) {
+					statePairing.put(c[0], c[1]);
+					nodePairings.put(c[0], candidatePairings.get(c[0]));
 				}
 			}
 		} else {

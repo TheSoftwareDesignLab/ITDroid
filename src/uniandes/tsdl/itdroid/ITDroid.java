@@ -24,6 +24,7 @@ import org.json.simple.parser.JSONParser;
 
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
+import uniandes.tsdl.itdroid.helper.ApkContent;
 import uniandes.tsdl.itdroid.helper.AppCode;
 import uniandes.tsdl.itdroid.helper.AppFramework;
 import uniandes.tsdl.itdroid.helper.CodeLiteralExtractor;
@@ -55,6 +56,7 @@ import uniandes.tsdl.itdroid.helper.XmlLiteralExtractor;
 import uniandes.tsdl.itdroid.helper.XmlLiteralFinder;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
+import uniandes.tsdl.itdroid.model.ScreenTexts;
 import uniandes.tsdl.itdroid.translator.LLMTranslator;
 import uniandes.tsdl.itdroid.translator.Translator;
 
@@ -273,6 +275,7 @@ public class ITDroid {
 			reuseInventory = cfg.isReuseInventory();
 			graphDumps = cfg.isGraphDumps();
 			LayoutGraphComparision.setMinSimilarity(cfg.getMinSimilarity());
+			LayoutGraphComparision.setTextOverGraphic(cfg.isTextOverGraphic());
 			AppCode.setExtraRoots(cfg.getCodePackages());
 			hardcodedPolicy = cfg.getHardcodedPolicy();
 			extractCode = cfg.isExtractCode();
@@ -520,6 +523,21 @@ public class ITDroid {
 			report.put("dfltLang", sourceLang);
 		}
 		System.out.println("String inventory written to " + inventoryFile + ": " + inventory.summary().toJSONString());
+		// the texts the APK has: a text that stays the same on the translated screens and is not one of
+		// them came from the network, the device or the app's data, and the report says so
+		List<String> apkTexts = new ArrayList<>();
+		for (StringInventory.Entry e : inventory.entries()) {
+			apkTexts.add(e.text);
+		}
+		String apkFiles = "";
+		try {
+			ApkContent content = ApkContent.read(originalApkAbs);
+			apkTexts.addAll(content.codeStrings);
+			apkFiles = content.files;
+		} catch (IOException e) {
+			System.out.println("WARNING: the texts of the APK could not be read (" + e.getMessage() + "); only those of the inventory are known");
+		}
+		ScreenTexts.setApkTexts(apkTexts, apkFiles);
 		metrics.end("inventory");
 		writeReport();
 
@@ -609,6 +627,7 @@ public class ITDroid {
 		config.put("keepLanguageApks", keepLanguageApks);
 		config.put("rtlRepair", rtlRepair);
 		config.put("minSimilarity", LayoutGraphComparision.getMinSimilarity());
+		config.put("textOverGraphic", LayoutGraphComparision.isTextOverGraphic());
 		config.put("hardcodedTranslate", hardcodedPolicy.key);
 		config.put("emulator", emulatorName);
 		report.put("environment", RunMetrics.environment(device, llm.settings(), config));
