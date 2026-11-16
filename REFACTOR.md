@@ -388,64 +388,19 @@ Problema: quedaban en el código métodos y campos que nada usa, restos de la he
 - `webreport/js/bootstrap.bundle.js` (230 KB) y `webreport/css/bootstrap.css.map` (492 KB) salen del repositorio: la página solo carga `bootstrap.css`.
 - No cambia ningún comportamiento: pasan las mismas 226 pruebas y las 74 comprobaciones de la página.
 
-# Validación final
+# Primera validación
 
-Quince APK de apps reales se corrieron en el emulador (Android 13, API 33, x86_64) en español, ruso y árabe, con PLaMo Translate y todos los valores por defecto (`hardcoded.translate=ui`, 5 pantallas, 8 toques por pantalla). Tres no se pueden ejecutar en ese emulador y el preflight las rechazó en un segundo, antes de decodificar: fit_book, counted y oxu solo traen código nativo arm64. Las otras 12 se evaluaron en los tres idiomas: 36 evaluaciones de idioma, las 36 con resultado. Cuatro (ambio, salomax, locreminder y superproductivity) se repitieron con el jar que se entrega, porque en la primera pasada el emulador se colgó durante su evaluación o agotaron el límite de tiempo; la tabla da la última corrida de cada app. El jar de las repeticiones es idéntico, archivo por archivo, al que sale de compilar este código.
+Quince APK de apps reales se corrieron en el emulador (Android 13, API 33, x86_64) en español, ruso y árabe, con PLaMo Translate y todos los valores por defecto (`hardcoded.translate=ui`, 5 pantallas, 8 toques por pantalla), con la versión de ese momento: la que describen las secciones anteriores a esta. Tres no se pueden ejecutar en ese emulador y el preflight las rechazó en un segundo, antes de decodificar: fit_book, counted y oxu solo traen código nativo arm64. Las otras 12 se evaluaron en los tres idiomas; cuatro de ellas (ambio, salomax, locreminder y superproductivity) en una segunda pasada, porque en la primera el emulador se colgó durante su evaluación o agotaron el límite de tiempo.
 
-| App | Interfaz | Pantallas | Hallazgos es / ru / ar | Replay es / ru / ar | Texto igual al origen es / ru / ar | Hardcoded (traducidos) | Minutos |
-|---|---|---|---|---|---|---|---|
-| com.jbgsoft.ambio | Android | 4 | 96 / 67 / 16 | 40/40, 40/40, 39/40 | 30 % / 0 % / 0 % | 13 (0) | 36 |
-| com.offlinecurrencyconverter.app | Android | 5 | 54 / 64 / 55 | 30/30, 30/30, 29/30 | 46 % / 46 % / 46 % | 20 (0) | 35 |
-| com.olaf.rereminder | Android | 5 | 133 / 162 / 14 | 14/14, 14/14, 14/14 | 5 % / 2 % / 2 % | 42 (0) | 19 |
-| com.superproductivity.superproductivity | Capacitor (página web) | 5 | 59 / 0 / 69 | 43/43, 43/43, 43/43 | 27 % / 100 % / 100 % | 537 (20) | 57 |
-| com.zaifears.locreminder | Flutter | 5 | 0 / 0 / 29 | 9/18, 16/18, 12/18 | 90 % / 100 % / 90 % | 130 (0) | 34 |
-| de.ph1b.audiobook | Android | 3 | 0 / 2 / 0 | 7/7, 7/7, 6/7 | 0 % / 0 % / 0 % | 4 (0) | 20 |
-| de.salomax.currencies | Android | 5 | 7 / 7 / 62 | 13/30, 13/30, 13/30 | 90 % / 90 % / 93 % | 19 (0) | 101 |
-| dev.fiedri.vibe | Capacitor (página web) | 5 | 134 / 0 / 74 | 12/12, 12/12, 12/12 | 26 % / 100 % / 100 % | 13 (0) | 41 |
-| io.github.kotchwane.bonavortaro | Android | 5 | 4 / 15 / 24 | 45/46, 46/46, 45/46 | 96 % / 70 % / 52 % | 15 (0) | 64 |
-| io.github.pintofi.beanbook.expert | Android | 5 | 149 / 132 / 105 | 14/14, 14/14, 14/14 | 47 % / 47 % / 47 % | 53 (21) | 18 |
-| org.grakovne.lissen | Android | 5 | 21 / 19 / 24 | 19/19, 19/19, 19/19 | 5 % / 5 % / 5 % | 201 (0) | 25 |
-| org.tasks | Android y recursos de Compose Multiplatform | 5 | 0 / 0 / 25 | 8/11, 9/11, 9/11 | 100 % / 100 % / 100 % | 2710 (9) | 19 |
+La tabla de cifras de esa validación ya no está aquí. Al terminar todo lo que sigue, la validación se repitió entera con las mismas apps y una sola versión: esas son las cifras vigentes y están en "Validación final", que también dice qué cambió de una a otra. Esta sección conserva lo que la primera enseñó y no se sabía, porque de ahí salen las secciones siguientes. Las cifras que cita son las de entonces.
 
-Las filas de salomax y tasks, y lo que aportan a los totales de abajo, son las de esa validación y están afectadas por un error que se encontró después: las dos apps quitaban el idioma en su primer arranque y se evaluaron con pantallas en inglés. Sus cifras corregidas están en "El idioma que algunas apps quitan al arrancar".
-
-"Interfaz" dice dónde está el texto de la app; `Android` son los recursos y el código Dalvik, que es lo que ITDroid traduce. "Replay" son las acciones del recorrido grabado que se pudieron reproducir. "Texto igual al origen" es la parte de los textos distintos de las pantallas origen que aparece letra por letra en las pantallas traducidas, calculada aparte sobre los volcados guardados: es alta cuando no se tradujo nada, y también cuando la pantalla son datos, como una lista de divisas.
-
-| | es | ru | ar |
-|---|---|---|---|
-| Hallazgos | 657 | 468 | 497 |
-| Pantallas comparadas, de 57 grabadas | 56 | 57 | 56 |
-| Elementos comparados | 2670 | 2690 | 2656 |
-| Cambiaron de sitio o de tamaño | 376 | 312 | 206 |
-| Siguen igual, cambió un vecino | 277 | 156 | 270 |
-| Componentes perdidos | 4 | 0 | 12 |
-| Componentes añadidos | 0 | 0 | 9 |
-| Hallazgos con falta de espejado | no aplica | no aplica | 345 |
-| Acciones del replay reproducidas, de 284 | 254 | 263 | 255 |
-
-En árabe se revisaron 2081 pares de elementos hermanos y 1003 no se intercambiaron.
-
-Lo que quedó comprobado:
-
-- El flujo completo en las 12 apps: decodificar, analizar, traducir, reconstruir, instalar, explorar, reproducir en cada idioma, comparar y cerrar. Las 12 terminan en `finished` y con su APK internacionalizado construido. La mediana es de 35 minutos por app con tres idiomas (entre 18 y 101).
-- Reconstrucción. Cinco de las 12 (rereminder, locreminder, audiobook, lissen y tasks) solo se construyen con los ajustes automáticos de la sección "Construcción con apktool", entre uno y nueve ajustes por app, que quedan en `buildAdjustments`. `de.ph1b.audiobook`, cuya versión anterior apktool no reconstruía en el lote de octubre, ahora se evalúa.
-- Hardcoded con la política `ui`. En 9 de las 12 apps ningún literal del código llega a la interfaz por una llamada que la tabla reconozca, y no se traduce ninguno: los que hay van a logs, datos y llamadas de librería. En las otras tres se movieron a recursos y se tradujeron: beanbook, 5 literales del código y 16 del XML; tasks, 9 del código; superproductivity, 20 del código en 23 lugares. Los recursos `itdroid_code_*` e `itdroid_hc_*` están en el APK internacionalizado de las tres con su traducción a los tres idiomas (comprobado con `aapt2 dump resources`), y las tres apps construyen, arrancan y se reproducen con la clase que ITDroid les añade. No se pudieron ver en pantalla: son textos de notificaciones, de widgets de escritorio y de errores de inicio de sesión, adonde la exploración no llega.
-- Traductor. 3366 textos enviados, 37 respuestas descartadas por los controles y 18 textos que se quedaron en el idioma origen. 35 de los 37 descartes son de bonavortaro, un diccionario cuyos textos por defecto están en esperanto.
-- Comparador. La única pantalla no comparada es de audiobook en árabe: el volcado capturó un diálogo del sistema ("System UI isn't responding") en lugar de la app, con 1 de sus 12 elementos en común con los 21 del origen, y quedó en `statesNotCompared` con su motivo en vez de compararse con una pantalla que no era la suya. `amIPFs` es la suma de sus cuatro partes en las 36 evaluaciones.
-- Privacidad. Ningún archivo que ITDroid escribe en las 12 carpetas contiene el nombre de usuario ni una ruta absoluta, y todos los informes llevan `apkSha256`.
-- Cifras que se repiten. superproductivity se evaluó dos veces, con el emulador dibujando por GPU y por software, y da lo mismo: 59 / 0 / 69.
-
-Lo que la validación enseñó, que no se sabía:
-
-- Apps hechas con un framework multiplataforma. En 3 de las 12 el texto de la interfaz no está ni en `res/values` ni en el código Dalvik: vibe y superproductivity son una página web dentro de la app (Capacitor) y locreminder es Flutter. ITDroid tradujo sus recursos de Android, que en ellas son poco más que permisos y notificaciones, y la pantalla no cambió. vibe y superproductivity traen su propia traducción al español y la mostraron; en ruso y árabe se quedaron en inglés (31 de 31 y 30 de 30 textos iguales). En locreminder, entre 19 y 21 de 21. En esos casos 0 hallazgos no quiere decir que la traducción quepa, sino que no hubo traducción en pantalla; y en árabe los hallazgos de vibe y superproductivity (74 y 69) son todos falta de espejado. El informe no lo avisaba; ahora sí (ver "Aviso cuando el idioma no llegó a la pantalla"). Esta lista incluía a tasks, por sus recursos de Compose Multiplatform y porque sus 35 textos salían iguales en los cuatro idiomas: era un error de ITDroid, no de la app (ver "El idioma que algunas apps quitan al arrancar").
-- Apps cuyo recorrido no se repite. locreminder reproduce entre 6 y 18 de 18 acciones según el idioma y la corrida, y sus cifras cambian de una corrida a otra: 66 / 0 / 10 en la primera pasada y 0 / 0 / 29 en la repetición. Sus hallazgos hay que leerlos junto a la tasa de replay. salomax, que reproducía 13 de 30 acciones en los tres idiomas con las mismas 17 divergencias, y daba 2 / 2 / 58 en una pasada y 7 / 7 / 62 en otra, no era este caso: arrancaba en inglés y cambiaba de idioma a mitad del recorrido (ver "El idioma que algunas apps quitan al arrancar").
-- Apps que se quedan en la puerta. audiobook llega a 3 pantallas, las de bienvenida, porque sin una carpeta de audiolibros no tiene más; lissen no pasa de la conexión a su servidor y de sus ajustes; tasks, de la bienvenida, las condiciones de uso y el inicio de sesión. Sin datos o sin una cuenta la exploración evalúa la entrada de la app, no la app.
+- Apps hechas con un framework multiplataforma. En 3 de las 12 el texto de la interfaz no está ni en `res/values` ni en el código Dalvik: vibe y superproductivity son una página web dentro de la app (Capacitor) y locreminder es Flutter. ITDroid tradujo sus recursos de Android, que en ellas son poco más que permisos y notificaciones, y la pantalla no cambió. vibe y superproductivity traen su propia traducción al español y la mostraron; en ruso y árabe se quedaron en inglés (31 de 31 y 30 de 30 textos iguales). En locreminder, entre 19 y 21 de 21. En esos casos 0 hallazgos no quiere decir que la traducción quepa, sino que no hubo traducción en pantalla; y en árabe los hallazgos de vibe y superproductivity (74 y 69) eran todos falta de espejado. El informe no lo avisaba (ver "Aviso cuando el idioma no llegó a la pantalla"). Esta lista incluía a tasks, por sus recursos de Compose Multiplatform y porque sus 35 textos salían iguales en los cuatro idiomas: era un error de ITDroid, no de la app (ver "El idioma que algunas apps quitan al arrancar").
+- Apps cuyo recorrido no se repite. locreminder reproducía entre 6 y 18 de 18 acciones según el idioma y la pasada, y sus cifras cambiaban de una pasada a otra: 66 / 0 / 10 en la primera y 0 / 0 / 29 en la segunda. Sus hallazgos hay que leerlos junto a la tasa de replay. salomax, que reproducía 13 de 30 acciones en los tres idiomas con las mismas 17 divergencias, y daba 2 / 2 / 58 en una pasada y 7 / 7 / 62 en otra, no era este caso: arrancaba en inglés y cambiaba de idioma a mitad del recorrido (ver "El idioma que algunas apps quitan al arrancar").
+- Apps que se quedan en la puerta. audiobook llega a 3 pantallas, las de bienvenida, porque sin una carpeta de audiolibros no tiene más; lissen no pasa de la conexión a su servidor y de sus ajustes; tasks, de la bienvenida, las condiciones de uso y el inicio de sesión. Sin datos o sin una cuenta la exploración evalúa la entrada de la app, no la app (ver "Contenido antes de explorar").
 - El idioma de origen. bonavortaro tiene sus textos por defecto en esperanto y se tradujo como si fueran inglés, que es el `defaultLng` de `settings.properties` para todas las apps; lo que pasó los controles es transliteración.
-- Calidad del modelo. Con un modelo de 0,8 mil millones de parámetros, en los hardcoded traducidos `Balances` (saldos) sale como `Equilibro`, `Resume` (reanudar) como `Resumen` y `Snooze 1h` como `Desconectar 1h`. Y reescribe las cifras con el formato del idioma: `6,568.65 EUR` da `6.568,65 EUR` en español y `6 568,65 евро` en ruso; los controles de la respuesta no lo detectan.
-- El emulador. En unas 11 horas de dispositivo se colgó dos veces y se cerró solo una; tras el cierre hubo que arrancarlo sin ventana y con dibujo por software (`-no-window -gpu swangle_indirect`). ITDroid no se recupera de eso por sí mismo: en ambio, durante la primera pasada, el idioma en curso quedó a medias y los dos siguientes con el error `could not install`, y la corrida terminó como `finished` con esos errores anotados por idioma. La repetición salió completa.
-- Tiempo. Lo caro son los reinicios del replay: una app que es una página web tarda en estar lista cada vez (superproductivity, 57 minutos, y más de 75 en la primera pasada), y cada divergencia añade reintentos (salomax, 101).
-
-Comparación con corridas anteriores. Solo tres de las 15 tenían antecedente, en otra versión: ambio se evaluaba y se evalúa; superproductivity, que en los lotes de octubre tardó 70 minutos una vez y agotó un límite de 110 otra, aquí agotó el de 75 en la primera pasada y terminó en 57 en la repetición; y audiobook pasa de no reconstruirse a evaluarse. Las otras 12 son nuevas, así que no hay cifras previas con las que contrastarlas, y las de este lote no son comparables con las de antes de la sección "Comparador de layouts".
+- Calidad del modelo. Con un modelo de 0,8 mil millones de parámetros, en los hardcoded traducidos `Balances` (saldos) sale como `Equilibro`, `Resume` (reanudar) como `Resumen` y `Snooze 1h` como `Desconectar 1h`. Y reescribía las cifras con el formato del idioma: `6,568.65 EUR` daba `6.568,65 EUR` en español y `6 568,65 евро` en ruso, sin que los controles de la respuesta lo detectaran (ver "Cifras, idioma de origen y dispositivo").
+- El emulador. En unas 11 horas de dispositivo se colgó dos veces y se cerró solo una; tras el cierre hubo que arrancarlo sin ventana y con dibujo por software (`-no-window -gpu swangle_indirect`). ITDroid no se recuperaba de eso por sí mismo: en ambio, durante la primera pasada, el idioma en curso quedó a medias y los dos siguientes con el error `could not install`, y la corrida terminó como `finished` con esos errores anotados por idioma. Y en audiobook en árabe un volcado capturó un diálogo del sistema ("System UI isn't responding") en lugar de la app: con 1 de sus 12 elementos en común con los 21 del origen, quedó en `statesNotCompared` con su motivo en vez de compararse con una pantalla que no era la suya.
+- Tiempo. La corrida de una app con tres idiomas duró 31 minutos de mediana (entre 18 y 100). Lo caro eran los reinicios del replay: una app que es una página web tarda en estar lista cada vez (superproductivity, 57 minutos, y más de 75 en la primera pasada), y cada divergencia añade reintentos (salomax, 100). De ahí la sección siguiente.
 
 # Explorador más rápido
 
@@ -466,10 +421,10 @@ Problema: la exploración y el replay son el 95 % del tiempo de una corrida. Se 
 | rereminder, ahora | 110 s | 100 s | 10 | 1 | 133 / 162 / 14 |
 | lissen, antes | 241 s | 288 s | 19 | 3 | 21 (solo español) |
 | lissen, ahora | 141 s | 152 s | 15 | 2 | 21 / 19 / 24 |
-| offlinecurrencyconverter, en la validación | 358 s | 410 s | 30 | 7 | 54 / 64 / 55 |
+| offlinecurrencyconverter, en la primera validación | 358 s | 410 s | 30 | 7 | 54 / 64 / 55 |
 | offlinecurrencyconverter, ahora | 250 s | 227 s | 27 | 6 | 54 / 63 / 55 |
 
-Los hallazgos, su desglose, los elementos comparados y las cinco pantallas emparejadas coinciden con los de la validación final en los tres idiomas, y el replay reproduce todas las acciones (10 de 10, 15 de 15 y 27 de 27, sin divergencias). El único hallazgo que no se repite, en offlinecurrencyconverter en ruso, es el del texto de una tasa de cambio (`0.9024`), que la app trae de la red y cambia cada día. La exploración baja un 51, un 41 y un 30 %, y el replay un 59, un 47 y un 45 %; un reinicio con su camino pasa de 35 y 51 s de mediana a unos 20. La corrida completa con tres idiomas tarda 570, 762 y 1011 s; en la validación, con el emulador dibujando por GPU, había tardado 1159, 1522 y 2076 s. Las cifras de "antes" de offlinecurrencyconverter son las de esa validación, las de las otras dos apps se midieron con el explorador anterior el mismo día y en el mismo emulador. Cada recorrido deja ahora en `exploration_script.json` y en `replay_report.json` cuánto tardó y en qué: toques, atrás, reinicios y volcados (rereminder: 12 toques, 3 atrás, 1 reinicio y 30 volcados en 110 s).
+Los hallazgos, su desglose, los elementos comparados y las cinco pantallas emparejadas coinciden con los de la primera validación en los tres idiomas, y el replay reproduce todas las acciones (10 de 10, 15 de 15 y 27 de 27, sin divergencias). El único hallazgo que no se repite, en offlinecurrencyconverter en ruso, es el del texto de una tasa de cambio (`0.9024`), que la app trae de la red y cambia cada día. La exploración baja un 51, un 41 y un 30 %, y el replay un 59, un 47 y un 45 %; un reinicio con su camino pasa de 35 y 51 s de mediana a unos 20. La corrida completa con tres idiomas tarda 570, 762 y 1011 s; en la primera validación, con el emulador dibujando por GPU, había tardado 1159, 1522 y 2076 s. Las cifras de "antes" de offlinecurrencyconverter son las de esa validación, las de las otras dos apps se midieron con el explorador anterior el mismo día y en el mismo emulador. Cada recorrido deja ahora en `exploration_script.json` y en `replay_report.json` cuánto tardó y en qué: toques, atrás, reinicios y volcados (rereminder: 12 toques, 3 atrás, 1 reinicio y 30 volcados en 110 s).
 
 # Presupuesto de exploración
 
@@ -493,36 +448,36 @@ Tres lecturas. Las primeras pantallas son baratas y las siguientes no: rereminde
 
 # Aviso cuando el idioma no llegó a la pantalla
 
-Problema: una pantalla traducida que sale igual al origen no da hallazgos, y eso se lee como "la traducción cabe" también cuando en pantalla no se tradujo nada. La validación lo encontró en las apps hechas con un framework multiplataforma, y el informe no lo decía.
+Problema: una pantalla traducida que sale igual al origen no da hallazgos, y eso se lee como "la traducción cabe" también cuando en pantalla no se tradujo nada. La primera validación lo encontró en las apps hechas con un framework multiplataforma, y el informe no lo decía.
 
 - Cuenta de los textos que no cambiaron (`model/ScreenTexts`). Por idioma, sobre las pantallas comparadas: cuántos textos distintos de las pantallas origen (el texto y la descripción de cada elemento que tiene una palabra; lo tecleado en un campo no cuenta) están letra por letra en las pantallas traducidas. Queda en `screenText` (`sourceTexts`, `unchanged`, `share`, `sameAsSource`). Con 5 textos o más y el 90 % sin cambiar, la consola avisa y el informe web marca el idioma ("same text as source") en el resumen y en su pestaña. Es un hecho de las pantallas, no un veredicto: una pantalla que es casi toda datos también conserva sus textos.
-- También sobre evaluaciones ya hechas. `--reanalyze` lo calcula con los volcados guardados y lo pone en `summary.csv`. Sobre las 12 apps de la validación marca 14 de las 36 evaluaciones de idioma (tasks, locreminder y salomax en los tres idiomas, vibe y superproductivity en ruso y árabe, bonavortaro en español) y reproduce los 36 totales de hallazgos.
+- También sobre evaluaciones ya hechas. `--reanalyze` lo calcula con los volcados guardados y lo pone en `summary.csv`. Sobre las 12 apps de la primera validación marca 14 de las 36 evaluaciones de idioma (tasks, locreminder y salomax en los tres idiomas, vibe y superproductivity en ruso y árabe, bonavortaro en español) y reproduce los 36 totales de hallazgos.
 - El framework de la app (`helper/AppFramework`). El preflight reconoce Flutter, React Native, Capacitor, Cordova, los recursos de Compose Multiplatform, Xamarin y Unity por los archivos que dejan en el APK, lo guarda en `preflight.app.frameworks`, y la consola y el resumen del informe dicen dónde están entonces los textos. La app no se rechaza.
-- Lo que el aviso destapó. De las apps marcadas, salomax no encajaba con la explicación de la validación: es una app sin framework y aun así salía con el texto del origen. La causa era otra y afectaba también a tasks; es la sección siguiente. Y bonavortaro en español es el caso del idioma de origen: sus textos están en esperanto, se tradujeron como si fueran inglés, y 231 de las 300 traducciones al español son el mismo texto que entró.
+- Lo que el aviso destapó. De las apps marcadas, salomax no encajaba con la explicación de la primera validación: es una app sin framework y aun así salía con el texto del origen. La causa era otra y afectaba también a tasks; es la sección siguiente. Y bonavortaro en español es el caso del idioma de origen: sus textos están en esperanto, se tradujeron como si fueran inglés, y 231 de las 300 traducciones al español son el mismo texto que entró.
 - Comprobado en el emulador con vibe: `frameworks` trae `capacitor`; ruso y árabe quedan marcados, con 37 de 37 textos iguales, y español no, con 8 de 37, porque la app trae su propio español. beanbook, con 58 de 125, no se marca.
 
 # El idioma que algunas apps quitan al arrancar
 
-Problema: salomax y tasks se evaluaron en la validación con pantallas en inglés en los tres idiomas, y la validación lo explicó mal en los dos casos.
+Problema: salomax y tasks se evaluaron en la primera validación con pantallas en inglés en los tres idiomas, y se explicó mal en los dos casos.
 
 - Qué pasa, medido a mano en el emulador. Tras instalar la app, `cmd locale set-app-locales` deja `[ar]` y tres segundos después sigue ahí; se lanza la app y a los cinco segundos la lista está vacía y la pantalla en inglés. Un segundo arranque, con el mismo `pm clear` y el mismo `set-app-locales`, conserva `[ar]` y la app sale en árabe. Igual en tasks con ruso. Esperar antes de lanzar no cambia nada, ni saltarse el `pm clear`: lo hace la app, y solo en su primer arranque tras instalarse.
 - Por qué. Las dos declaran el servicio `AppLocalesMetadataHolderService` de AppCompat con `autoStoreLocales`; de las 15 APK de la validación son las únicas. Con esa opción AppCompat copia al sistema, la primera vez, el idioma que la app guardaba por su cuenta, que en una instalación nueva es ninguno, y marca la copia como hecha activando ese componente (se ve en `dumpsys package`, en `enabledComponents`). Ese ajuste es del paquete, no de sus datos: `pm clear` no lo borra y una desinstalación sí. ITDroid instala cada versión y fija el idioma antes del primer arranque, así que caía siempre en ese caso.
-- Qué hacía eso con una evaluación. El recorrido de tasks no tiene ningún reinicio, así que sus cinco pantallas se capturaban en inglés en los tres idiomas: de ahí los 35 de 35 textos iguales y el 0 / 0 / 25, que la validación atribuyó a los recursos de Compose Multiplatform. En salomax las tres primeras pantallas se capturaban en inglés y, desde el primer reinicio, la app ya estaba en el idioma: el replay buscaba las pantallas que había aprendido en inglés y encontraba otras. De ahí las 13 de 30 acciones y las 17 divergencias, que la validación atribuyó al selector de fecha.
+- Qué hacía eso con una evaluación. El recorrido de tasks no tiene ningún reinicio, así que sus cinco pantallas se capturaban en inglés en los tres idiomas: de ahí los 35 de 35 textos iguales y el 0 / 0 / 25, que la primera validación atribuyó a los recursos de Compose Multiplatform. En salomax las tres primeras pantallas se capturaban en inglés y, desde el primer reinicio, la app ya estaba en el idioma: el replay buscaba las pantallas que había aprendido en inglés y encontraba otras. De ahí las 13 de 30 acciones y las 17 divergencias, que la primera validación atribuyó al selector de fecha.
 - Corrección (`AdbExplorer.startClean`). Los cuatro arranques limpios del explorador (el primero de la exploración y del replay, y cada reinicio) pasan por un mismo método: con la primera pantalla asentada lee el idioma que el sistema guarda para la app (`cmd locale get-app-locales`) y, si no es el pedido, repite el arranque limpio una vez. Si la app lo quita también la segunda vez, lo dice una vez y sigue: esa app se evalúa en el idioma que ella elige. Cada recorrido deja `languageRestarts` y `languageRefused` junto a sus toques y reinicios. A una app que conserva el idioma le cuesta un comando `adb` por arranque (0,05 s). Comprobado con rereminder, que no lo quita: con esta versión da lo mismo que en "Explorador más rápido" (133 / 162 / 14 con el mismo desglose, 313 elementos comparados, replay 10 de 10) y ningún arranque repetido.
 - Resultado, con las dos apps evaluadas de nuevo en los tres idiomas:
 
 | | Hallazgos es / ru / ar | Replay es / ru / ar | Texto igual al origen es / ru / ar |
 |---|---|---|---|
-| salomax, en la validación | 7 / 7 / 62 | 13/30, 13/30, 13/30 | 90 % / 90 % / 93 % |
+| salomax, en la primera validación | 7 / 7 / 62 | 13/30, 13/30, 13/30 | 90 % / 90 % / 93 % |
 | salomax, ahora | 52 / 48 / 46 | 29/29, 29/29, 29/29 | 0 % / 0 % / 0 % |
-| tasks, en la validación | 0 / 0 / 25 | 8/11, 9/11, 9/11 | 100 % / 100 % / 100 % |
+| tasks, en la primera validación | 0 / 0 / 25 | 8/11, 9/11, 9/11 | 100 % / 100 % / 100 % |
 | tasks, ahora | 14 / 8 / 2 | 7/7, 7/7, 7/7 | 23 % / 31 % / 37 % |
 
 Las dos apps muestran ahora el idioma en todas sus pantallas, y cada versión instalada repitió su primer arranque una vez. En tasks los textos que no cambian son nombres (Tasks.org, Microsoft To Do, Google Tasks, DAVx⁵, CalDAV, EteSync); sus hallazgos son de posición en español y ruso, y en árabe quedan 2, con 35 de 36 pares de hermanos intercambiados, donde antes eran 25 y todos de falta de espejado porque la pantalla seguía en inglés. En salomax el replay reproduce todas las acciones en los tres idiomas, sin divergencias, y el de un idioma tarda unos 290 s donde con las divergencias tardaba 532. Las acciones grabadas son 29 y 7, no 30 y 11, porque el recorrido ya no vuelve atrás al agotar el presupuesto (ver "Explorador más rápido"). De las 15 APK solo estas dos declaran `autoStoreLocales`; no se ha mirado cuántas del lote de 40 de octubre lo hacen.
 
 # Contenido antes de explorar
 
-Problema: una app que necesita contenido o una cuenta antes de tener algo que mostrar se evalúa por su puerta. La validación lo vio en audiobook (3 pantallas, las de bienvenida), lissen y tasks.
+Problema: una app que necesita contenido o una cuenta antes de tener algo que mostrar se evalúa por su puerta. La primera validación lo vio en audiobook (3 pantallas, las de bienvenida), lissen y tasks.
 
 - `exploration.setup` (`helper/SetupScript`): un archivo con un comando `adb` por línea, lo que seguiría a `adb -s <dispositivo>`. Se ejecuta tras cada arranque limpio, después de `pm clear` y antes de lanzar la app, en el idioma origen y en cada idioma, para que todas las versiones partan del mismo contenido. Una línea que empieza por `#` es un comentario y un argumento con espacios va entre comillas. La primera vez se imprime lo que contestó cada comando; un archivo que no existe aborta la corrida antes de empezar.
 - Hasta dónde llega. A lo que llega `adb`: un archivo en el almacenamiento compartido, una fila de un proveedor de contenido, un intent, un ajuste. No inicia sesión en una cuenta y no contesta una pantalla, ni de la app ni del sistema.
@@ -531,14 +486,14 @@ Problema: una app que necesita contenido o una cuenta antes de tener algo que mo
 
 # Cifras, idioma de origen y dispositivo
 
-Cuatro hallazgos menores de la validación.
+Cuatro hallazgos menores de la primera validación.
 
 - Cifras. El modelo reescribía los números con el formato del idioma de destino. Un número con separadores (`6,568.65`, `09:41`, `2026-11-14`) viaja ahora enmascarado como un placeholder y vuelve tal cual; una respuesta que cambie una cifra se rechaza. En beanbook, `6,568.65 EUR` y `6,563.40 EUR` salían reescritos en español y en ruso (`6.568,65 EUR`, `6 568,65 евро`) y ahora salen iguales en los tres idiomas. La consecuencia es la contraria: el número ya no se adapta al idioma.
 - Idioma de origen (`helper/SourceLanguageCheck`). El idioma origen sigue siendo el `defaultLng` para todas las apps, pero ahora se comprueba: entre los textos de tres palabras o más de `res/values/strings.xml`, cuántos llevan alguna de las palabras cortas más comunes de ese idioma. Con ocho frases o más y menos del 30 %, la consola y el informe avisan. bonavortaro da un 14 % de 204 frases y queda avisado; las otras cuatro apps de la verificación dan entre el 37 y el 73 %. No usa el modelo, que puede ser uno que solo traduce, y no dice en qué idioma están los textos: una primera versión que lo intentaba dio español para el esperanto, que comparte sus palabras cortas. Solo conoce inglés, español, francés, alemán, portugués e italiano; con otro idioma origen no comprueba nada.
 - Un diálogo del sistema no es una pantalla de la app. Si el volcado es el diálogo de "no responde", el explorador pulsa "esperar" y vuelve a volcar; y un volcado sin ningún elemento del paquete de la app no se captura como pantalla suya.
 - Dispositivo que deja de responder. Antes de cada idioma se comprueba que el dispositivo contesta; si no, se le espera dos minutos y, si no vuelve, la corrida aborta ahí con un mensaje que lo dice y con lo evaluado hasta entonces, en vez de anotar `could not install` en cada idioma que faltaba.
 
-Los dos últimos no se vieron actuar: en la verificación no apareció el diálogo ni se cayó el emulador. Queda sin mirar si en tasks el literal `Delete` que recibe `SymbolIcon` es un texto o el nombre de un icono.
+Los dos últimos no se vieron actuar en esa verificación: no apareció el diálogo ni se cayó el emulador. La espera al dispositivo actuó después, en la validación final. Queda sin mirar si en tasks el literal `Delete` que recibe `SymbolIcon` es un texto o el nombre de un icono.
 
 # Reparación de RTL
 
@@ -564,17 +519,93 @@ bonavortaro es el caso que la reparación arregla entero: la app no declaraba `s
 
 Lo que se vio al leer los informes de esta fase.
 
-- Recuadros fuera de sitio en los diálogos. En una pantalla que es un diálogo (el inicio de sesión de tasks, el selector de fecha de salomax) los recuadros de los elementos salían más abajo y más grandes que los elementos de la captura. El volcado guardado era correcto: lo que fallaba era la página, que tomaba como tamaño de la pantalla lo más lejos que llegaba el volcado de esa misma pantalla. El de un diálogo solo llega a los bordes del diálogo (960 × 1636 en el de tasks, en una pantalla de 1080 × 2400), así que cada recuadro se dibujaba 1,13 veces más a la derecha y 1,47 veces más abajo. Ahora el tamaño es el de la captura, que es la pantalla entera, y mientras carga, lo más lejos que llega cualquier volcado de la exploración. Además los recuadros se colocan sobre la imagen sola: antes la franja del pie de foto entraba en la cuenta y los bajaba un 3 %. De 104 pantallas origen guardadas en las corridas de esta fase y de la validación, 22 son diálogos, en salomax, beanbook y tasks. Solo afectaba al dibujo; los hallazgos no cambian.
+- Recuadros fuera de sitio en los diálogos. En una pantalla que es un diálogo (el inicio de sesión de tasks, el selector de fecha de salomax) los recuadros de los elementos salían más abajo y más grandes que los elementos de la captura. El volcado guardado era correcto: lo que fallaba era la página, que tomaba como tamaño de la pantalla lo más lejos que llegaba el volcado de esa misma pantalla. El de un diálogo solo llega a los bordes del diálogo (960 × 1636 en el de tasks, en una pantalla de 1080 × 2400), así que cada recuadro se dibujaba 1,13 veces más a la derecha y 1,47 veces más abajo. Ahora el tamaño es el de la captura, que es la pantalla entera, y mientras carga, lo más lejos que llega cualquier volcado de la exploración. Además los recuadros se colocan sobre la imagen sola: antes la franja del pie de foto entraba en la cuenta y los bajaba un 3 %. De 104 pantallas origen guardadas en las corridas de esta fase y de la primera validación, 22 son diálogos, en salomax, beanbook y tasks. Solo afectaba al dibujo; los hallazgos no cambian.
 - El mismo supuesto estaba en el comparador, donde decide si un elemento con un hallazgo quedó "espejado" (a la misma distancia del borde derecho que tenía del izquierdo) y dónde buscar la pareja de un elemento en un idioma de derecha a izquierda. Ahora el ancho es el de la pantalla más ancha de las dos exploraciones. Re-analizadas las 53 evaluaciones de idioma guardadas, no cambia ninguna cifra ni ningún hallazgo; queda cubierto por una prueba con un diálogo hecho a mano.
 - Separadores. Los textos del informe que separaban sus partes con un punto medio usan comas, y la prueba de la página comprueba que el código de la página no escribe ninguno. Se mira en el código y no en lo que la página muestra, porque un texto de una app puede traer el suyo: beanbook tiene uno.
 - La pestaña de rendimiento se llama "ITDroid performance" y empieza diciendo qué mide: lo que le costó a ITDroid evaluar la app, no el rendimiento de la app traducida.
 - Pruebas de la fase. La suite pasa de 230 a 264 pruebas y la de la página de 74 a 91 comprobaciones.
+
+# Validación final
+
+Con todo lo anterior hecho, la validación se repitió entera con una sola versión: el jar que sale de compilar este código. Las mismas quince APK, en el emulador (Android 13, API 33, x86_64), en español, ruso y árabe, con PLaMo Translate y todos los valores por defecto (`hardcoded.translate=ui`, 5 pantallas, 8 toques por pantalla, sin reparación de RTL), en una pasada de cuatro horas y cuarto. fit_book, counted y oxu se rechazaron en el preflight en menos de un segundo, porque solo traen código nativo arm64. Las otras 12 se evaluaron en los tres idiomas: 36 evaluaciones de idioma, las 36 con resultado. La fila de audiobook es de una repetición con el mismo jar, porque en la pasada el emulador dejó de responder mientras se exploraba. Y los datos del emulador se habían recreado ese mismo día, así que corrió con la imagen de fábrica, lo que cambia las cifras de las dos apps que son una página web. Las dos cosas se explican más abajo.
+
+| App | Interfaz | Pantallas | Hallazgos es / ru / ar | Replay es / ru / ar | Texto igual al origen es / ru / ar | Hardcoded (traducidos) | Minutos |
+|---|---|---|---|---|---|---|---|
+| com.jbgsoft.ambio | Android | 4 | 96 / 67 / 16 | 40/40, 40/40, 39/40 | 30 % / 0 % / 0 % | 13 (0) | 22 |
+| com.offlinecurrencyconverter.app | Android | 5 | 54 / 63 / 55 | 27/27, 27/27, 27/27 | 47 % / 47 % / 47 % | 20 (0) | 18 |
+| com.olaf.rereminder | Android | 5 | 133 / 162 / 14 | 10/10, 10/10, 10/10 | 5 % / 2 % / 2 % | 42 (0) | 11 |
+| com.superproductivity.superproductivity | Capacitor (página web) | 5 | 67 / 0 / 75 | 46/49, 48/49, 48/49 | 27 % / 100 % / 100 % | 537 (20) | 44 |
+| com.zaifears.locreminder | Flutter | 5 | 0 / 0 / 10 | 16/16, 16/16, 16/16 | 100 % / 100 % / 100 % | 130 (0) | 12 |
+| de.ph1b.audiobook | Android | 3 | 0 / 0 / 0 | 22/22, 22/22, 22/22 | 0 % / 0 % / 0 % | 4 (0) | 17 |
+| de.salomax.currencies | Android | 5 | 52 / 48 / 46 | 29/29, 29/29, 29/29 | 0 % / 0 % / 0 % | 19 (0) | 27 |
+| dev.fiedri.vibe | Capacitor (página web) | 5 | 148 / 0 / 83 | 12/12, 12/12, 12/12 | 21 % / 100 % / 100 % | 13 (0) | 21 |
+| io.github.kotchwane.bonavortaro | Android | 5 | 4 / 15 / 24 | 43/44, 44/44, 43/44 | 96 % / 70 % / 52 % | 15 (0) | 36 |
+| io.github.pintofi.beanbook.expert | Android | 5 | 149 / 132 / 105 | 10/10, 10/10, 10/10 | 46 % / 46 % / 46 % | 53 (21) | 11 |
+| org.grakovne.lissen | Android | 5 | 21 / 19 / 24 | 15/15, 15/15, 15/15 | 5 % / 5 % / 5 % | 201 (0) | 17 |
+| org.tasks | Android y recursos de Compose Multiplatform | 5 | 14 / 8 / 2 | 7/7, 7/7, 7/7 | 23 % / 31 % / 37 % | 2710 (9) | 15 |
+
+"Interfaz" dice dónde está el texto de la app; `Android` son los recursos y el código Dalvik, que es lo que ITDroid traduce. "Replay" son las acciones del recorrido grabado que se pudieron reproducir. "Texto igual al origen" es el `screenText` del informe: la parte de los textos distintos de las pantallas origen que aparece letra por letra en las pantallas traducidas; es alta cuando no se tradujo nada, y también cuando la pantalla son datos, como una lista de divisas. "Minutos" es lo que duró la corrida de ITDroid con los tres idiomas.
+
+| | es | ru | ar |
+|---|---|---|---|
+| Hallazgos | 738 | 514 | 454 |
+| Pantallas comparadas, de 57 grabadas | 57 | 57 | 57 |
+| Elementos comparados | 2701 | 2705 | 2697 |
+| Cambiaron de sitio o de tamaño | 437 | 361 | 234 |
+| Siguen igual, cambió un vecino | 297 | 153 | 211 |
+| Componentes perdidos | 4 | 0 | 8 |
+| Componentes añadidos | 0 | 0 | 1 |
+| Hallazgos con falta de espejado | no aplica | no aplica | 324 |
+| Acciones del replay reproducidas, de 281 | 277 | 280 | 278 |
+| Evaluaciones marcadas con el texto del origen, de 12 | 2 | 3 | 3 |
+
+En árabe se revisaron 2085 pares de elementos hermanos y 678 no se intercambiaron.
+
+Lo que quedó comprobado:
+
+- El flujo completo en las 12 apps: decodificar, analizar, traducir, reconstruir, instalar, explorar, reproducir en cada idioma, comparar y cerrar. Las 12 terminan en `finished` y con su APK internacionalizado construido. La mediana es de 17 minutos por app con tres idiomas (entre 11 y 44).
+- Reconstrucción. Cinco de las 12 (rereminder, locreminder, audiobook, lissen y tasks) solo se construyen con los ajustes automáticos de la sección "Construcción con apktool", entre uno y nueve por app, que quedan en `buildAdjustments`.
+- Hardcoded con la política `ui`. En 9 de las 12 apps ningún literal del código llega a la interfaz por una llamada que la tabla reconozca, y no se traduce ninguno: los que hay van a logs, datos y llamadas de librería. En las otras tres se movieron a recursos y se tradujeron: beanbook, 5 literales del código y 16 del XML; tasks, 9 del código; superproductivity, 20 del código en 23 lugares. Los recursos `itdroid_code_*` e `itdroid_hc_*` están en el APK internacionalizado de las tres, los 50 con su traducción a los tres idiomas (comprobado con `aapt2 dump resources`), y las tres apps construyen, arrancan y se reproducen con la clase que ITDroid les añade. Siguen sin verse en pantalla: son textos de notificaciones, de widgets de escritorio y de errores de inicio de sesión, adonde la exploración no llega.
+- Traductor. 3366 textos enviados, 37 respuestas descartadas por los controles y 17 textos que se quedaron en el idioma origen. 35 de los 37 descartes son de bonavortaro, cuyos textos por defecto están en esperanto; el informe lo avisa ahora (14 % de 204 frases parecen inglés). Las cifras ya no se reescriben: `6,568.65 EUR` sale igual en los tres idiomas. Los deslices de sentido del modelo son los mismos (`Balances` sigue saliendo `Equilibro`).
+- Comparador. Las 57 pantallas grabadas se compararon en los tres idiomas y ninguna quedó en `statesNotCompared`. En las 36 evaluaciones `amIPFs` es la suma de sus cuatro partes y coincide con la lista de hallazgos.
+- Replay. 9 de las 12 apps reproducen todas las acciones en los tres idiomas, sin divergencias. En las otras tres se capturaron y compararon igualmente todas las pantallas: ambio en árabe (39 de 40) y bonavortaro en español y árabe (43 de 44) no encuentran un elemento de la primera pantalla, como en la primera validación; y superproductivity tiene un reinicio que no vuelve a una de sus pantallas en ninguno de los tres idiomas (48 de 49, y 46 en español).
+- El idioma en el primer arranque. salomax y tasks repitieron su primer arranque una vez en cada versión instalada (`languageRestarts: 1`) y muestran el idioma en todas sus pantallas: 0 de 42 textos iguales al origen en salomax, y 8, 11 y 13 de 35 en tasks, sobre todo nombres propios. Ninguna otra app lo necesitó.
+- Aviso de texto igual al origen. Marca 8 de las 36 evaluaciones: locreminder en los tres idiomas (24 de 24 textos), vibe y superproductivity en ruso y árabe (38 de 38 y 33 de 33) y bonavortaro en español (22 de 23). Las tres primeras son las apps cuya interfaz no está en los recursos de Android, y el informe nombra su framework; la cuarta es la del idioma de origen.
+- Dispositivo que deja de responder. A la hora y diez minutos de la pasada el emulador dejó de contestar, durante la exploración de audiobook. ITDroid conservó las tres pantallas ya capturadas, esperó al dispositivo los dos minutos previstos antes del primer idioma y cerró la corrida como `aborted` con un mensaje que lo dice: es la espera de "Cifras, idioma de origen y dispositivo", que no se había visto actuar. Hubo que arrancar el emulador de nuevo (seis minutos) y las siete apps que faltaban corrieron sin incidentes. audiobook, repetida sola, terminó en 17 minutos.
+- Privacidad. Ningún archivo que ITDroid escribe en las 12 carpetas contiene el nombre de usuario ni una ruta absoluta (180 archivos de texto revisados), y todos los informes llevan `apkSha256`.
+
+Qué cambió respecto a la primera validación:
+
+| App | Primera validación | Validación final | Qué lo explica |
+|---|---|---|---|
+| ambio, rereminder, bonavortaro, beanbook, lissen | 96 / 67 / 16, 133 / 162 / 14, 4 / 15 / 24, 149 / 132 / 105, 21 / 19 / 24 | las mismas cifras | no les tocaba ningún cambio |
+| salomax | 7 / 7 / 62, replay 13 de 30 | 52 / 48 / 46, replay 29 de 29 | el idioma se fija de nuevo tras el primer arranque |
+| tasks | 0 / 0 / 25, replay 8, 9 y 9 de 11 | 14 / 8 / 2, replay 7 de 7 | lo mismo |
+| locreminder | 0 / 0 / 29, replay 9, 16 y 12 de 18 | 0 / 0 / 10, replay 16 de 16 | esta vez el recorrido se reprodujo entero |
+| vibe | 134 / 0 / 74 | 148 / 0 / 83 | el WebView del emulador, con los datos recién recreados, expone más elementos |
+| superproductivity | 59 / 0 / 69 | 67 / 0 / 75 | lo mismo |
+| audiobook | 0 / 2 / 0 | 0 / 0 / 0 | un elemento capturado fuera de su sitio en la primera |
+| offlinecurrencyconverter | 54 / 64 / 55 | 54 / 63 / 55 | una tasa de cambio que llega de la red |
+
+- Lo que no debía cambiar no cambió. ambio, rereminder, bonavortaro, beanbook y lissen dan los mismos hallazgos en los tres idiomas, pantalla por pantalla y con el mismo desglose por tipo, y los mismos elementos comparados. El recorrido grabado es más corto en cuatro de ellas, porque el explorador ya no vuelve atrás al agotar el presupuesto, y las cinco tardan menos.
+- salomax y tasks. Es la corrección de "El idioma que algunas apps quitan al arrancar", y sus cifras son las que esa sección midió. En árabe salomax intercambia ahora 295 de sus 495 pares de hermanos, donde antes 1, y tasks 35 de 36, donde antes ninguno: entonces sus pantallas estaban en inglés.
+- locreminder. En árabe pasa de 29 a 10 hallazgos, todos de falta de espejado, porque esta vez el recorrido se reprodujo entero en los tres idiomas; en la primera validación sus cifras iban con lo que se lograba reproducir en cada pasada. Es una sola corrida: no basta para decir que su recorrido ya se repite siempre.
+- vibe y superproductivity. Son las dos apps cuya pantalla es una página web, y las únicas en las que cambió lo que el volcado ve: cada pantalla trae uno o dos elementos más, varios elementos traen un nombre que antes venía vacío (`Open menu`, `Open filter/group/sort menu`, `Project Notes`, `Super Productivity`) y la página se dibuja unos píxeles más ancha. Hay más que comparar (278 elementos en vez de 269 en vibe, 229 en vez de 223 en superproductivity) y salen más hallazgos; en superproductivity, además, el recorrido grabado tiene 49 acciones en vez de 43. No lo cambió ITDroid sino el dispositivo: el jar con el que vibe había dado 134 hallazgos en español el día anterior da 148 en este emulador, los mismos que el jar final y con los mismos 278 elementos. Los datos del emulador se habían recreado esa mañana: sus archivos de datos son de ese día y todos sus paquetes son los de fábrica, con WebView 109.0.5414.123. Qué tenía distinto el WebView del emulador anterior ya no se puede saber, porque su versión no se anota en ningún informe. Dentro de un mismo dispositivo las cifras de estas apps sí se repiten: en la primera validación superproductivity dio 59 / 0 / 69 dos veces, con el emulador dibujando por GPU y por software. Por lo mismo, los 74 hallazgos de vibe en "Reparación de RTL" y sus 37 textos en "Aviso cuando el idioma no llegó a la pantalla" son del emulador anterior; en este son 83 y 38.
+- audiobook. Los 2 hallazgos en ruso de la primera validación eran un elemento de la segunda pantalla capturado 8 píxeles a la derecha de su sitio; ahora sale donde está en el origen. El recorrido graba 22 acciones donde entonces 7, que son las 7 primeras de ahora: aquella exploración se quedó ahí y esta sigue hasta que no queda nada por tocar (`exhausted`), con las mismas 3 pantallas. En las dos validaciones el emulador tuvo problemas mientras se evaluaba esta app, cuyos toques abren el selector de carpetas del sistema (en la primera, el diálogo de "System UI isn't responding"; en esta dejó de contestar), y evaluada sola terminó sin incidentes; no se investigó si lo provoca la app.
+- offlinecurrencyconverter. Un hallazgo menos en ruso: es el texto de una tasa de cambio, que la app trae de la red.
+- Replay y pantallas. Se reproducen 277, 280 y 278 de 281 acciones (entre el 98,6 y el 99,6 %), donde antes 254, 263 y 255 de 284 (entre el 89 y el 93 %). Y las 57 pantallas grabadas se comparan en los tres idiomas, donde antes faltaba una en español y otra en árabe.
+- Totales. Los hallazgos suben en español y ruso (de 657 a 738 y de 468 a 514) porque salomax y tasks muestran ahora el idioma, y en español también por las dos apps web. En árabe bajan (de 497 a 454) por las mismas dos apps y por locreminder: los hallazgos con falta de espejado pasan de 345 a 324 y los pares de hermanos sin intercambiar de 1003 a 678.
+- Aviso de texto igual al origen. 8 evaluaciones marcadas, donde el re-análisis de la primera validación marcaba 14: salomax y tasks ya no lo están.
+- Tiempo. Las corridas de las 12 apps suman 4,1 horas, donde antes 7,6; la mediana baja de 31 a 17 minutos y la más lenta de 100 a 44. Las 12 tardan menos: salomax pasa de 100 minutos a 27 porque ya no diverge, bonavortaro de 64 a 36 y superproductivity de 57 a 44. Los tiempos son en las dos la duración de la corrida de ITDroid; el 35 de mediana que se dio tras la primera validación era el tiempo del lote, con sus esperas al emulador.
+
+Comparación con los lotes de octubre. Solo tres de las 15 apps tenían antecedente, en otra versión: ambio se evaluaba y se evalúa; superproductivity, que tardó 70 minutos una vez y agotó un límite de 110 otra, tarda ahora 44; y audiobook pasa de no reconstruirse a evaluarse. Las otras 12 no estaban en esos lotes, y las cifras de entonces no son comparables con las de después de la sección "Comparador de layouts".
 
 # Límites conocidos y trabajo pendiente
 
 Límites de una evaluación, hoy:
 
 - Solo se traduce lo que está en los recursos de Android y en los literales del código Dalvik de la app. El texto de una app web (Capacitor, Cordova), de Flutter, de React Native o de los recursos de Compose Multiplatform no se traduce; el informe nombra el framework y marca los idiomas cuyas pantallas muestran el texto del origen.
+- En una app cuya interfaz es una página web, lo que el volcado ve depende del WebView del dispositivo: tras recrear los datos del emulador cambiaron los elementos que expone y, con ellos, las cifras (ver "Validación final"). Dentro de una corrida el origen y los idiomas se capturan en el mismo dispositivo y se comparan bien; las cifras de dos dispositivos no son comparables entre sí.
 - La exploración solo ve lo que la app enseña por sí sola. `exploration.setup` deja en el dispositivo lo que se puede dejar con `adb`; no inicia sesión ni contesta una pantalla, así que una app que pide una carpeta en el selector del sistema o una cuenta se sigue evaluando por su puerta. `exploration.fillForms` solo escribe en los campos de texto que encuentra.
 - El presupuesto por defecto es pequeño: 5 pantallas y 8 toques por pantalla. Se sube o se quita en una línea, y cada pantalla de más cuesta más que la anterior (ver "Presupuesto de exploración").
 - El replay supone que la app se comporta igual en cada arranque. Donde no (contenido que llega de la red, un mapa que tarda, un diálogo de primer uso) el recorrido diverge, las pantallas no reproducidas no se comparan y las cifras varían entre corridas.
@@ -587,12 +618,13 @@ Límites de una evaluación, hoy:
 - Una app que quita su idioma en cada arranque, no solo en el primero, se evalúa en el idioma que ella elige; la consola y `languageRefused` lo dicen. No se ha visto ninguna.
 - Un proceso matado desde fuera no puede escribir su estado: el informe queda en `running` y es el servidor del informe web quien lo muestra como interrumpido.
 
-No verificado en dispositivo: el gancho de cierre con un Ctrl+C real en la consola (se probó matando el proceso); el caso en que el APK internacionalizado no se construye; los hardcoded traducidos de esta validación vistos en pantalla; el cierre del diálogo de "no responde" y la espera a un dispositivo que deja de contestar, que no llegaron a darse; `exploration.setup` con una app cuyas pantallas dependan del contenido que se le deja; y un dispositivo físico o ARM, porque todo se corrió en un emulador x86_64.
+No verificado en dispositivo: el gancho de cierre con un Ctrl+C real en la consola (se probó matando el proceso); el caso en que el APK internacionalizado no se construye; los hardcoded traducidos de la validación vistos en pantalla; el cierre del diálogo de "no responde", que no llegó a darse (la espera a un dispositivo que deja de contestar sí actuó en la validación final); `exploration.setup` con una app cuyas pantallas dependan del contenido que se le deja; y un dispositivo físico o ARM, porque todo se corrió en un emulador x86_64.
 
 Trabajo pendiente, por orden de lo que más cambiaría la lectura de un resultado:
 
-- Repetir la validación de las 12 apps con la versión final. Las cifras de "Validación final" son de antes del explorador más rápido y de la corrección del idioma en el primer arranque; se repitieron las cinco apps de esas dos secciones, no las 12.
 - Contenido que `adb` no puede dejar: contestar el selector de carpetas del sistema o iniciar sesión antes de explorar, con un guion de toques por app o credenciales de prueba.
 - Traducir los formatos que hoy no se tocan, empezando por los JSON de textos de una app web, que serían lo más abordable.
 - Detectar el idioma de origen por app, en vez de avisar de que no coincide.
+- Anotar en el informe la versión del WebView del dispositivo: de ella dependen las cifras de una app que es una página web, y hoy no queda registrada.
+- Averiguar si es audiobook quien hace fallar al emulador: tuvo problemas con ella en las dos validaciones y no al evaluarla sola.
 - Mirar si alguna app del lote de 40 de octubre declara `autoStoreLocales`: sus cifras de entonces tendrían el mismo error que las de salomax y tasks.
