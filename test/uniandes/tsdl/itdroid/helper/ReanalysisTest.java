@@ -12,7 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The guards of the re-analysis mode: it must never write into the evaluations it reads. */
+/** The guards of the re-analysis mode, which must never write into the evaluations it reads. */
 class ReanalysisTest {
 
     @TempDir

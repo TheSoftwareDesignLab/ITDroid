@@ -8,14 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 /**
- * A single run configuration file (KEY=VALUE, {@code .properties}) that replaces the positional CLI
- * arguments: pass it as the only argument (<code>java -jar ITDroid.jar itdroid.config.properties</code>).
- *
- * <p>It carries the run parameters (APK, package, folders, emulator…) and the translation-engine
- * choice. The translation block is pushed into the {@code ITDROID_LLM_*} system properties (which have
- * top precedence in {@link uniandes.tsdl.itdroid.translator.LLMTranslator}), so the developer can pick
- * a local Ollama model, a local llama.cpp server, or a remote OpenAI-compatible endpoint with a token,
- * all from this one file. See {@code itdroid.config.example.properties}.
+ * The run configuration file, a .properties file passed as the only argument in place of the
+ * positional ones. Its translation keys become the ITDROID_LLM system properties read by
+ * {@link uniandes.tsdl.itdroid.translator.LLMTranslator}. See itdroid.config.example.properties.
  */
 public class RunConfig {
 
@@ -25,7 +20,6 @@ public class RunConfig {
         this.props = props;
     }
 
-    /** Loads and parses the config file (UTF-8). */
     public static RunConfig load(String path) throws IOException {
         File file = new File(path);
         if (!file.isFile()) {
@@ -38,7 +32,7 @@ public class RunConfig {
         return new RunConfig(p);
     }
 
-    /** True when a lone CLI argument points at a config file rather than being a positional argument. */
+    /** True when a lone CLI argument is a config file rather than a positional argument. */
     public static boolean looksLikeConfigFile(String arg) {
         if (arg == null) {
             return false;
@@ -64,9 +58,9 @@ public class RunConfig {
     public String getAppPackage()  { return required("appPackage"); }
     public String getExtraFolder() { return optional("extraFolder", "extra"); }
     public String getSettingsDir() { return optional("settingsDir", "."); }
-    /** Explicit output folder; empty means "{@code <resultsDir>/<appPackage>}" (the folder the web report lists). */
+    /** Explicit output folder, empty for the app package folder inside the results folder. */
     public String getOutput()      { return optional("output", ""); }
-    /** Root of all evaluations (default {@code results}); {@code --report} serves it. */
+    /** Root of all evaluations, the folder --report serves. */
     public String getResultsDir()  { return optional("resultsDir", "results"); }
     public String getEmulator()    { return required("emulator"); }
 
@@ -80,15 +74,14 @@ public class RunConfig {
     }
 
     /**
-     * Pushes the translation settings into the {@code ITDROID_LLM_*} system properties (top precedence).
-     * {@code translation.engine} only selects sensible endpoint defaults; explicit keys always win.
+     * Copies the translation keys into the ITDROID_LLM system properties. The engine only picks a
+     * default endpoint, explicit keys always win.
      */
     public void applyTranslationSystemProperties() {
         String engine = optional("translation.engine", "ollama").toLowerCase();
         String endpoint = optional("translation.endpoint", "");
         if (engine.equals("api")) {
-            // A remote OpenAI-compatible provider has no sensible localhost default; requiring the
-            // endpoint up front turns a late ConnectException to localhost:11434 into a clear config error.
+            // a remote provider has no localhost default, so a missing endpoint fails here and not later
             if (endpoint.isEmpty()) {
                 throw new IllegalArgumentException(
                         "translation.engine=api requires translation.endpoint to be set.");
@@ -104,11 +97,11 @@ public class RunConfig {
         setIfPresent("ITDROID_LLM_API_KEY", optional("translation.apiKey", ""));
         setIfPresent("ITDROID_LLM_TIMEOUT", optional("translation.timeoutSeconds", ""));
         setIfPresent("ITDROID_LLM_TEMPERATURE", optional("translation.temperature", ""));
-        // auto (by model name) | json (batched, general chat models) | translategemma | template (one text per request)
+        // auto, json, translategemma or template
         setIfPresent("ITDROID_LLM_STYLE", optional("translation.style", ""));
-        // Prompt for style=template, with {source}, {target} and {text}; \n escapes are newlines.
+        // prompt for the template style, with {source}, {target} and {text} placeholders
         setIfPresent("ITDROID_LLM_PROMPT_TEMPLATE", optional("translation.promptTemplate", ""));
-        // true|false: mask %1$s / {name} / tags with <phN> tokens around each single-text request.
+        // masks format specifiers and tags with tokens around each single-text request
         setIfPresent("ITDROID_LLM_MASK_PLACEHOLDERS", optional("translation.maskPlaceholders", ""));
         setIfPresent("ITDROID_LLM_CONTEXT", optional("translation.context", ""));
     }
@@ -119,115 +112,85 @@ public class RunConfig {
         }
     }
 
-    /**
-     * The autostart spec passed to {@link LLMServerManager}: an Ollama model name (starts/pulls it), a
-     * llama.cpp launch command, or empty (the server must already be running / is remote).
-     */
+    /** The autostart spec for {@link LLMServerManager}, a model name, a launch command or empty. */
     public String getAutoStart() {
         return optional("translation.autoStart", "");
     }
 
-    /** Reuse the translations of a previous {@code strings_inventory.json} in the output folder (default true). */
+    /** Reuse the translations of a previous strings_inventory.json in the output folder. */
     public boolean isReuseInventory() {
         return boolOptional("translation.reuseInventory", true);
     }
 
-    /** Run the launch test of the original app before processing it (default true). */
+    /** Run the launch test of the original app before processing it. */
     public boolean isLaunchTest() {
         return boolOptional("preflight.launchTest", true);
     }
 
-    /** UI states captured per app version (default 5); 0 for no limit. */
+    /** UI states captured per app version, 0 for no limit. */
     public int getMaxStates() {
         return Math.max(0, intOptional("exploration.maxStates", 5));
     }
 
-    /** Clickables tapped per state (default 8); 0 for all of them. */
+    /** Clickables tapped per state, 0 for all of them. */
     public int getMaxClickables() {
         return Math.max(0, intOptional("exploration.maxClickables", 8));
     }
 
-    /** Minutes the exploration of the source language may take (default 0, no limit). */
+    /** Minutes the source exploration may take, 0 for no limit. */
     public int getMaxMinutes() {
         return Math.max(0, intOptional("exploration.maxMinutes", 0));
     }
 
-    /**
-     * A file of adb commands run after every clean start of the app, to leave content on the device
-     * before it is explored (config key exploration.setup, default none). See {@link SetupScript}.
-     */
+    /** The {@link SetupScript} file of adb commands run after every clean start, or empty. */
     public String getSetupFile() {
         return props.getProperty("exploration.setup", "").trim();
     }
 
-    /** Seconds to wait after each launch before the first capture, on top of the stability check (default 3). */
+    /** Seconds to wait after each launch before the first capture, on top of the stability check. */
     public int getSettleSeconds() {
         return intOptional("exploration.settleSeconds", 3);
     }
 
-    /** Ask the LLM for values and type them into text fields during exploration (default false). */
+    /** Ask the LLM for values to type into text fields during exploration. */
     public boolean isFillForms() {
         return boolOptional("exploration.fillForms", false);
     }
 
-    /**
-     * Extra package roots of the app's own code, comma separated (key hardcoded.codePackages). Only
-     * needed when the code is split in modules the manifest does not mention; blank otherwise.
-     */
+    /** Extra comma-separated package roots of the app code, for modules the manifest does not name. */
     public String getCodePackages() {
         return optional("hardcoded.codePackages", "");
     }
 
-    /**
-     * Which hardcoded literals of the code are translated (key hardcoded.translate): {@code ui}
-     * (default), {@code ui+unknown} or {@code all}. See {@link HardcodedPolicy}.
-     */
+    /** Which hardcoded literals of the code are translated. */
     public HardcodedPolicy getHardcodedPolicy() {
         return HardcodedPolicy.parse(optional("hardcoded.translate", ""));
     }
 
     /**
-     * Move the translated literals of the code to string resources, so the single internationalized
-     * APK shows them in every language (key hardcoded.extractCode, default true). With false they
-     * are only patched into the per-language APKs.
+     * Move translated code literals to string resources so the internationalized APK shows them in
+     * every language, otherwise they are only patched into the per-language APKs.
      */
     public boolean isExtractCode() {
         return boolOptional("hardcoded.extractCode", true);
     }
 
-    /**
-     * Keep the APK built for each language in the results folder after it was evaluated (key
-     * output.keepLanguageApks, default true). With false each one is removed once its language is
-     * done: the results keep the source build and the internationalized APK, and take a fraction
-     * of the disk.
-     */
+    /** Keep each per-language APK after its evaluation, false saves most of the disk space. */
     public boolean isKeepLanguageApks() {
         return boolOptional("output.keepLanguageApks", true);
     }
 
-    /**
-     * For each right-to-left language, also build and evaluate the app with its layouts repaired to
-     * follow the direction of the language, next to the app as it is (config key rtl.repair, default
-     * false). It adds one build and one replay per right-to-left language.
-     */
+    /** Also evaluate a build with repaired layouts for each right-to-left language, one more replay each. */
     public boolean isRtlRepair() {
         return boolOptional("rtl.repair", false);
     }
 
-    /**
-     * Also write {@code graph.txt} and {@code graph.json} next to each {@code result.json} (default
-     * false). They list every relation of every pair of nodes: useful to debug the comparison by
-     * hand, large, and not read by anything else.
-     */
+    /** Also write the large graph.txt and graph.json debug dumps next to each result.json. */
     public boolean isGraphDumps() {
         return boolOptional("debug.graphDumps", false);
     }
 
-    /**
-     * Share of the elements of a replayed screen, from 0 to 1, that must match those of the source
-     * screen for the two to be compared as the same screen (key comparison.minSimilarity, default
-     * 0.5). Lower it to compare screens whose content differs more; raise it to be stricter.
-     */
+    /** Share of elements, from 0 to 1, a replayed screen must share with the source one to be compared. */
     public double getMinSimilarity() {
         String raw = optional("comparison.minSimilarity", "");
         if (raw.isEmpty()) {
@@ -245,11 +208,7 @@ public class RunConfig {
         return value;
     }
 
-    /**
-     * Also look at the screenshots for translated text drawn over a graphic of the app that is not an
-     * element of the dump, such as the arrow of a drop-down list (key comparison.textOverGraphic,
-     * default true).
-     */
+    /** Also look in the screenshots for text drawn over graphics that are not in the dump. */
     public boolean isTextOverGraphic() {
         return boolOptional("comparison.textOverGraphic", true);
     }

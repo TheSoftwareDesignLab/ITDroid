@@ -12,8 +12,8 @@ import static uniandes.tsdl.itdroid.model.TestGraphs.textView;
 import org.junit.jupiter.api.Test;
 
 /**
- * Which element of the translated screen is which element of the source screen. Positions are
- * those of the dump: 0 is the full-screen root, and a container comes before what it holds.
+ * Tests which element of the translated screen is which element of the source screen. Positions
+ * are those of the dump, 0 is the full-screen root and a container comes before what it holds.
  */
 class NodePairingTest {
 
@@ -36,7 +36,7 @@ class NodePairingTest {
 
     @Test
     void aTranslatedScreenWhoseElementsMovedAndGrewStillPairsByPosition() throws Exception {
-        // what a translation does: the same elements, wider and pushed around
+        // what a translation does, the same elements wider and pushed around
         String source = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200), textView(2, 50, 300, 450, 400));
         String translated = screen(button(0, 50, 100, 700, 200), button(1, 50, 250, 600, 350), textView(2, 50, 400, 950, 600));
 
@@ -86,7 +86,7 @@ class NodePairingTest {
 
         assertArrayEquals(new int[] {0, -1, 1}, pair(screen(ok, cancel), screen(cancelAlone)).targetOfSource);
 
-        // without ids there is nothing to tell them apart but the place: the one that is there is taken for the first
+        // without ids only the place tells them apart, so the one left is taken for the first
         assertArrayEquals(new int[] {0, 1, -1},
                 pair(screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200)), screen(button(0, 50, 100, 450, 200))).targetOfSource);
     }
@@ -127,7 +127,7 @@ class NodePairingTest {
 
     @Test
     void aMirroredRowKeepsItsPairs() throws Exception {
-        // right-to-left: the dump keeps the order of the elements, their places are mirrored
+        // in right-to-left the dump keeps the order of the elements and their places are mirrored
         String source = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200));
         String translated = screen(button(0, 550, 100, 950, 200), button(1, 100, 100, 500, 200));
 
@@ -136,9 +136,8 @@ class NodePairingTest {
 
     @Test
     void againstAMirroredLanguageTheMirroredPlaceCountsAsMuchAsTheSamePlace() throws Exception {
-        // Of two buttons of the same row only one is left, on the right. Left to right it is the
-        // second one. Against a right-to-left language it can as well be the first one, mirrored:
-        // nothing tells them apart, and the first is taken.
+        // Only the right one of two buttons in a row is left. Left to right it is the second one,
+        // against a right-to-left language it may be the first one mirrored, and the first is taken.
         String source = screen(button(0, 50, 100, 450, 200), button(1, 550, 100, 950, 200));
         String translated = screen(button(0, 550, 100, 950, 200));
 

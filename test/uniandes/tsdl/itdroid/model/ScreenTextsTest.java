@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Whether a translated version showed other text than the source: the count that tells "no findings
+ * Tests whether a translated version showed other text than the source, which tells "no findings
  * because the translation fits" from "no findings because nothing was translated on screen".
  */
 class ScreenTextsTest {
@@ -22,7 +22,7 @@ class ScreenTextsTest {
     @TempDir
     Path tmp;
 
-    /** A screen with one label per given text, one under the other; a text starting with "desc:" is a content description. */
+    /** A screen with one label per text, one under the other. The desc prefix makes a content description and field an edit field. */
     private static String screen(String... labels) {
         StringBuilder nodes = new StringBuilder();
         for (int i = 0; i < labels.length; i++) {

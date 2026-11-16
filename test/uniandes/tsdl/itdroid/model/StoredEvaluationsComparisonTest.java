@@ -25,14 +25,8 @@ import uniandes.tsdl.itdroid.Fixtures;
 import uniandes.tsdl.itdroid.helper.Reanalysis;
 
 /**
- * Characterization of the comparison on real explorations: four apps of the evaluation batch of
- * 2026-10-19, re-analysed from their stored {@code result.json}. The numbers are what the code
- * produces today. A change to the comparison that moves any of them must be intended, and the
- * expected value is then updated here together with the change.
- *
- * <p>The {@code report.json} stored with each fixture keeps what the comparison of that day
- * reported (pairing by position, no notion of mirroring), so every row also shows how far the
- * current comparison is from it.
+ * Fixes the comparison of four real stored explorations. A change that moves these numbers must be
+ * intended and updated here. Each stored report keeps the older figure for reference.
  */
 class StoredEvaluationsComparisonTest {
 
@@ -50,19 +44,18 @@ class StoredEvaluationsComparisonTest {
 
     @ParameterizedTest(name = "{0} [{1}]: {3} paired screens, {4} IPFs (the stored report said {2})")
     @CsvSource({
-            // a small Compose app: few nodes change
+            // a small Compose app, few nodes change
             "com.elasticrock.candle_14,  es,   7, 5,   7",
-            // ...in Arabic it mirrors well: what is left is three elements that only that screen has.
-            // Its fifth screen, one node larger than the source, used to be left out.
+            // in Arabic it mirrors well, three elements only that screen has are left
             "com.elasticrock.candle_14,  ar,  41, 5,   3",
-            // many nodes per screen: the count grows with the share of the screen affected
+            // many nodes per screen, so the count follows the share of the screen affected
             "cc.polysfaer.stochapop_8,   es, 215, 5, 214",
-            "cc.polysfaer.stochapop_8,   ru, 283, 5, 282",
-            // the same screens as in Spanish: what the old figure counted was mostly the mirroring itself
-            "cc.polysfaer.stochapop_8,   ar, 376, 5,  30",
-            // both screens have four nodes fewer than the source: they are now told apart from the rest
-            "com.chmouel.noisetimer_2,   es, 104, 2, 108",
-            // an app that does not mirror: every finding is a missing mirroring
+            "cc.polysfaer.stochapop_8,   ru, 283, 5, 274",
+            // the old figure counted mostly the mirroring itself
+            "cc.polysfaer.stochapop_8,   ar, 376, 5,  15",
+            // both screens have four nodes fewer than the source
+            "com.chmouel.noisetimer_2,   es, 104, 2, 106",
+            // an app that does not mirror, so every finding is a missing mirroring
             "org.birthdayadapter_31304,  ar, 157, 5,  44",
     })
     void comparisonOfAStoredEvaluation(String evaluation, String language, long storedIpfs, long pairedScreens, long ipfs) {
@@ -80,9 +73,9 @@ class StoredEvaluationsComparisonTest {
             "com.elasticrock.candle_14,  es, 143,   4,  3, 0, 0,  0",
             "com.elasticrock.candle_14,  ar, 143,   0,  0, 0, 3,  0",
             "cc.polysfaer.stochapop_8,   es, 436, 196, 18, 0, 0,  0",
-            "cc.polysfaer.stochapop_8,   ru, 436, 282,  0, 0, 0,  0",
-            "cc.polysfaer.stochapop_8,   ar, 436,  23,  7, 0, 0,  8",
-            "com.chmouel.noisetimer_2,   es, 124,  90, 14, 4, 0,  0",
+            "cc.polysfaer.stochapop_8,   ru, 436, 274,  0, 0, 0,  0",
+            "cc.polysfaer.stochapop_8,   ar, 436,  11,  4, 0, 0,  8",
+            "com.chmouel.noisetimer_2,   es, 124,  90, 12, 4, 0,  0",
             "org.birthdayadapter_31304,  ar, 228,  35,  9, 0, 0, 44",
     })
     void breakdownOfAStoredEvaluation(String evaluation, String language, long compared, long changed, long affected, long lost,
@@ -104,7 +97,7 @@ class StoredEvaluationsComparisonTest {
         // the total kept for continuity is the sum of the four parts of the breakdown
         for (Reanalysis.Row row : ROWS.values()) {
             long parts = 0;
-            for (String key : new String[] {"nodesChanged", "nodesAffected", "componentsLost", "componentsAdded"}) {
+            for (String key : new String[] {"nodesChanged", "nodesAffected", "componentsLost", "componentsAdded", "textOverGraphic"}) {
                 parts += (Long) row.summary.get(key);
             }
             assertEquals(row.recomputedIpfs.longValue(), parts, row.evaluation + " " + row.language);
@@ -143,10 +136,10 @@ class StoredEvaluationsComparisonTest {
         List<String> lines = Files.readAllLines(out.resolve("summary.csv"), StandardCharsets.UTF_8);
 
         assertTrue(lines.get(0).endsWith(";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;textOverGraphicOnly;positionLost;positionAdded;"
-                + "alignmentLost;alignmentAdded;overlapAdded;overlapRemoved;missingMirroring;componentLost;componentAdded;textOverGraphic;"
+                + "alignmentLost;alignmentAdded;overlapAdded;overlapRemoved;missingMirroring;componentLost;componentAdded;textOverGraphic;outOfFrame;"
                 + "siblingPairsChecked;siblingPairsNotMirrored;sourceTexts;unchangedTexts;sameTextAsSource;unchangedNotInApk"), lines.get(0));
-        // the last three: of the 37 texts of the source screens, the Arabic screens keep 1, so the language was shown
-        assertTrue(lines.contains("org.birthdayadapter_31304;ar;157;44;false;5;5;;228;35;9;0;0;0;0;0;0;0;0;0;44;0;0;0;61;61;37;1;false;"),
+        // the Arabic screens keep 1 of the 37 source texts, so the language was shown
+        assertTrue(lines.contains("org.birthdayadapter_31304;ar;157;44;false;5;5;;228;35;9;0;0;0;0;0;0;0;0;0;44;0;0;0;0;61;61;37;1;false;"),
                 String.join("\n", lines));
     }
 

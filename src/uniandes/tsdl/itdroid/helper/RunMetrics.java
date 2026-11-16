@@ -9,14 +9,13 @@ import java.util.Map;
 import org.json.simple.JSONObject;
 
 /**
- * Wall time per phase plus a light sampler of the machine while ITDroid runs: the
- * {@code performance} and {@code environment} sections of {@code report.json}, which the web
- * report shows. The LLM server and the emulator are separate processes, so what is measured here
- * is the JVM itself (heap, CPU time) and the host as a whole (CPU load, memory in use).
+ * Wall time per phase and a light sampler of the JVM and the host, written as the performance and
+ * environment sections of report.json. The emulator and the LLM server are separate processes, so
+ * they only show in the host figures.
  */
 public class RunMetrics {
 
-    /** Reported in {@code report.json} and by the web report; keep in sync with pom.xml. */
+    /** Keep in sync with pom.xml. */
     public static final String VERSION = "1.0.0";
 
     private static RunMetrics current;
@@ -29,7 +28,7 @@ public class RunMetrics {
     private RunMetrics() {
     }
 
-    /** Starts the run clock and the sampler (idempotent). */
+    /** Starts the run clock and the sampler once. */
     public static synchronized RunMetrics start() {
         if (current == null) {
             current = new RunMetrics();
@@ -62,10 +61,7 @@ public class RunMetrics {
         return (System.currentTimeMillis() - startedAtMs) / 1000.0;
     }
 
-    /**
-     * The performance section: total and per-phase seconds, the LLM totals handed in by the
-     * translator, and what the sampler saw of the JVM and the host.
-     */
+    /** The performance section, with phase times, the LLM totals and the sampler figures. */
     @SuppressWarnings("unchecked")
     public synchronized JSONObject performance(JSONObject llmStats) {
         for (String p : new ArrayList<>(open.keySet())) {
@@ -100,7 +96,7 @@ public class RunMetrics {
         return o;
     }
 
-    /** The environment section: host, device, translation engine and the run configuration. */
+    /** The environment section with host, device, translation engine and run configuration. */
     @SuppressWarnings("unchecked")
     public static JSONObject environment(JSONObject device, JSONObject llm, JSONObject config) {
         JSONObject o = new JSONObject();
@@ -113,7 +109,7 @@ public class RunMetrics {
             host.put("totalMemoryMB", round(os.getTotalMemorySize() / 1048576.0));
         }
         host.put("java", System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")");
-        // No user name and no host name: the results folder is meant to be shared.
+        // no user or host name, since the results folder is meant to be shared
         o.put("host", host);
         o.put("itdroidVersion", VERSION);
         if (device != null) {
@@ -137,7 +133,7 @@ public class RunMetrics {
         return Math.round(v * 10.0) / 10.0;
     }
 
-    /** Samples the JVM heap and the host CPU/memory every couple of seconds; cheap enough to run always. */
+    /** Samples the JVM heap and the host CPU and memory every two seconds. */
     private static final class Sampler extends Thread {
         static final long INTERVAL_MS = 2000;
         volatile long samples;

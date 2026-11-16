@@ -12,26 +12,20 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Every text an APK carries, read from the file itself, without decoding it: the strings of its
- * code (every {@code classes*.dex}, all packages, libraries included) and the readable runs of its
- * other files ({@code assets/}, where a web interface or a React Native bundle keeps its texts, and
- * the native libraries of one ABI, where Flutter keeps them).
- *
- * <p>It answers whether a text shown on a screen could have come from the APK at all. A text the
- * APK does not carry anywhere came from the network, the device or what the app stored at run
- * time, and no translation of the APK can reach it.
+ * Every text an APK carries, read without decoding it, from the dex string pools, the assets and the
+ * native libraries of one ABI. It tells whether a text on screen could come from the APK at all,
+ * since a text it does not carry came from the network or the device and no translation reaches it.
  */
 public final class ApkContent {
 
-    /** Files that are pictures, sound or fonts carry no text to look for. */
+    /** Extensions of files with no text to look for. */
     private static final String[] MEDIA = { ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".mp3", ".ogg", ".wav", ".m4a", ".mp4",
             ".ttf", ".otf", ".woff", ".woff2", ".9.png", ".dex", ".arsc" };
     /** A run of readable bytes shorter than this is noise of a binary file. */
     private static final int MIN_RUN = 4;
-    /** At most this many characters of file content are kept (a web app can bring tens of megabytes). */
+    /** Cap on the file content kept, since a web app can bring tens of megabytes. */
     static final int MAX_FILE_CHARS = 64 * 1024 * 1024;
 
-    /** The strings of the code. */
     public final List<String> codeStrings;
     /** The readable runs of the other files, lower case, one per line. */
     public final String files;
@@ -41,7 +35,7 @@ public final class ApkContent {
         this.files = files;
     }
 
-    /** Reads an APK; throws when it is not a readable zip. */
+    /** Reads an APK, throwing when it is not a readable zip. */
     public static ApkContent read(String apkPath) throws IOException {
         List<String> strings = new ArrayList<>();
         StringBuilder files = new StringBuilder();
@@ -61,10 +55,10 @@ public final class ApkContent {
                 boolean asset = name.startsWith("assets/");
                 boolean lib = name.startsWith("lib/") && name.endsWith(".so");
                 if (asset) {
-                    // the names of its files too: an app can show a file name as a label (a preset, a sound)
+                    // file names too, since an app can show one as a label
                     files.append(name.toLowerCase(Locale.ROOT)).append('\n');
                     if (name.endsWith(".cvr")) {
-                        // Compose Multiplatform: one line per text, its value in base64; the default ones are enough
+                        // Compose Multiplatform resources, only the default values are needed
                         if (name.contains("/values/")) {
                             composeResources(bytes(zip, e), files);
                         }
@@ -72,7 +66,7 @@ public final class ApkContent {
                     }
                 }
                 if (lib) {
-                    // the same texts are in every ABI: one is enough
+                    // every ABI has the same texts, so one is enough
                     String[] parts = name.split("/");
                     if (parts.length < 3) {
                         continue;
@@ -113,9 +107,8 @@ public final class ApkContent {
     }
 
     /**
-     * The string pool of a dex file: {@code string_ids_size} at 0x38 and {@code string_ids_off} at
-     * 0x3C of the header; each id is the offset of a ULEB128 length followed by the text in modified
-     * UTF-8, ended by a zero byte.
+     * The string pool of a dex file. The header holds its size at 0x38 and its offset at 0x3C, and
+     * each entry is a ULEB128 length then zero-ended modified UTF-8.
      */
     static List<String> dexStrings(byte[] dex) {
         List<String> out = new ArrayList<>();
@@ -133,7 +126,7 @@ public final class ApkContent {
             if (p < 0 || p >= dex.length) {
                 continue;
             }
-            while (p < dex.length && (dex[p] & 0x80) != 0) {   // the ULEB128 length, in UTF-16 units: not needed
+            while (p < dex.length && (dex[p] & 0x80) != 0) {   // skips the ULEB128 length
                 p++;
             }
             p++;
@@ -153,9 +146,8 @@ public final class ApkContent {
     }
 
     /**
-     * The texts of a Compose Multiplatform resource file ({@code .cvr}): lines such as
-     * {@code string|key|<base64>}, or several values separated by commas, each maybe after a
-     * {@code quantity:} prefix. Each value is decoded and appended on its own line.
+     * Appends the base64 values of a Compose Multiplatform {@code .cvr} resource file, decoded, one
+     * per line.
      */
     static void composeResources(byte[] data, StringBuilder out) {
         for (String line : new String(data, StandardCharsets.UTF_8).split("\\r?\\n")) {
@@ -166,7 +158,7 @@ public final class ApkContent {
                     try {
                         out.append(new String(java.util.Base64.getDecoder().decode(v.trim()), StandardCharsets.UTF_8)).append('\n');
                     } catch (IllegalArgumentException ignored) {
-                        // not base64: not a text
+                        // not base64, so not a text
                     }
                 }
             }

@@ -14,15 +14,11 @@ public class Helper {
 		return instance;
 	}
 
-	/**
-	 * Languages written from right to left, by ISO code: Arabic, Aramaic, Sorani Kurdish, Divehi,
-	 * Persian, Hausa (in Ajami script), Hebrew ("iw" is the code Android still uses for it), Khowar,
-	 * Kashmiri, Pashto, Urdu and Yiddish.
-	 */
+	/** ISO codes of right-to-left languages ("iw" is the old Hebrew code Android still uses). */
 	private static final java.util.Set<String> RTL_LANGUAGES = java.util.Set.of("ar", "arc", "ckb", "dv", "fa", "ha", "he", "iw",
 			"khw", "ks", "ps", "ur", "yi");
 
-	/** True when the language of an Android locale code ("ar", "fa-rIR", "he_IL") is written from right to left. */
+	/** True when the language of an Android locale code such as "fa-rIR" is written from right to left. */
 	public static boolean languageIsRTL(String code) {
 		if (code == null) {
 			return false;
@@ -38,9 +34,8 @@ public class Helper {
 	public static int levenshteinDistance(String left, String right) {
 		left = left.toLowerCase();
 		right = right.toLowerCase();
-        // i == 0
-        int n = left.length(); // length of left
-        int m = right.length(); // length of right
+        int n = left.length();
+        int m = right.length();
 
         if (n == 0) {
             return m;
@@ -49,7 +44,7 @@ public class Helper {
         }
 
         if (n > m) {
-            // swap the input strings to consume less memory
+            // the shorter string sizes the row, to use less memory
             final String tmp = left;
             left = right;
             right = tmp;
@@ -59,14 +54,13 @@ public class Helper {
 
         int[] p = new int[n + 1];
 
-        // indexes into strings left and right
-        int i; // iterates through left
-        int j; // iterates through right
+        int i;
+        int j;
         int upper_left;
         int upper;
 
-        char rightJ; // jth character of right
-        int cost; // cost
+        char rightJ;
+        int cost;
 
         for (i = 0; i <= n; i++) {
             p[i] = i;
@@ -80,7 +74,6 @@ public class Helper {
             for (i = 1; i <= n; i++) {
                 upper = p[i];
                 cost = left.charAt(i - 1) == rightJ ? 0 : 1;
-                // minimum of cell to the left+1, to the top+1, diagonally left and up +cost
                 p[i] = Math.min(Math.min(p[i - 1] + 1, p[i] + 1), upper_left + cost);
                 upper_left = upper;
             }

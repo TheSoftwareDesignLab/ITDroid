@@ -56,7 +56,7 @@ class AppCodeTest {
 
     @Test
     void aFlavourSuffixInTheApplicationIdDoesNotHideTheRestOfTheCode() {
-        // applicationId com.example.shop.free; application class and launcher under com.example.shop
+        // applicationId com.example.shop.free, application class and launcher under com.example.shop
         assertEquals(List.of("com.example.shop"), AppCode.packageRoots(Fixtures.decodedApp().toString(), "com.example.shop.free"));
 
         List<File> files = AppCode.smaliFiles(Fixtures.decodedApp().toString(), "com.example.shop.free");
@@ -95,14 +95,14 @@ class AppCodeTest {
         Path buildConfig = tmp.resolve("smali/com/vendor/product/BuildConfig.smali");
         Files.writeString(buildConfig, ".class public final Lcom/vendor/product/BuildConfig;\n.super Ljava/lang/Object;\n\n"
                 + ".field public static final APPLICATION_ID:Ljava/lang/String; = \"com.vendor.product.pro\"\n", StandardCharsets.UTF_8);
-        // no manifest at all: only the BuildConfig says where the code is
+        // no manifest, only the BuildConfig says where the code is
 
         assertEquals(List.of("com.vendor.product"), roots("com.vendor.product.pro"));
     }
 
     @Test
     void aLibraryThatLaunchesTheAppIsNotTakenForTheApp() throws IOException {
-        // a Flutter-style app: the launcher is the app's, the application class is the framework's
+        // Flutter-style, the launcher is the app's and the application class is the framework's
         smali("smali", "com.acme.notes.MainActivity");
         smali("smali", "io.flutter.app.FlutterApplication");
         manifest("com.acme.notes", "io.flutter.app.FlutterApplication", "com.acme.notes.MainActivity");

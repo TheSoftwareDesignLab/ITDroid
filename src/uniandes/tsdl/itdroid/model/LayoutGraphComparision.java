@@ -23,25 +23,14 @@ import org.json.simple.JSONObject;
 import uniandes.tsdl.itdroid.helper.Helper;
 
 /**
- * Compares the screens of the source language with the same screens in another language and
- * reports the internationalization presentation failures (IPFs): the elements whose place on the
- * screen, with respect to the other elements, is not the one they had.
- *
- * <p>Screens are paired by the source screen each one reproduces; their elements by
- * {@link NodePairing}. For every two paired elements the relations they had in the source are set
- * against the ones they have now. An element with a relation lost or gained is a finding, and so is
- * one that only one of the two screens has. Two rules keep out what is not a failure:
- * <ul>
- *   <li>a change of alignment is ignored when either element is a text: a text gets wider or
- *       narrower when translated, which moves its edges without anything being wrong;</li>
- *   <li>between a left-to-right and a right-to-left language the layout is expected to be
- *       mirrored, so who is left of whom and which side is aligned are expected to swap. What is
- *       reported there is the opposite: two sibling elements that did NOT swap.</li>
- * </ul>
+ * Compares the source screens with the same screens in another language and reports the
+ * internationalization presentation failures (IPFs), elements whose relations to the others changed
+ * or that only one screen has. Elements are paired by {@link NodePairing}. Alignment changes next to
+ * a text are ignored, and between opposite writing directions the siblings that did not swap are reported.
  */
 public class LayoutGraphComparision {
 
-	/** What happened to an element, in the terms of the taxonomy of the paper. */
+	/** What happened to an element, in the taxonomy of the paper. */
 	public enum Change {
 		POSITION_LOST("positionLost"),
 		POSITION_ADDED("positionAdded"),
@@ -53,7 +42,14 @@ public class LayoutGraphComparision {
 		COMPONENT_LOST("componentLost"),
 		COMPONENT_ADDED("componentAdded"),
 		/** The text of the element is drawn over a graphic that is not an element (see {@link TextOverGraphic}). */
-		TEXT_OVER_GRAPHIC("textOverGraphic");
+		TEXT_OVER_GRAPHIC("textOverGraphic"),
+		/** The element reaches past the left or right edge the screen had in the source, such as a menu wider than its window. */
+		OUT_OF_FRAME("outOfFrame");
+
+		/** Changes that break the screen rather than rearrange it. */
+		boolean severe() {
+			return this == TEXT_OVER_GRAPHIC || this == OVERLAP_ADDED || this == OUT_OF_FRAME;
+		}
 
 		/** Name used in report.json. */
 		public final String key;
@@ -72,11 +68,11 @@ public class LayoutGraphComparision {
 	/** An element that is where it was and whose text is now drawn over a graphic of the app. */
 	public static final String KIND_TEXT_OVER_GRAPHIC = "textOverGraphic";
 
-	/**
-	 * Whether the screenshots are looked at for text drawn over a graphic that is not an element
-	 * (default true). Config key {@code comparison.textOverGraphic}.
-	 */
+	/** Whether the screenshots are searched for text over a graphic, config key {@code comparison.textOverGraphic}. */
 	private static boolean textOverGraphic = true;
+
+	/** Pixels an element may pass the side of the source frame before it counts as out of it. */
+	static final int FRAME_SLACK = 6;
 
 	public static void setTextOverGraphic(boolean on) {
 		textOverGraphic = on;
@@ -87,10 +83,8 @@ public class LayoutGraphComparision {
 	}
 
 	/**
-	 * A screen reached by replaying the source path is taken for the same screen when at least this
-	 * share of the elements of the larger of the two can be paired. Below it the app showed
-	 * something else there (a dialog, an error, another step of a flow) and comparing the two would
-	 * report every element of both. Config key {@code comparison.minSimilarity}.
+	 * Share of the elements of the larger screen that must pair for a replayed screen to be the same
+	 * screen. Below it the app showed something else there. Config key {@code comparison.minSimilarity}.
 	 */
 	public static final double DEFAULT_MIN_SIMILARITY = 0.5;
 
@@ -119,10 +113,14 @@ public class LayoutGraphComparision {
 		final EnumSet<Change> changes = EnumSet.noneOf(Change.class);
 		final List<JSONObject> relations = new ArrayList<>();
 		String geometry = "";
-		/** Pairs in which this element changed; for a lost or added component, the elements it is made of. */
+		/** Pairs in which this element changed, or for a lost or added component the elements it is made of. */
 		int score;
-		/** Graphics its text is drawn over, in the translated screen: x1, y1, x2, y2 each. */
+		/** Graphics its text is drawn over in the translated screen, each as x1, y1, x2, y2. */
 		final List<int[]> graphics = new ArrayList<>();
+
+		boolean severe() {
+			return changes.stream().anyMatch(Change::severe);
+		}
 
 		Finding(int stateId, int sourceNode, int languageNode, String kind) {
 			this.stateId = stateId;
@@ -136,7 +134,7 @@ public class LayoutGraphComparision {
 	public LayoutGraph defltLayoutGraph;
 	public String destLanguage;
 	public LayoutGraph destLangLayoutGraph;
-	/** default-graph list index -> language-graph list index of the states compared with each other. */
+	/** Source graph list index to language graph list index of the states compared with each other. */
 	public HashMap<Integer, Integer> statePairing = new HashMap<Integer, Integer>();
 	public Set<Integer> defltStatesNotProcessed = new HashSet<Integer>();
 	public Set<Integer> langStatesNotProcessed = new HashSet<Integer>();
@@ -145,9 +143,8 @@ public class LayoutGraphComparision {
 	/** True when one language is written left to right and the other right to left. */
 	private final boolean mirrorExpected;
 	/**
-	 * Width of the device screen: the furthest right any element of either exploration reaches. The
-	 * dump of one screen does not tell it, because that of a dialog only reaches the edges of the
-	 * dialog, and the mirror image of an element is taken across the middle of the screen.
+	 * Device screen width, the furthest right any element of either exploration reaches, since the
+	 * dump of a dialog only reaches the edges of the dialog.
 	 */
 	private final int screenWidth;
 	private final List<Finding> findings = new ArrayList<>();
@@ -190,8 +187,7 @@ public class LayoutGraphComparision {
 			findings.addAll(found);
 			texts.add(source, language);
 		}
-		// Did this version show other text than the source? When it did not, nothing was translated on
-		// screen, and "no findings" says nothing about how a translation would fit.
+		// When the screens show the source text, finding nothing says nothing about how a translation fits.
 		dfltLangJSONTrans.put("screenText", texts.toJson());
 		if (texts.sameAsSource()) {
 			System.out.println("WARNING: the "+destLanguage+" version shows the same text as the source on the screens compared ("
@@ -204,7 +200,7 @@ public class LayoutGraphComparision {
 					+String.join(" | ", new ArrayList<>(texts.notInApk()).subList(0, Math.min(ScreenTexts.EXAMPLES, texts.notInApk().size()))));
 		}
 
-		// Most affected first; then by screen and element, so the same data always gives the same file.
+		// Most affected first, then by screen and element, so the same data always gives the same file.
 		findings.sort((a, b) -> {
 			if (a.score != b.score) {
 				return Integer.compare(b.score, a.score);
@@ -231,6 +227,7 @@ public class LayoutGraphComparision {
 			o.put("nodeID", f.sourceNode);
 			o.put("langNodeID", f.languageNode);
 			o.put("kind", f.kind);
+			o.put("severity", f.severe() ? "severe" : "moderate");
 			JSONArray types = new JSONArray();
 			for (Change c : f.changes) {
 				types.add(c.key);
@@ -259,7 +256,6 @@ public class LayoutGraphComparision {
 		dfltLangJSONTrans.put("ipfs", ipfs);
 
 		System.out.println("There are "+findings.size()+" Internationalization Presentation Failures for "+destLanguage+" app version.");
-		// try-with-resources so the writer is always closed even if a write throws.
 		try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputFolder+File.separator+"ipfs.csv", true))) {
 			for (Finding f : findings) {
 				bw.write(destLanguage+";"+f.stateId+";"+f.sourceNode+";"+f.score+";"+f.languageNode+";"+f.kind);
@@ -268,7 +264,7 @@ public class LayoutGraphComparision {
 		}
 	}
 
-	/** The breakdown of the findings of this language: how many elements, of which kind, changed in what way. */
+	/** Counts of the findings of this language by kind and by change. */
 	@SuppressWarnings("unchecked")
 	private JSONObject summary() {
 		long changed = 0;
@@ -298,15 +294,17 @@ public class LayoutGraphComparision {
 		}
 		JSONObject o = new JSONObject();
 		o.put("nodesCompared", nodesCompared);
-		// the element itself moved or changed size...
+		// the element itself moved or changed size
 		o.put("nodesChanged", changed);
-		// ...or it stayed as it was (or was mirrored as expected) and it is its neighbours that changed around it
+		// or it stayed (or mirrored as expected) and its neighbours changed around it
 		o.put("nodesAffected", affected);
 		o.put("componentsLost", lost);
 		o.put("componentsAdded", added);
-		// ...or nothing moved and its text is drawn over a graphic of the app (only that; an element that
-		// also moved is counted above and carries textOverGraphic among its types)
+		// or only its text is drawn over a graphic (one that also moved counts above)
 		o.put("textOverGraphic", overGraphic);
+		long severe = findings.stream().filter(Finding::severe).count();
+		o.put("severe", severe);
+		o.put("moderate", findings.size() - severe);
 		JSONObject types = new JSONObject();
 		for (Map.Entry<Change, Long> e : byType.entrySet()) {
 			types.put(e.getKey().key, e.getValue());
@@ -346,7 +344,7 @@ public class LayoutGraphComparision {
 				EnumSet<GraphEdgeType> addedAB = minus(languageGraph[pi][pj], sourceGraph[i][j]);
 				EnumSet<GraphEdgeType> addedBA = minus(languageGraph[pj][pi], sourceGraph[j][i]);
 
-				// A text changes width when it is translated: its edges move and nothing is wrong.
+				// A translated text changes width, so its alignments are not compared.
 				boolean text = isTextView(sourceNodes.get(i)) || isTextView(sourceNodes.get(j))
 						|| isTextView(languageNodes.get(pi)) || isTextView(languageNodes.get(pj));
 				if (text) {
@@ -380,8 +378,41 @@ public class LayoutGraphComparision {
 						&& missingAB.isEmpty() && missingBA.isEmpty()) {
 					continue;
 				}
-				record(byNode, stateId, i, pi, j, pj, lostAB, addedAB, missingAB);
-				record(byNode, stateId, j, pj, i, pi, lostBA, addedBA, missingBA);
+				// A container does not take the finding of a child that moved inside it.
+				boolean iHoldsJ = sourceGraph[i][j].contains(GraphEdgeType.CONTAINS) || languageGraph[pi][pj].contains(GraphEdgeType.CONTAINS);
+				boolean jHoldsI = sourceGraph[j][i].contains(GraphEdgeType.CONTAINS) || languageGraph[pj][pi].contains(GraphEdgeType.CONTAINS);
+				if (!iHoldsJ) {
+					record(byNode, stateId, i, pi, j, pj, lostAB, addedAB, missingAB);
+				}
+				if (!jHoldsI) {
+					record(byNode, stateId, j, pj, i, pi, lostBA, addedBA, missingBA);
+				}
+			}
+		}
+
+		// Elements past the sides of the source screen, reported only at the highest one, as a menu
+		// wider than its window carries its rows with it.
+		int left = Integer.MAX_VALUE, right = Integer.MIN_VALUE;
+		for (AndroidNode n : sourceNodes) {
+			if (n.getParentPosition() < 0) {
+				left = Math.min(left, n.getPoint1()[0]);
+				right = Math.max(right, n.getPoint2()[0]);
+			}
+		}
+		boolean[] outside = new boolean[sourceNodes.size()];
+		for (int i = 0; i < sourceNodes.size(); i++) {
+			int pi = pairing.targetOfSource[i];
+			if (pi < 0 || left > right) {
+				continue;
+			}
+			AndroidNode s = sourceNodes.get(i), l = languageNodes.get(pi);
+			boolean wasInside = s.getPoint1()[0] >= left - FRAME_SLACK && s.getPoint2()[0] <= right + FRAME_SLACK;
+			outside[i] = wasInside && (l.getPoint1()[0] < left - FRAME_SLACK || l.getPoint2()[0] > right + FRAME_SLACK);
+			int parent = s.getParentPosition();
+			if (outside[i] && (parent < 0 || !outside[parent])) {
+				Finding f = byNode.computeIfAbsent(i, k -> new Finding(stateId, k, pi, KIND_RELATIONS));
+				f.changes.add(Change.OUT_OF_FRAME);
+				f.score++;
 			}
 		}
 
@@ -391,8 +422,7 @@ public class LayoutGraphComparision {
 			out.add(f);
 		}
 
-		// An element one screen has and the other does not. Reported once, at the top of what is
-		// missing or new: its descendants went or came with it.
+		// Elements only one screen has, reported once at the top of what is missing or new.
 		for (int i = 0; i < sourceNodes.size(); i++) {
 			int parent = sourceNodes.get(i).getParentPosition();
 			if (pairing.targetOfSource[i] < 0 && (parent < 0 || pairing.targetOfSource[parent] >= 0)) {
@@ -415,9 +445,8 @@ public class LayoutGraphComparision {
 	}
 
 	/**
-	 * Texts of the translated screen drawn over a graphic of the app that is not an element. An
-	 * element that already has a finding gets the type and the graphic; one that has none gets a
-	 * finding of its own. Nothing happens when a screenshot cannot be read.
+	 * Adds the texts drawn over a graphic of the app to the finding of their element, or as a new
+	 * finding. Nothing happens when a screenshot cannot be read.
 	 */
 	private void addTextOverGraphic(List<Finding> found, State source, State language, NodePairing pairing) {
 		BufferedImage sourceShot = screenshot(defltLayoutGraph, source);
@@ -449,7 +478,7 @@ public class LayoutGraphComparision {
 		}
 	}
 
-	/** The screenshot of a state, from the folder of its exploration; null when it cannot be read. */
+	/** The screenshot of a state from the folder of its exploration, or null when it cannot be read. */
 	private static BufferedImage screenshot(LayoutGraph graph, State state) {
 		String name = state.getScreenShot();
 		if (name == null || name.isEmpty()) {
@@ -482,7 +511,7 @@ public class LayoutGraphComparision {
 			f.changes.add(Change.MISSING_MIRRORING);
 		}
 		if (removed.isEmpty() && added.isEmpty() && missing.isEmpty()) {
-			return;   // the change is on the other element's side of the pair; this one is only counted
+			return;   // the change is on the other element's side, this one is only counted
 		}
 		JSONObject relation = new JSONObject();
 		relation.put("relNode", other);
@@ -496,9 +525,8 @@ public class LayoutGraphComparision {
 	}
 
 	/**
-	 * The mirrored relations that two sibling elements should have in the other writing direction
-	 * and do not have: the one that was left of the other should now be right of it. Alignments are
-	 * left out when a text is involved, for the same reason as everywhere else.
+	 * The mirrored relations two siblings should have in the other writing direction and do not, such
+	 * as left becoming right. Alignments are skipped when a text is involved.
 	 */
 	private static EnumSet<GraphEdgeType> notMirrored(Set<GraphEdgeType> sourceRelations, Set<GraphEdgeType> languageRelations, boolean text) {
 		EnumSet<GraphEdgeType> missing = EnumSet.noneOf(GraphEdgeType.class);
@@ -525,8 +553,8 @@ public class LayoutGraphComparision {
 	}
 
 	/**
-	 * Of two source screens that got the same capture, the one it is: more of its elements paired,
-	 * then more of them in the same place (or the mirrored one), then the one captured first.
+	 * Of two source screens that got the same capture, the one it is, by elements paired, then
+	 * elements in the same or mirrored place, then the one captured first.
 	 */
 	private int[] better(int[] a, int[] b, Map<Integer, NodePairing> pairings, List<State> defltStates, List<State> langStates) {
 		NodePairing pa = pairings.get(a[0]), pb = pairings.get(b[0]);
@@ -570,7 +598,7 @@ public class LayoutGraphComparision {
 		return width;
 	}
 
-	/** Whether the element itself is where and as it was: same, moved, resized, moved+resized, or mirrored. */
+	/** Whether the element itself is where and as it was (same, moved, resized, moved+resized or mirrored). */
 	private String geometry(AndroidNode source, AndroidNode language) {
 		boolean sameSize = source.getWidth() == language.getWidth() && source.getHeight() == language.getHeight();
 		boolean sameY = source.getPoint1()[1] == language.getPoint1()[1];
@@ -600,7 +628,7 @@ public class LayoutGraphComparision {
 		return out;
 	}
 
-	/** The relations as the reports write them: names in the order of the enum, each followed by a semicolon. */
+	/** The relation names in enum order, each followed by a semicolon, as the reports write them. */
 	private static String join(Set<GraphEdgeType> relations) {
 		StringBuilder sb = new StringBuilder();
 		for (GraphEdgeType e : relations) {
@@ -609,19 +637,15 @@ public class LayoutGraphComparision {
 		return sb.toString();
 	}
 
-	/** Null-safe TextView test: a &lt;node&gt; may have no class attribute (getpClass()==""), and the
-	 *  node reference itself may be absent. */
+	/** Null-safe TextView test, as a node may be absent or have no class attribute. */
 	private static boolean isTextView(AndroidNode node) {
 		return node != null && node.getpClass() != null && node.getpClass().contains("TextView");
 	}
 
 	/**
-	 * Pairs the states of both graphs. When the language graph was produced by REPLAYING the source
-	 * exploration, every state carries the source state id it reproduces, so the pairing is by id
-	 * (same screen reached through the same taps), and it is accepted when the screen is on the
-	 * same activity and enough of its elements can be paired with those of the source
-	 * ({@link #setMinSimilarity}). Otherwise falls back to the historical positional pairing with
-	 * the raw-XML similarity test, which stops at the first mismatch.
+	 * Pairs the states of both graphs. A replayed language graph is paired by source state id, when
+	 * on the same activity and similar enough ({@link #setMinSimilarity}). Otherwise states are paired
+	 * by position with the raw XML test, stopping at the first mismatch.
 	 */
 	@SuppressWarnings("unchecked")
 	private void pairStates(JSONObject dfltLangJSONTrans) {
@@ -643,7 +667,7 @@ public class LayoutGraphComparision {
 			for (int i = 0; i < defltStates.size(); i++) {
 				dfltIndexById.put(defltStates.get(i).getId(), i);
 			}
-			// the screens that can be compared, in the order the replay captured them: {di, li}
+			// the screens that can be compared as {di, li}, in the order the replay captured them
 			List<int[]> candidates = new ArrayList<>();
 			Map<Integer, NodePairing> candidatePairings = new HashMap<>();
 			Set<Integer> taken = new HashSet<>();
@@ -671,11 +695,8 @@ public class LayoutGraphComparision {
 					notPaired(notCompared, langState.getSourceStateId(), why);
 				}
 			}
-			// One capture standing for two screens of the source: a replay that lost its way can
-			// believe it reached a screen while it is still on another one, and keep the same dump for
-			// both. Comparing it with both would set a screen against one that is not the same (with
-			// elements reported missing and extra that are not). It is compared with the source screen
-			// it matches best; the other screen is left out, and says why.
+			// A replay that lost its way may keep one capture for two source screens. It is compared
+			// only with the one it matches best, and the other is left out with a reason.
 			Map<String, int[]> byCapture = new HashMap<>();
 			for (int[] c : candidates) {
 				String capture = langStates.get(c[1]).getRawXML();

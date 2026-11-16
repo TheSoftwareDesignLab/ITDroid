@@ -15,8 +15,8 @@ import org.junit.jupiter.api.io.TempDir;
 import uniandes.tsdl.itdroid.Fixtures;
 
 /**
- * The warning for an app whose default strings are not in the source language of the run: such an
- * app is translated from the wrong language, and the model answers with a transliteration.
+ * Tests the warning for an app whose default strings are not in the source language of the run.
+ * Such an app is translated from the wrong language and the model answers with a transliteration.
  */
 class SourceLanguageCheckTest {
 
@@ -24,7 +24,7 @@ class SourceLanguageCheckTest {
             "Asks Android to stop putting the app to sleep", "Show notifications", "Let's make reminders stick", "You can change this later",
             "Delete this reminder?", "Nothing here yet", "Tap the button to add one", "Remind me every day");
 
-    /** The first strings of the dictionary of Esperanto of the validation, whose default language is Esperanto. */
+    /** The first strings of the Esperanto dictionary app of the validation, whose default language is Esperanto. */
     private static final List<String> ESPERANTO = List.of("Serĉi lingvon", "Movu ilin por ŝanĝi ilian ordon.", "Aliaj lingvoj",
             "Tenu kaj movu por ŝanĝi la ordon", "Bonvenon! En kiuj lingvoj vi volas serĉi vortojn?", "Nenio troviĝis por tiu vorto.",
             "Aldonu aŭ forigu lingvojn per tuŝo", "Elektu la lingvojn de la vortaro", "Montri la artikolojn de la vorto",
@@ -65,7 +65,7 @@ class SourceLanguageCheckTest {
         assertTrue(spanishAsEnglish.mismatch);
         assertFalse(spanishAsEnglish.toJson().containsKey("looksLike"));
 
-        // Esperanto shares the "la", "de" and "por" of Spanish: taken for Spanish, it would pass
+        // Esperanto shares the "la", "de" and "por" of Spanish, so taken for Spanish it would pass
         assertFalse(SourceLanguageCheck.of(ESPERANTO, "es").mismatch, "which is why the check does not name a language");
     }
 

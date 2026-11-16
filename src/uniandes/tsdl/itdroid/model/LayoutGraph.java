@@ -28,7 +28,7 @@ public class LayoutGraph {
 	public static String TRANSITIONS = "transitions";
 
 	private String scriptPath;
-	/** The folder of result.json; the screenshots of the states are relative to it. */
+	/** The folder of result.json, which the screenshot paths are relative to. */
 	private String folder;
 	private ArrayList<State> states;
 	private ArrayList<Transition> transitions;
@@ -40,10 +40,8 @@ public class LayoutGraph {
 	}
 
 	/**
-	 * Loads {@code result.json} from the folder. With {@code writeDumps}, also writes the readable
-	 * {@code graph.txt} and {@code graph.json} next to it: every relation of every pair of nodes, so
-	 * they are large, and nothing in the pipeline reads them. Off by default, so that loading a
-	 * graph never modifies the folder it reads (config key {@code debug.graphDumps}).
+	 * Loads result.json from the folder. With {@code writeDumps} it also writes the large graph.txt
+	 * and graph.json debug dumps next to it, off by default (config key {@code debug.graphDumps}).
 	 */
 	public LayoutGraph(String language, String resultFolderPath, boolean writeDumps) {
 
@@ -53,12 +51,10 @@ public class LayoutGraph {
 		states = new ArrayList<State>();
 		transitions = new ArrayList<Transition>();
 
-		//JSON parser object to parse read file
 		JSONParser jsonParser = new JSONParser();
 
 		try (FileReader reader = new FileReader(scriptPath))
 		{
-			//Read JSON file
 			JSONObject obj = (JSONObject) jsonParser.parse(reader);
 
 			JSONObject statess = (JSONObject) obj.get(STATES);
@@ -66,9 +62,8 @@ public class LayoutGraph {
 				statess = new JSONObject();
 			}
 
-			// States are keyed by their id. Iterate the keys actually present (in numeric order)
-			// instead of assuming a contiguous 1..amountStates range: a replayed exploration keeps
-			// the SOURCE ids, so a state the translated build never reached simply leaves a gap.
+			// Iterate the ids present, in order, as a replayed exploration keeps the source ids and a
+			// state the translated build never reached leaves a gap.
 			List<Integer> ids = new ArrayList<>();
 			for (Object key : statess.keySet()) {
 				try {
@@ -104,9 +99,7 @@ public class LayoutGraph {
 				transitionss = new JSONObject();
 			}
 
-			// Iterate over the keys actually present so no transition is dropped, regardless
-			// of whether the explorer output keys them 0- or 1-based (the previous loop started at
-			// index 1 and stopped before the last key, losing one transition).
+			// Iterate the keys present, whether the explorer counts them from 0 or from 1.
 			for (Object transitionKey : transitionss.keySet()) {
 				JSONObject currentTransition = (JSONObject) transitionss.get(transitionKey);
 				if (currentTransition == null) {
@@ -120,18 +113,17 @@ public class LayoutGraph {
 				}
 				int originState = Math.toIntExact((long) stStateObj);
 				int destState = Math.toIntExact((long) dsStateObj);
-				// States are looked up by id (not list position): skip a transition whose endpoints
-				// are not in this graph instead of throwing.
+				// Skip a transition whose states are not in this graph.
 				State origin = byId.get(originState);
 				State dest = byId.get(destState);
 				if (origin == null || dest == null) {
 					System.err.println("LayoutGraph :: transition "+transitionKey+" references an unknown state (origin="+originState+", dest="+destState+"), skipping");
 					continue;
 				}
-				// An unknown or null transition type must not abort the whole graph load: warn and skip.
-				TransitionType tType;
+				// An unknown transition type is skipped rather than aborting the load.
+				Transition.Type tType;
 				try {
-					tType = TransitionType.valueOf((String)currentTransition.get("tranType"));
+					tType = Transition.Type.valueOf((String)currentTransition.get("tranType"));
 				} catch (IllegalArgumentException | NullPointerException e) {
 					System.err.println("LayoutGraph :: transition "+transitionKey+" has unknown/missing type '"+currentTransition.get("tranType")+"', skipping");
 					continue;
@@ -153,8 +145,7 @@ public class LayoutGraph {
 				writeDumps(resultFolderPath);
 			}
 		} catch (FileNotFoundException e) {
-			// Fail fast on a genuine load failure rather than leaving a truncated graph that would
-			// silently corrupt the downstream comparison.
+			// Fail fast rather than compare a truncated graph.
 			System.err.println("LayoutGraph :: result.json not found at "+scriptPath);
 			throw new RuntimeException(e);
 		} catch (IOException e) {
@@ -176,7 +167,6 @@ public class LayoutGraph {
 	/** Writes graph.txt and graph.json (states, nodes and every node-to-node relation) into the folder. */
 	@SuppressWarnings("unchecked")
 	private void writeDumps(String folder) throws IOException {
-		// try-with-resources so the writer is always closed, even if writing throws part-way.
 		try (BufferedWriter bw = new BufferedWriter(new FileWriter(folder+File.separator+"graph.txt"))) {
 			bw.write("-------------------------");
 			bw.newLine();
@@ -221,7 +211,7 @@ public class LayoutGraph {
 		return states.get(i);
 	}
 
-	/** The folder of result.json: where the screenshots named by the states are, relative to it. */
+	/** The folder of result.json, which the screenshot paths are relative to. */
 	public String getFolder() {
 		return folder;
 	}

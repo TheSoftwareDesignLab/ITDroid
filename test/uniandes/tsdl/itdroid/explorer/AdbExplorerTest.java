@@ -6,18 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * What the explorer decides without a device. A screen is known by its signature: one entry per
- * element (resource id, class, description, whether it shows text), each closed by a semicolon.
+ * Tests what the explorer decides without a device. A screen signature has one entry per element,
+ * each closed by a semicolon.
  */
 class AdbExplorerTest {
 
-    /** The settings of a currency converter: a title, a "Sync Now" row with an empty line of status under it, another row. */
+    /** Settings of a currency converter with a title, a Sync Now row over an empty status line, and another row. */
     private static final String SETTINGS = ":FrameLayout;:View;:TextViewt;:View[Sync Now];:TextView;:View;:TextViewt;";
 
-    /**
-     * The case that asked for it: after "Sync Now" the line of status says "Sync completed
-     * successfully" for three seconds. Same elements, one of them with a text it did not have.
-     */
+    /** After Sync Now the status line shows a text for three seconds, so one element gains text. */
     @Test
     void aScreenWithALineThatChangedLooksLikeAMessage() {
         String withStatus = ":FrameLayout;:View;:TextViewt;:View[Sync Now];:TextViewt;:View;:TextViewt;";
@@ -45,10 +42,7 @@ class AdbExplorerTest {
         assertFalse(AdbExplorer.differsLittle(SETTINGS, ":FrameLayout;"), "nearly everything is gone");
     }
 
-    /**
-     * What "cmd locale get-app-locales" answers once the app is up. An app that copies its own
-     * stored choice over the one of the system on its first start leaves the list empty.
-     */
+    /** An app that overwrites the system language on its first start leaves the locale list empty. */
     @Test
     void anAppThatTookTheLanguageAwayIsSeenInTheAnswerOfTheSystem() {
         assertTrue(AdbExplorer.holdsLanguage("Locales for org.tasks for user 0 are [ru]", "ru"));

@@ -13,9 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * An app built for a newer Android than apktool knows uses attributes aapt2 rejects; ITDroid removes
- * them from the decoded app and builds again. (The build itself needs apktool and is checked on
- * real apps; here, what is read from its output and what is done to the files.)
+ * How ITDroid fixes the attributes aapt2 rejects and handles the APK files of a build. The build
+ * itself needs apktool and is checked on real apps.
  */
 class APKToolWrapperTest {
 
@@ -77,7 +76,7 @@ class APKToolWrapperTest {
                 Files.readString(layout, StandardCharsets.UTF_8));
     }
 
-    /** Material 3's switch uses {@code app:state_with_icon}; its declaration does not survive the decoding of some apps. */
+    /** Material 3's switch uses state_with_icon, whose declaration some apps lose when decoded. */
     @Test
     void declaresAgainAnAttributeOfTheAppThatAResourceUsesButNothingDeclares() throws Exception {
         decodeAnApp();
@@ -150,8 +149,7 @@ class APKToolWrapperTest {
 
     @Test
     void theSignedApkOfThePreviousBuildCannotBeTakenForTheNextOne() throws Exception {
-        // every build of a run is signed into the same name: if signing the Spanish build failed
-        // with the English one still there, the English build would be evaluated as Spanish
+        // every build is signed into the same name, so a stale English APK could pass for the Spanish one
         Path signed = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk"), "the build before");
         Path signature = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk.idsig"), "its v4 signature");
         Path unsigned = Files.writeString(tmp.resolve("org.foo.apk"), "the new build, not signed");

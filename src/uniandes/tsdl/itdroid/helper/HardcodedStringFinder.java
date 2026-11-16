@@ -15,10 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The hardcoded strings of an app: the literals of its code that read like text for a person, and
- * the text written directly in its XML. Works from one {@link SmaliScan} of the app (every dex
- * folder, Views and Jetpack Compose alike) and writes {@code hcs.txt}, grouped by class and method
- * as the original tool did.
+ * Finds the hardcoded strings of an app, code literals that read like text and text written in its XML.
+ * Works from one {@link SmaliScan} and writes {@code hcs.txt} grouped by class and method.
  */
 public class HardcodedStringFinder {
 
@@ -31,7 +29,7 @@ public class HardcodedStringFinder {
 			this.text = text;
 		}
 
-		/** File and line of the first place: smali_classes2/com/x/Foo.smali:123. */
+		/** File and line of the first place. */
 		public String origin() {
 			return places.get(0).origin();
 		}
@@ -40,10 +38,7 @@ public class HardcodedStringFinder {
 			return places.size();
 		}
 
-		/**
-		 * True when at least one place hands the text to a call known to show it. A composable
-		 * function the rules do not know does not count: it may take the name of an icon or a key.
-		 */
+		/** True when some place hands the text to a call known to show it. An unknown composable does not count. */
 		public boolean shown() {
 			for (SmaliScan.Occurrence o : places) {
 				if (o.consumer == SmaliScan.Consumer.UI) {
@@ -63,7 +58,7 @@ public class HardcodedStringFinder {
 			return true;
 		}
 
-		/** What the literal is for: the interface when any place shows it, a composable when one takes it, else its most frequent use. */
+		/** What the literal is for, UI or composable when any place says so, else its most frequent use. */
 		public SmaliScan.Consumer consumer() {
 			Map<SmaliScan.Consumer, Integer> count = new EnumMap<>(SmaliScan.Consumer.class);
 			for (SmaliScan.Occurrence o : places) {
@@ -76,7 +71,7 @@ public class HardcodedStringFinder {
 				return SmaliScan.Consumer.COMPOSABLE;
 			}
 			SmaliScan.Consumer best = places.get(0).consumer;
-			for (Map.Entry<SmaliScan.Consumer, Integer> e : count.entrySet()) {   // enum order: stable on ties
+			for (Map.Entry<SmaliScan.Consumer, Integer> e : count.entrySet()) {   // enum order keeps ties stable
 				if (e.getValue() > count.get(best)) {
 					best = e.getKey();
 				}
@@ -85,11 +80,7 @@ public class HardcodedStringFinder {
 		}
 	}
 
-	/**
-	 * The distinct literals of the scan worth reporting, in the order they are found. Compiler and
-	 * framework noise is dropped; a bare identifier ({@code cancel}, {@code add_expense}) is kept
-	 * only when the code shows it to the user.
-	 */
+	/** The distinct literals worth reporting, without noise and with bare identifiers only when shown. */
 	public static List<Hit> hits(SmaliScan scan) {
 		LinkedHashMap<String, Hit> byText = new LinkedHashMap<>();
 		for (SmaliScan.Occurrence o : scan.occurrences()) {
@@ -108,32 +99,27 @@ public class HardcodedStringFinder {
 	}
 
 	/** The literals of the XML grouped by text, in the order they are found. */
-	public static LinkedHashMap<String, List<XmlLiteralFinder.Literal>> byText(List<XmlLiteralFinder.Literal> literals) {
-		LinkedHashMap<String, List<XmlLiteralFinder.Literal>> out = new LinkedHashMap<>();
-		for (XmlLiteralFinder.Literal l : literals) {
+	public static LinkedHashMap<String, List<XmlLiterals.Literal>> byText(List<XmlLiterals.Literal> literals) {
+		LinkedHashMap<String, List<XmlLiterals.Literal>> out = new LinkedHashMap<>();
+		for (XmlLiterals.Literal l : literals) {
 			out.computeIfAbsent(l.text, k -> new ArrayList<>()).add(l);
 		}
 		return out;
 	}
 
-	/**
-	 * Scans the app, writes {@code hcs.txt} in {@code outputPath} and returns the number of distinct
-	 * hardcoded strings (code and XML), the same figure the inventory and the report give.
-	 */
+	/** Scans the app, writes {@code hcs.txt} and returns the number of distinct hardcoded strings. */
 	public static int findHardCodedStrings(String decodedFolderPath, String packageName, String outputPath) throws IOException {
 		List<Hit> hits = hits(SmaliScan.scan(decodedFolderPath, packageName));
-		List<XmlLiteralFinder.Literal> xml = XmlLiteralFinder.find(decodedFolderPath);
+		List<XmlLiterals.Literal> xml = XmlLiterals.find(decodedFolderPath);
 		return writeHcs(Paths.get(outputPath, "hcs.txt"), hits, xml);
 	}
 
 	/**
-	 * Writes the findings as the original tool did: a line with the class, a tab and the method, two
-	 * tabs and each literal of that method. The use found for the literal follows it in brackets.
-	 * The XML comes after the code: file, element, literal with its attribute. Returns the number of
-	 * distinct hardcoded strings.
+	 * Writes the code literals by class and method as the original tool did, then the XML ones by file
+	 * and element. Returns the number of distinct hardcoded strings.
 	 */
-	public static int writeHcs(Path file, List<Hit> hits, List<XmlLiteralFinder.Literal> xml) throws IOException {
-		// class -> method -> literals of that method, each once, all in the order of the scan
+	public static int writeHcs(Path file, List<Hit> hits, List<XmlLiterals.Literal> xml) throws IOException {
+		// class, then method, then its literals once each, in scan order
 		LinkedHashMap<String, LinkedHashMap<String, LinkedHashSet<String>>> byClass = new LinkedHashMap<>();
 		List<SmaliScan.Occurrence> ordered = new ArrayList<>();
 		for (Hit h : hits) {
@@ -160,7 +146,7 @@ public class HardcodedStringFinder {
 			}
 			String currentFile = null;
 			String currentElement = null;
-			for (XmlLiteralFinder.Literal l : xml) {
+			for (XmlLiterals.Literal l : xml) {
 				if (!l.file.equals(currentFile)) {
 					bw.write(l.file);
 					bw.newLine();
@@ -183,26 +169,26 @@ public class HardcodedStringFinder {
 		return distinct;
 	}
 
-	/** A literal on one line: line breaks and tabs written as the escapes a programmer would type. */
+	/** A literal on one line, with line breaks and tabs escaped. */
 	private static String visible(String text) {
 		return text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
 	}
 
-	/** Framework and compiler noise (Compose keys, toString fragments, descriptors, URLs, paths, formats). */
+	/** Framework and compiler noise such as Compose keys, descriptors, URLs, paths and formats. */
 	static boolean isNoise(String s) {
 		String t = s.trim();
 		if (t.length() < 2) {
 			return true;                                   // single chars
 		}
 		if (!t.matches("(?s).*\\p{L}.*")) {
-			return true;                                   // no letter: numbers, dates, symbols
+			return true;                                   // no letter
 		}
 		if (t.contains(".kt#") || t.contains(".java#") || t.contains(".kt:") || t.contains(".java:")
 				|| t.matches("(?s).*@\\d+L\\d+.*") || t.contains("<anonymous>")) {
-			return true;                                   // Compose source/group keys and trace strings
+			return true;                                   // Compose keys and trace strings
 		}
 		if (t.startsWith("$")) {
-			return true;                                   // Kotlin synthetic names ($this$Button)
+			return true;                                   // Kotlin synthetic names
 		}
 		if (t.startsWith(", ") || t.endsWith("=")) {
 			return true;                                   // generated toString() fragments
@@ -214,23 +200,23 @@ public class HardcodedStringFinder {
 			return true;                                   // type descriptors
 		}
 		if (t.contains("/") && !t.contains(" ")) {
-			return true;                                   // class/file paths
+			return true;                                   // class or file paths
 		}
 		if (t.contains("(...)")) {
-			return true;                                   // method references, e.g. now(...), minusDays(...)
+			return true;                                   // method references
 		}
 		if (t.contains("yyyy") || t.contains("HH:mm") || t.matches("(?s).*\\bMMM?\\b.*dd.*")) {
-			return true;                                   // date/time format patterns, e.g. MMM dd, yyyy
+			return true;                                   // date and time format patterns
 		}
 		return false;
 	}
 
-	/** A bare identifier: text only when the code is seen showing it. */
+	/** A bare identifier, text only when the code is seen showing it. */
 	static boolean isIdentifier(String s) {
 		String t = s.trim();
 		if (!t.contains(" ") && t.matches("[a-z][a-zA-Z0-9]*")) {
-			return true;                                   // lowercase camelCase identifier (field/param name)
+			return true;                                   // camelCase identifier
 		}
-		return t.matches("[a-z0-9]+(_[a-z0-9]+)+");        // snake_case identifiers / routes, e.g. add_expense
+		return t.matches("[a-z0-9]+(_[a-z0-9]+)+");        // snake_case identifiers and routes
 	}
 }

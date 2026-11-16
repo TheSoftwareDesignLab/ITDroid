@@ -25,7 +25,7 @@ class PreflightTest {
 
     @Test
     void anAppBuiltForAnOldAndroidIsRefusedWithTheReason() {
-        // jamendo and mileage target API 10; SyncMyPix says no targetSdk and targets its minSdk, 8
+        // jamendo and mileage target API 10, SyncMyPix has no targetSdk and so targets its minSdk 8
         for (JSONObject old : List.of(app(9, 10), app(8, -1), app(16, 22))) {
             ITDroidException e = assertThrows(ITDroidException.class, () -> Preflight.checkDecodedApp(old, 33));
             assertTrue(e.getMessage().contains("built for Android 5.1 or older"), e.getMessage());

@@ -20,9 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Text drawn over a graphic that is not an element, on hand-drawn screenshots: a drop-down list
- * (800 x 120, purple) whose text view spans its whole width and whose arrow, white, is part of its
- * background. The text is drawn as black strokes, like letters.
+ * Text drawn over a graphic that is not an element, on hand-drawn screenshots of a drop-down list
+ * whose white arrow is part of its background. The text is drawn as black strokes.
  */
 class TextOverGraphicTest {
 
@@ -37,7 +36,7 @@ class TextOverGraphicTest {
         LayoutGraphComparision.setTextOverGraphic(true);
     }
 
-    /** The dump: the root, the drop-down at [100,100][900,220] and its text at [100,120][900,200]; optionally the arrow as an element. */
+    /** The dump with the root, the drop-down, its text and optionally the arrow as an element. */
     private static String dump(String text, boolean arrowIsAnElement) {
         String arrow = arrowIsAnElement
                 ? "<node index=\"1\" text=\"\" resource-id=\"\" class=\"android.widget.ImageView\" package=\"org.example\" content-desc=\"\" bounds=\"[798,138][862,182]\"></node>"
@@ -75,7 +74,7 @@ class TextOverGraphicTest {
 
     @Test
     void textRunningOverTheArrowOfADropDownIsFound() throws Exception {
-        // source: the text on the left, far from the arrow; translated: aligned to the right, over it
+        // the source text is on the left, the translated one runs over the arrow on the right
         List<TextOverGraphic.Hit> hits = find(dump("Select preset", false), shot(120, 400, 145, 175),
                 dump("Elegir", false), shot(640, 860, 150, 170));
 
@@ -94,8 +93,7 @@ class TextOverGraphicTest {
 
     @Test
     void aLetterThatStaysWhereItWasIsNotAGraphic() throws Exception {
-        // the same strokes in both, and a bar drawn across them in the translation: letters next to
-        // letters, which a graphic would not have
+        // the same strokes in both plus a bar across them, letters beside letters as no graphic has
         BufferedImage translated = shot(120, 400, 145, 175);
         Graphics2D g = translated.createGraphics();
         g.setColor(Color.BLACK);

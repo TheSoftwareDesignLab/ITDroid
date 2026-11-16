@@ -18,7 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import uniandes.tsdl.itdroid.Fixtures;
 
-/** Which languages the app ships, and which strings each one lacks (the non-internationalized strings). */
+/** Tests which languages the app ships and which strings each one lacks (the non-internationalized strings). */
 class XMLComparatorTest {
 
     @TempDir
@@ -31,7 +31,7 @@ class XMLComparatorTest {
 
     @BeforeEach
     void writeTheStringFiles() throws IOException {
-        // abc_action_bar_home_description is in the dictionary of not-translatable strings: never counted
+        // abc_action_bar_home_description is in the not-translatable dictionary, so it is never counted
         dflt = strings("values", "app_name", "greeting", "cart_title", "terms", "abc_action_bar_home_description");
         es = strings("values-es", "app_name", "greeting", "cart_title", "terms");
         ru = strings("values-ru", "greeting", "app_name");
@@ -106,7 +106,7 @@ class XMLComparatorTest {
         assertFalse(arabic.containsKey("missingNames"));
     }
 
-    /** Every app carries strings no language translates: they are not strings a language lacks. */
+    /** Strings no language translates are not strings a language lacks. */
     @Test
     void defaultStringsThatAreNotTextAreNotCountedAsMissing() throws IOException {
         Files.writeString(Path.of(dflt), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"

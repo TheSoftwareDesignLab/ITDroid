@@ -22,20 +22,17 @@ public enum GraphEdgeType {
 	INTERSECTS,
 	DEFAULT;
 
-	/** The four alignments: what a change of width of a text alters without anything having moved. */
+	/** The four alignments, which a text changing width alters without anything having moved. */
 	public static Set<GraphEdgeType> getAligmentTypes() {
 		return EnumSet.of(TOP_ALIGNED, BOTTOM_ALIGNED, LEFT_ALIGNED, RIGHT_ALIGNED);
 	}
 
-	/**
-	 * The relations that are expected to change between a left-to-right and a right-to-left
-	 * language, because the layout is mirrored: who is left of whom, and which side is aligned.
-	 */
+	/** The relations expected to swap between a left-to-right and a right-to-left language, as the layout is mirrored. */
 	public static Set<GraphEdgeType> getRtlChangeExpectedTypes() {
 		return EnumSet.of(LEFT, RIGHT, LEFT_ALIGNED, RIGHT_ALIGNED);
 	}
 
-	/** The relation this one becomes in a mirrored layout: left and right swap, the rest stays. */
+	/** The relation this one becomes in a mirrored layout, where left and right swap. */
 	public GraphEdgeType mirrored() {
 		switch (this) {
 			case LEFT:

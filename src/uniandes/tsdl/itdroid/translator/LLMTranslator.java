@@ -40,24 +40,16 @@ import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
 import uniandes.tsdl.itdroid.helper.StringInventory;
 
 /**
- * Translates strings via a local LLM behind an OpenAI-compatible endpoint (Ollama, llama.cpp,
- * LM Studio). Runs on the host, no cloud key. Configured by {@code ITDROID_LLM_*} system
- * properties / env vars / {@code .env} (see {@code .env.example}).
- *
- * <p>The texts come from the {@link StringInventory}: every string, plurals item and array item of
- * the app, deduplicated, with the ones that must stay verbatim already flagged. All of them are
- * sent in global batches (not one request per container), and the inventory acts as translation
- * memory so a text is never translated twice.
+ * Translates app strings with a local LLM behind an OpenAI-compatible endpoint (Ollama, llama.cpp,
+ * LM Studio), configured by ITDROID_LLM_* properties, env vars or a .env file. The texts come from
+ * the {@link StringInventory}, which also works as translation memory.
  */
-public class LLMTranslator implements TranslationInterface {
+public class LLMTranslator {
 
-    /** Strings translated per LLM request. Keeps prompts small enough for local inference. */
+    /** Strings per LLM request, small enough for local inference. */
     private static final int TRANSLATOR_PACKAGE_SIZE = 25;
 
-    /**
-     * Categories the model must copy VERBATIM (never translate). Shared by the resource-string and the
-     * hardcoded-label prompts so both behave consistently.
-     */
+    /** Categories the model must copy verbatim, shared by the resource and hardcoded-label prompts. */
     private static final String DO_NOT_TRANSLATE =
             "Do NOT translate the following; copy them VERBATIM, exactly as written: "
             + "people's names and proper names; company, product and brand names; usernames and @handles; "
@@ -76,64 +68,50 @@ public class LLMTranslator implements TranslationInterface {
     private final String temperature;
     private final HttpClient httpClient;
 
-    /** Source of the texts and translation memory; built on demand when none was given. */
+    /** Source of the texts and translation memory, built on demand when none was given. */
     private StringInventory inventory;
 
     /**
-     * Request style. General chat models get batched JSON. Translation-specialised models expect
-     * ONE text per user message and no JSON: {@code translategemma} uses Google's fixed prompt,
-     * {@code template} uses {@code ITDROID_LLM_PROMPT_TEMPLATE} (placeholders {source}, {target},
-     * {text}; default: the Hy-MT2 default-translation prompt), {@code plamo} sends the options of
-     * PLaMo Translate (source and target language codes) as the system message and the bare text
-     * as the user message. {@code ITDROID_LLM_STYLE} = {@code auto} (by model name), {@code json},
-     * {@code translategemma}, {@code template} or {@code plamo}.
+     * Request style from ITDROID_LLM_STYLE (auto by model name, json, translategemma, template or
+     * plamo). Chat models get batched JSON, translation models one text per request in their own prompt.
      */
     private final boolean nativeTranslateGemma;
     private final boolean templateStyle;
     private final boolean plamoStyle;
     private final String promptTemplate;
     /**
-     * Mask format placeholders before a single-text request and restore them afterwards (the
-     * original ITDroid did this with IBM Watson): small translation models mangle {@code %1$s} or
-     * {@code {count}} more often than they copy them. {@code ITDROID_LLM_MASK_PLACEHOLDERS}.
+     * Masks placeholders around a one-text request (ITDROID_LLM_MASK_PLACEHOLDERS), since small
+     * translation models mangle them more often than they copy them.
      */
     private final boolean maskPlaceholders;
     private static final String DEFAULT_TEMPLATE = "Translate the following text into {target}. Note that you should "
             + "**only output the translated result without any additional explanation**:\n\n{text}";
-    /** Concurrent requests in the one-text-per-request mode (Ollama serves them in parallel when it can). */
+    /** Concurrent requests in the one-text mode. */
     private static final int NATIVE_PARALLELISM = 4;
 
-    /** File of the settings folder with the terms that are never translated, one per line (# for comments). */
+    /** Settings file with the terms that are never translated, one per line. */
     public static final String PROTECTED_TERMS_FILE = "protected-terms.txt";
-    /**
-     * Terms that go through every translation unchanged: names of people, places, products. They
-     * travel masked, like placeholders, so no model can translate, transliterate or inflect them.
-     */
+    /** Names of people, places and products, masked like placeholders so no model can alter them. */
     private final List<String> protectedTerms = new ArrayList<>();
     private volatile java.util.regex.Pattern protectedPattern;
-    /** E-mail addresses and URLs inside a text: data, masked the same way. */
+    /** E-mail addresses and URLs inside a text, masked the same way. */
     private static final java.util.regex.Pattern EMAIL_OR_URL = java.util.regex.Pattern.compile(
             "[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+|https?://[^\\s<>\"]+|www\\.[^\\s<>\"]+");
     /**
-     * A figure written with separators: an amount (6,568.65), a time (09:41), a date (20/09/2026), a
-     * version (1.13.0), a phone number in groups. A model rewrites these the way the target language
-     * writes them (6.568,65 in Spanish, 6 568,65 in Russian), and a figure of the app is data: it is
-     * masked like an address. A bare number ("2 items") stays in sight, because the words around it
-     * have to agree with it.
+     * A figure with separators (amount, time, date, version, phone). Models rewrite these in the target
+     * locale's format, so they are masked. A bare number stays visible so the words around it agree.
      */
     private static final java.util.regex.Pattern FIGURE = java.util.regex.Pattern.compile(
             "\\d+(?:[.,:/'\\u00a0\\u202f -]\\d+)+");
 
     /**
-     * What PLaMo Translate is told about a short text (up to three words), which on its own is
-     * ambiguous: "Open" is a verb on a button and an adjective in a sentence. With this line it
-     * gives "Abrir" instead of "Abierto" and "Declinar" instead of "Declive". Longer texts carry
-     * their own context. {@code ITDROID_LLM_CONTEXT}; "none" turns it off.
+     * Context PLaMo gets for a text of up to three words, which alone is ambiguous ("Open" as verb or
+     * adjective). Set by ITDROID_LLM_CONTEXT, "none" turns it off.
      */
     private final String shortTextContext;
     private static final String DEFAULT_CONTEXT = "Text of a button, menu or label in the user interface of a mobile app.";
 
-    /** The languages PLaMo Translate handles, by the code it expects (its model card lists these 53). */
+    /** Language codes PLaMo Translate supports, from its model card. */
     private static final Set<String> PLAMO_LANGUAGES = Set.of("ja", "en", "zh-hans", "zh-hant", "ko", "ar", "az", "be", "bg", "bn",
             "ca", "ceb", "de", "es", "et", "eu", "fa", "fr", "gu", "he", "hi", "hr", "hu", "hy", "id", "it", "jv", "ka", "kk", "km",
             "lt", "lv", "ml", "mr", "ms", "my", "ne", "nl", "pa", "pl", "ru", "si", "sk", "sl", "sr", "sw", "ta", "te", "th", "tl",
@@ -223,16 +201,13 @@ public class LLMTranslator implements TranslationInterface {
         protectedPattern = java.util.regex.Pattern.compile("(?<![\\p{L}\\p{N}])(?:" + alternatives + ")(?![\\p{L}\\p{N}])");
     }
 
-    /** The terms protected in this run. */
     public synchronized List<String> protectedTerms() {
         return new ArrayList<>(protectedTerms);
     }
 
     /**
-     * True for a name that is safe to protect without being asked: several words, or a word with a
-     * capital, a digit or a symbol inside ("ShiftSwift", "uMath+", "Super Productivity"). A single
-     * ordinary word ("Tasks", "Notes") is not: protecting it would leave that word untranslated
-     * wherever a sentence starts with it.
+     * True for a name safe to protect unasked, several words or a word with an inner capital, digit or
+     * symbol. A single ordinary word is not, or it would stay untranslated where a sentence starts with it.
      */
     public static boolean looksLikeBrand(String name) {
         String n = name == null ? "" : name.trim();
@@ -269,7 +244,7 @@ public class LLMTranslator implements TranslationInterface {
     public static JSONObject stats() {
         JSONObject o = new JSONObject();
         o.put("requests", REQUESTS.get());
-        // Sum of request latencies (parallel requests overlap) vs. the time the pipeline waited for translations.
+        // Summed latencies overlap for parallel requests, wall time is what the pipeline waited.
         o.put("requestSeconds", Math.round(REQUEST_MS.get() / 100.0) / 10.0);
         o.put("wallSeconds", Math.round(WALL_MS.get() / 100.0) / 10.0);
         o.put("textsSent", TEXTS_SENT.get());
@@ -280,19 +255,16 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Writes {@code values-<outputLang>/strings.xml} next to the given default {@code strings.xml}
-     * with every translatable resource of the inventory (strings, plurals and string-arrays,
-     * wherever they lived) translated. Resources the target folder already defines are left alone.
+     * Writes {@code values-<outputLang>/strings.xml} with every translatable resource of the inventory.
+     * Resources the target folder already defines are left alone.
      */
-    @Override
     public void translate(String xmlPath, String inputLang, String outputLang) throws Exception {
         translate(xmlPath, inputLang, outputLang, null);
     }
 
     /**
-     * The same, restricted to the resources with the given names (null for all). Used for a
-     * language the app already ships: its own translation is evaluated as it is, and only the
-     * strings ITDroid added to the app (the literals moved out of the XML) are filled in.
+     * The same, limited to the given resource names (null for all). Used for a language the app
+     * already ships, where only the strings ITDroid added are filled in.
      */
     public void translate(String xmlPath, String inputLang, String outputLang, Set<String> onlyNames) throws Exception {
         File xmlFile = new File(xmlPath).getAbsoluteFile();
@@ -322,8 +294,7 @@ public class LLMTranslator implements TranslationInterface {
         Document outputDocument = builder.build(xmlOutputFile);
         Element outputRoot = outputDocument.getRootElement();
 
-        // Resources already defined for this language (by the developer, a library or a previous
-        // run) win: defining one twice makes aapt2 refuse the build ("conflicting value").
+        // Resources already defined for this language win, since a duplicate makes aapt2 refuse the build.
         Set<String> defined = definedNames(xmlOutputFolder, builder);
 
         LinkedHashMap<String, List<StringInventory.Entry>> groups = new LinkedHashMap<>();
@@ -354,7 +325,7 @@ public class LLMTranslator implements TranslationInterface {
             StringInventory.Entry first = g.get(0);
             if (StringInventory.KIND_STRING.equals(first.kind)) {
                 if (!first.translatable) {
-                    continue;   // data/reference: the default value is used in every language
+                    continue;   // data or reference, the default value serves every language
                 }
                 Element s = new Element("string");
                 s.setAttribute("name", first.name);
@@ -372,7 +343,7 @@ public class LLMTranslator implements TranslationInterface {
                 if (!any) {
                     continue;
                 }
-                // Containers are all-or-nothing: every item is written, verbatim when not translatable.
+                // Containers are all or nothing, so untranslatable items are written verbatim.
                 Element c = new Element(first.kind);
                 c.setAttribute("name", first.name);
                 for (StringInventory.Entry e : g) {
@@ -389,7 +360,7 @@ public class LLMTranslator implements TranslationInterface {
         }
 
         XMLOutputter output = new XMLOutputter();
-        // PRESERVE text mode: keep leading/trailing whitespace in translated values (TRIM would strip it).
+        // PRESERVE keeps the edge whitespace of translated values, TRIM would strip it.
         output.setFormat(Format.getPrettyFormat().setTextMode(Format.TextMode.PRESERVE));
         try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(xmlOutputFile), StandardCharsets.UTF_8)) {
             output.output(outputDocument, writer);
@@ -397,7 +368,7 @@ public class LLMTranslator implements TranslationInterface {
         System.out.println("  " + written + " resources written to " + xmlOutputFile.getPath());
     }
 
-    /** Every resource name defined in the target values-&lt;lang&gt;/ folder (all its xml files). */
+    /** Every resource name defined in the xml files of the target folder. */
     private static Set<String> definedNames(File folder, SAXBuilder builder) {
         Set<String> names = new HashSet<>();
         File[] files = folder.listFiles((d, n) -> n.toLowerCase().endsWith(".xml"));
@@ -413,16 +384,15 @@ public class LLMTranslator implements TranslationInterface {
                     }
                 }
             } catch (Exception ex) {
-                // not a parseable resource file: nothing to protect
+                // not a parseable resource file, nothing to protect
             }
         }
         return names;
     }
 
     /**
-     * Sets a translated value as the element's content. The value is the inner XML of the source
-     * (entities and inline markup such as {@code <b>} or {@code <xliff:g>}), so it is parsed back;
-     * if the model broke the markup, it is stored as plain text instead of failing the build.
+     * Sets a translated value, parsed back as inner XML with its entities and inline markup. If the
+     * model broke the markup the value is stored as plain text instead of failing the build.
      */
     private static void setTranslatedContent(Element target, String value) {
         if (isQuoted(value)) {
@@ -459,8 +429,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Translates resource texts (strings, plurals and array items) in batches, reusing the inventory
-     * memory. Returns source text -> translation for every input (the source itself on failure).
+     * Translates resource texts reusing the inventory memory. Maps every input to its translation,
+     * or to itself on failure.
      */
     public Map<String, String> translateResourceTexts(List<String> texts, String inputLang, String outputLang) {
         return translateTexts(texts, inputLang, outputLang, buildSystemPrompt(languageName(inputLang), languageName(outputLang)),
@@ -468,17 +438,14 @@ public class LLMTranslator implements TranslationInterface {
                 "resource texts");
     }
 
-    /**
-     * Translates hardcoded UI labels, leaving proper names, emails, URLs, codes and data unchanged.
-     * Returns a map original -> result (the original verbatim when it should not change).
-     */
+    /** Translates hardcoded UI labels, leaving names, emails, URLs, codes and data unchanged. */
     public Map<String, String> translateUiLabels(List<String> texts, String inputLang, String outputLang) {
         return translateTexts(texts, inputLang, outputLang, buildLabelSystemPrompt(languageName(inputLang), languageName(outputLang)),
                 "Process this JSON object and return ONLY a JSON object with the exact same keys:\n",
                 "hardcoded labels");
     }
 
-    /** Source characters per request. Long texts (licenses, help pages) otherwise overflow the model's context and truncate the JSON. */
+    /** Source characters per request, so long texts do not overflow the context and truncate the JSON. */
     private static final int BATCH_CHAR_BUDGET = 2500;
 
     private Map<String, String> translateTexts(List<String> texts, String inputLang, String outputLang, String systemPrompt,
@@ -498,16 +465,15 @@ public class LLMTranslator implements TranslationInterface {
         int[] requests = {0};
         List<String> missing;
         if (nativeTranslateGemma || templateStyle || plamoStyle) {
-            // One request per text in the model's own prompt; a second attempt for the ones that
-            // came back empty or lost a placeholder.
+            // One request per text, then a second attempt for answers that could not be used.
             missing = translateNativePass(pending, inputLang, outputLang, result, requests);
             if (!missing.isEmpty()) {
                 System.out.println("  retrying " + missing.size() + " " + what + " whose answer could not be used");
                 missing = translateNativePass(missing, inputLang, outputLang, result, requests);
             }
         } else {
-            // First pass in normal batches; whatever the model dropped or returned empty is retried once in
-            // small batches (a truncated or empty answer usually comes from a long batch), then kept as is.
+            // Normal batches first, then what the model dropped is retried once in small batches,
+            // since truncated answers usually come from long batches.
             missing = translatePass(pending, TRANSLATOR_PACKAGE_SIZE, BATCH_CHAR_BUDGET, outputLang, systemPrompt, userPrefix, result, requests);
             if (!missing.isEmpty()) {
                 System.out.println("  retrying " + missing.size() + " " + what + " the model left out, in smaller batches");
@@ -531,9 +497,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * TranslateGemma pass: every text in its own request, a few in flight at a time. A translation
-     * that lost a format placeholder ({@code %1$s}, {@code {count}}, {@code \n}, a tag) is rejected,
-     * because that would break the app at runtime; the caller retries and finally keeps the source.
+     * One-text pass, each text in its own request with a few in flight. Unusable answers are rejected
+     * and returned for the caller to retry.
      */
     private List<String> translateNativePass(List<String> texts, String inputLang, String outputLang,
             Map<String, String> result, int[] requests) {
@@ -579,16 +544,11 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * One text per request, in the model's own prompt: TranslateGemma's fixed instruction (two
-     * blank lines before the text), the configured template, or PLaMo's options as the system
-     * message. Placeholders are masked with neutral tokens before the request and restored
-     * afterwards when masking is on. The answer keeps the leading and trailing whitespace of the
-     * source: a literal is often one piece of a sentence built in the code ("Items: " + n +
-     * " of 3"), and without its edge space the pieces run together.
+     * Translates one text in the model's own prompt. The answer keeps the edge whitespace of the
+     * source, since a literal is often one piece of a sentence built in code.
      */
     private String translateOneNative(String wholeText, String inputLang, String outputLang) {
-        // The quotes around a whole resource value are Android syntax, not text: the model gets
-        // what is inside them and the answer is wrapped again.
+        // Quotes around a whole value are Android syntax, so only the inside is sent and then rewrapped.
         boolean quoted = isQuoted(wholeText);
         String out = translateOneNativeBare(quoted ? wholeText.substring(1, wholeText.length() - 1) : wholeText, inputLang, outputLang);
         return out == null || !quoted ? out : "\"" + out + "\"";
@@ -601,9 +561,8 @@ public class LLMTranslator implements TranslationInterface {
         List<String> masked = new ArrayList<>();
         String body = maskTerms(maskPlaceholders ? mask(text, masked) : text, masked);
         if (plamoStyle) {
-            // The whole user message is translated, so the text goes alone and without its edge
-            // whitespace; the options go in the system message, as the model card specifies. What
-            // follows a "---" line there is context for the model, not text to translate.
+            // PLaMo translates the whole user message, so the bare text goes there and the options go in
+            // the system message, as its model card says. After a "---" line comes context, not text.
             String options = "[plamo-translate]\nsource_lang=" + plamoCode(inputLang) + "\ntarget_lang=" + plamoCode(outputLang);
             if (!shortTextContext.isEmpty() && isShortLabel(text)) {
                 options += "\n---\n" + shortTextContext;
@@ -658,15 +617,15 @@ public class LLMTranslator implements TranslationInterface {
         return unmask(out, masked, maskPlaceholders && source.contains("\\n"));
     }
 
-    /** A text of up to three words: a label, whose meaning depends on where it is shown. */
+    /** A text of up to three words, a label whose meaning depends on where it is shown. */
     static boolean isShortLabel(String text) {
         String t = text.strip();
         return !t.isEmpty() && t.length() <= 30 && t.split("\\s+").length <= 3;
     }
 
     /**
-     * Replaces protected terms, e-mail addresses, URLs and figures with the same numbered tokens used
-     * for placeholders ({@code <ph0>}...), adding the originals to {@code originals}.
+     * Replaces protected terms, e-mail addresses, URLs and figures with numbered placeholder tokens,
+     * adding the originals to {@code originals}.
      */
     String maskTerms(String text, List<String> originals) {
         String out = maskMatches(EMAIL_OR_URL, text, originals);
@@ -731,9 +690,8 @@ public class LLMTranslator implements TranslationInterface {
     // ------------------------------------------------------------------ is the answer a translation?
 
     /**
-     * How a model starts when it comments instead of translating: "Note: ...", "Translation: ...",
-     * "Here is ...", "Sure, ...". The labels need their colon, so that "Translation settings" or
-     * "Nota nueva" are not taken for a comment.
+     * How a model starts when it comments instead of translating ("Note", "Here is", "Sure"). The
+     * labels require a colon so that "Translation settings" is not taken for a comment.
      */
     private static final java.util.regex.Pattern COMMENTARY = java.util.regex.Pattern.compile(
             "(?is)^\\W{0,3}(?:(?:note|nota|translation|traducci[o\u00f3]n|\u043f\u0435\u0440\u0435\u0432\u043e\u0434|\u043f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435)\\s*:"
@@ -773,11 +731,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Why an answer cannot be stored as the translation of a text, or null when it can. A model
-     * sometimes answers with something that is not a translation at all: nothing, the text with a
-     * placeholder or a protected term missing (which breaks the app or the rule), its own
-     * instruction repeated, a comment about the task, or the text left in the wrong alphabet. Such
-     * an answer is asked for again and, if it comes back the same, the source text is kept.
+     * Why an answer cannot be stored as a translation, or null when it can. Empty answers, lost
+     * placeholders, terms or figures, commentary and wrong scripts are rejected.
      */
     String rejectReason(String source, String out, String outputLang) {
         if (out == null || out.trim().isEmpty()) {
@@ -807,10 +762,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * True when the language is written in a non-Latin script and the answer has letters but none
-     * of that script, once placeholders and protected terms are set aside: the model answered in
-     * another language. An answer equal to the source is not that: a brand or an acronym
-     * ("GitHub", "GPS") is rightly left as it is.
+     * True when the language uses a non-Latin script and the answer has letters but none of it. An
+     * answer equal to the source is accepted, since brands and acronyms stay as they are.
      */
     private boolean inWrongScript(String source, String out, String outputLang) {
         String code = outputLang == null ? "" : outputLang.toLowerCase(Locale.ROOT);
@@ -820,7 +773,7 @@ public class LLMTranslator implements TranslationInterface {
             return false;
         }
         if (out.trim().equals(source.trim())) {
-            return false;   // left as it was (a brand, an acronym): the model's choice, not a wrong answer
+            return false;   // left as it was (a brand, an acronym), not a wrong answer
         }
         String bare = maskTerms(PLACEHOLDER.matcher(out).replaceAll(" "), new ArrayList<>()).replaceAll("<ph\\d+>", " ");
         boolean letters = false;
@@ -844,8 +797,8 @@ public class LLMTranslator implements TranslationInterface {
     // ------------------------------------------------------------------ PLaMo Translate
 
     /**
-     * The language code PLaMo Translate expects for an Android language code: the bare language
-     * ({@code es-rMX} gives {@code es}), Chinese by script, and the old codes Android still uses.
+     * The PLaMo Translate code for an Android language code, the bare language (es-rMX gives es),
+     * Chinese by script, and the old codes Android still uses.
      */
     static String plamoCode(String code) {
         if (code == null || code.isEmpty()) {
@@ -870,9 +823,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Why this engine cannot translate from or into a language, or null when it can. Only PLaMo
-     * Translate has a closed list; asked for a language outside it, it answers in another one
-     * (Portuguese came back in French) without saying so.
+     * Why this engine cannot handle a language, or null when it can. Only PLaMo has a closed list, and
+     * for any other language it silently answers in a different one.
      */
     public String unsupportedLanguage(String code) {
         if (!plamoStyle || PLAMO_LANGUAGES.contains(plamoCode(code))) {
@@ -882,9 +834,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * True when a value is wrapped in double quotes as a whole. In a string resource that means
-     * "keep the whitespace inside"; apktool also writes that way every string with an apostrophe.
-     * The quotes are not part of the text the user sees.
+     * True when a value is wrapped in double quotes as a whole, Android syntax that keeps inner
+     * whitespace and that apktool uses for strings with apostrophes. The quotes are not shown text.
      */
     static boolean isQuoted(String value) {
         if (value == null || value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
@@ -895,10 +846,7 @@ public class LLMTranslator implements TranslationInterface {
         return !inner.matches("(?s).*(?<!\\\\)\".*") && !inner.endsWith("\\");
     }
 
-    /**
-     * The translation with the leading and trailing whitespace of the source instead of its own.
-     * An empty translation stays empty (the caller treats it as "no answer").
-     */
+    /** The translation with the edge whitespace of the source. An empty translation stays empty. */
     static String withEdges(String source, String translated) {
         if (translated == null) {
             return null;
@@ -922,9 +870,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Replaces every placeholder, tag and entity with a numbered token the model copies through
-     * ({@code <ph0>}, {@code <ph1>}, ...), recording the originals in {@code originals}. A literal
-     * backslash-n escape goes as a real line break instead: the models reproduce those but drop tokens.
+     * Replaces every placeholder, tag and entity with a numbered token, recording the originals. An
+     * escaped newline goes as a real line break, which models keep more reliably than tokens.
      */
     static String mask(String text, List<String> originals) {
         java.util.regex.Matcher m = PLACEHOLDER.matcher(text);
@@ -942,8 +889,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Puts the originals back, tolerating the spacing/case drift translation models introduce in the
-     * tokens; when the source had literal backslash-n escapes, real line breaks become escapes again.
+     * Puts the originals back, tolerating the spacing and case drift models add to the tokens. With
+     * restoreEscapes, real line breaks become escaped newlines again.
      */
     static String unmask(String text, List<String> originals, boolean restoreEscapes) {
         String out = restoreEscapes ? text.replace("\r\n", "\n").replace("\n", "\\n") : text;
@@ -954,11 +901,9 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * What must come out of a translation exactly as it went in: format specifiers, named
-     * placeholders, escaped line breaks, tags and entities. A percent sign is a specifier when it
-     * is doubled ({@code %%}), carries an argument index ({@code %1$s}), or is followed straight
-     * away by a conversion and does not follow a digit: in "50% of users" and "(% of line width)"
-     * it is a percentage, and masking "% o" there left stray letters in the translation.
+     * Format specifiers, named placeholders, escaped newlines, tags and entities, which must survive
+     * translation unchanged. A lone percent sign counts only when a conversion follows it directly
+     * and no digit precedes it, so "50% of users" stays a percentage.
      */
     private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile(
             "%%|%\\d+\\$[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z]"
@@ -998,7 +943,7 @@ public class LLMTranslator implements TranslationInterface {
         return code == null ? "" : code.replace("-r", "-");
     }
 
-    /** One pass over {@code texts} in batches bounded by item count and characters; returns the texts still untranslated. */
+    /** One pass in batches bounded by item count and characters, returning the texts still untranslated. */
     private List<String> translatePass(List<String> texts, int maxItems, int charBudget, String outputLang,
             String systemPrompt, String userPrefix, Map<String, String> result, int[] requests) {
         List<String> missing = new ArrayList<>();
@@ -1044,8 +989,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Translates one batch in a single request: JSON keyed by index; placeholders preserved via the
-     * prompt. Entries the model dropped come back as null (the caller retries them).
+     * Translates one batch in a single JSON request keyed by index. Entries the model dropped come
+     * back as null for the caller to retry.
      */
     @SuppressWarnings("unchecked")
     private List<String> translateBatch(List<String> batch, String systemPrompt, String userPrefix) {
@@ -1061,8 +1006,7 @@ public class LLMTranslator implements TranslationInterface {
         messages.add(message("system", systemPrompt));
         messages.add(message("user", userPrefix + items.toJSONString()));
 
-        // A malformed/empty LLM response (parse or HTTP failure) must not abort the whole run: the
-        // batch is reported as missing and retried in smaller pieces by the caller.
+        // A failed or malformed response must not abort the run, the caller retries the batch smaller.
         Map<String, String> translatedByKey;
         try {
             translatedByKey = parseTranslations(chatCompletion(messages, true));
@@ -1088,8 +1032,8 @@ public class LLMTranslator implements TranslationInterface {
     }
 
     /**
-     * Asks the model for realistic values to type into the text fields of a screen (optional form
-     * filling during exploration). One value per description, "" when the model gave none.
+     * Asks the model for realistic values to type into a screen's text fields during exploration. One
+     * value per description, "" when the model gave none.
      */
     @SuppressWarnings("unchecked")
     public List<String> suggestInputValues(List<String> fieldDescriptions, String language) throws Exception {
@@ -1140,7 +1084,7 @@ public class LLMTranslator implements TranslationInterface {
                 + "Return ONLY a valid JSON object mapping each original key to its translated string.";
     }
 
-    /** Detects the language of the default {@code strings.xml}; returns an ISO 639-1 code, or null on failure. */
+    /** Detects the language of the default strings.xml as an ISO 639-1 code, or null on failure. */
     @SuppressWarnings("unchecked")
     public String detectSourceLanguage(String xmlPath) {
         try {
@@ -1170,7 +1114,7 @@ public class LLMTranslator implements TranslationInterface {
         }
     }
 
-    /** Sends a chat-completion request and returns the assistant message content; every call is counted and timed. */
+    /** Sends a chat-completion request and returns the answer, counting and timing every call. */
     private String chatCompletion(JSONArray messages, boolean jsonMode) throws Exception {
         return chatCompletion(messages, jsonMode, null);
     }
@@ -1250,21 +1194,14 @@ public class LLMTranslator implements TranslationInterface {
         return (String) messageObj.get("content");
     }
 
-    /**
-     * Exception text for the logs. json-simple's ParseException puts its detail ("Unexpected token X
-     * at position N") in toString() and leaves getMessage() null, which printed as "failed (null)".
-     */
+    /** Exception text for logs, since json-simple's ParseException keeps its detail out of getMessage(). */
     private static String describe(Exception e) {
         return e.getMessage() != null ? e.getMessage() : e.toString();
     }
 
     /**
-     * Values that are not human-readable UI text and must never reach the translator: vector path
-     * data, CSS-like easing functions, fully-qualified class names and font-family tokens. Material
-     * Components ships dozens of them in strings.xml (mtrl_*_path*, m3_sys_motion_easing_*,
-     * *_behavior, m3_ref_typeface_*). "Translating" them corrupts the app, and batching them also
-     * truncated the model's JSON output on real apps. Deliberately conservative: a UI sentence has
-     * spaces and letters, none of these shapes do.
+     * True for values that are not UI text, such as path data, easing functions, class names and font
+     * families, which Material Components ships in strings.xml. Translating them corrupts the app.
      */
     public static boolean looksLikeNonText(String value) {
         if (value == null) {
@@ -1289,8 +1226,7 @@ public class LLMTranslator implements TranslationInterface {
         try {
             obj = (JSONObject) parser.parse(json);
         } catch (Exception pe) {
-            // Say WHAT the model returned: small / "thinking" models sometimes answer with prose, a
-            // truncated object, an array or nothing at all, and the bare ParseException hides that.
+            // Show what the model returned, since small models sometimes answer with prose or a cut object.
             String preview = json.length() > 160 ? json.substring(0, 160) + "..." : json;
             throw new Exception("model returned invalid JSON (" + describe(pe) + "); content: \"" + preview + "\"", pe);
         }
@@ -1302,7 +1238,7 @@ public class LLMTranslator implements TranslationInterface {
         return result;
     }
 
-    /** Removes ```json ... ``` fences and any prose around the JSON object, if present. */
+    /** Keeps only the JSON object, dropping markdown fences and prose around it. */
     private static String stripCodeFences(String content) {
         String trimmed = content.trim();
         int firstBrace = trimmed.indexOf('{');
@@ -1357,12 +1293,12 @@ public class LLMTranslator implements TranslationInterface {
         }
     }
 
-    /** Returns the configured LLM endpoint (system property &gt; env var &gt; .env &gt; default). */
+    /** The configured LLM endpoint, from system property, env var, .env or default, in that order. */
     public static String resolveEndpoint(String settingsDir) {
         return resolve(loadDotEnv(settingsDir), "ITDROID_LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions");
     }
 
-    /** Returns the configured LLM API token, or "" if none (system property &gt; env var &gt; .env). */
+    /** The configured LLM API token, or "" if none. */
     public static String resolveApiKey(String settingsDir) {
         return resolve(loadDotEnv(settingsDir), "ITDROID_LLM_API_KEY", "");
     }
@@ -1384,10 +1320,7 @@ public class LLMTranslator implements TranslationInterface {
         return defaultValue;
     }
 
-    /**
-     * Loads a simple KEY=VALUE .env file. Looks first in the provided settings directory
-     * (the {@code <settingsDir>} CLI argument) and falls back to the working directory.
-     */
+    /** Loads a KEY=VALUE .env file from the settings directory, else from the working directory. */
     private static Map<String, String> loadDotEnv(String settingsDir) {
         Map<String, String> values = new HashMap<>();
         Path envPath = null;

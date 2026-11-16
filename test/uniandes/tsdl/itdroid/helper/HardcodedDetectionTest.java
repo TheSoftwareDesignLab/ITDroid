@@ -27,9 +27,6 @@ import uniandes.tsdl.itdroid.Fixtures;
 /**
  * What the hardcoded-string detection finds in the hand-written app of {@code test/fixtures/decoded/shop}
  * (applicationId {@code com.example.shop.free}, most of its code under {@code com.example.shop}).
- *
- * <p>Tests named {@code knownGap_...} pin behaviour the audit found wrong: they assert what the code
- * does TODAY and name the TODO item that changes it; when that item is done the assertion flips.
  */
 class HardcodedDetectionTest {
 
@@ -102,7 +99,7 @@ class HardcodedDetectionTest {
         assertEquals("smali/com/example/shop/ui/MainActivity.smali:16", CODE.get("Shop").origin);
     }
 
-    /** "Shop" is the app's name (the label of the application): shown as a title, found, and left as written. */
+    /** "Shop" is the app's label, shown as a title, found and left as written. */
     @Test
     void theNameOfTheAppIsNeverTranslated() {
         assertKeptVerbatim("Shop", "application name");
@@ -134,7 +131,7 @@ class HardcodedDetectionTest {
                 premium.codePlaces.stream().map(p -> p.method).toList());
         assertEquals(List.of("return", "ui", "data"),
                 premium.codePlaces.stream().map(p -> p.consumer.label).toList());
-        // translated only where it is shown: the returned value and the operand of equals() stay
+        // translated only where it is shown, the returned value and the operand of equals() stay
         assertEquals(List.of("showPlan"), premium.patchPlaces.stream().map(p -> p.method).toList());
     }
 
@@ -160,9 +157,8 @@ class HardcodedDetectionTest {
     }
 
     /**
-     * By default only what the code is seen showing is translated. " LIMIT 0" is appended to a
-     * StringBuilder the method received and "Bearer " ends in a returned string: the scan cannot
-     * tell where they go, and translating either would change what the app does.
+     * By default only what the code is seen showing is translated. Where " LIMIT 0" and "Bearer " go
+     * is not known, and translating them would change what the app does.
      */
     @Test
     void literalsOfUnknownUseAreNotTranslatedByDefault() {
@@ -175,7 +171,7 @@ class HardcodedDetectionTest {
         assertTrue(inventory.hardcodedPlaces().stream().allMatch(p -> p.consumer == SmaliScan.Consumer.UI));
     }
 
-    /** {@code hardcoded.translate=ui+unknown} also takes the places the scan cannot decide; never logs or data. */
+    /** {@code hardcoded.translate=ui+unknown} also takes the places the scan cannot decide, never logs or data. */
     @Test
     void thePolicyCanIncludeTheLiteralsOfUnknownUse() throws Exception {
         StringInventory wider = collect(HardcodedPolicy.UI_AND_UNKNOWN);
@@ -189,7 +185,7 @@ class HardcodedDetectionTest {
                 "the returned value and the label, not the operand of equals()");
     }
 
-    /** {@code hardcoded.translate=all} is what ITDroid did before uses were looked at; the shapes of data still apply. */
+    /** {@code hardcoded.translate=all} is what ITDroid did before uses were looked at, data shapes still apply. */
     @Test
     void thePolicyAllTranslatesEveryUseButNotWhatHasTheShapeOfData() throws Exception {
         StringInventory all = collect(HardcodedPolicy.ALL);
@@ -206,7 +202,7 @@ class HardcodedDetectionTest {
     private static StringInventory collect(HardcodedPolicy policy) throws Exception {
         String app = Fixtures.decodedApp().toString();
         return StringInventory.collect(app, APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
-                HardcodedStringFinder.hits(SmaliScan.scan(app, APPLICATION_ID)), XmlLiteralFinder.find(app), policy, null);
+                HardcodedStringFinder.hits(SmaliScan.scan(app, APPLICATION_ID)), XmlLiterals.find(app), policy, null);
     }
 
     // ------------------------------------------------------------------ the XML
@@ -221,10 +217,7 @@ class HardcodedDetectionTest {
         assertNull(XML.get("@string/cart_title"), "a reference is not a literal");
     }
 
-    /**
-     * A literal of the XML is translated through the resource it is moved to (see
-     * {@code XmlLiteralExtractorTest}); in an inventory made without extracting, it is only listed.
-     */
+    /** An XML literal is translated through the resource it is moved to, so without extraction it is only listed. */
     @Test
     void textWrittenInLayoutsIsOnlyListedUntilItIsExtracted() {
         assertFalse(XML.get("Coupon code").translatable);
@@ -234,7 +227,7 @@ class HardcodedDetectionTest {
 
     // ------------------------------------------------------------------ one figure, one format
 
-    /** hcs.txt, the inventory and the report give the same number: distinct literals, code plus XML. */
+    /** hcs.txt, the inventory and the report give the same number of distinct literals, code plus XML. */
     @Test
     void everyOutputGivesTheSameFigure() throws Exception {
         int reported = HardcodedStringFinder.findHardCodedStrings(Fixtures.decodedApp().toString(), APPLICATION_ID, out.toString());
@@ -262,7 +255,7 @@ class HardcodedDetectionTest {
         assertEquals(3L, byConsumer.get("xml"));
     }
 
-    /** As in the original tool: class, then method, then the literals of that method. */
+    /** As in the original tool, class, then method, then the literals of that method. */
     @Test
     void hcsTxtGroupsTheLiteralsByClassAndMethod() throws Exception {
         HardcodedStringFinder.findHardCodedStrings(Fixtures.decodedApp().toString(), APPLICATION_ID, out.toString());
@@ -347,7 +340,7 @@ class HardcodedDetectionTest {
         assertEquals(2, inventory.resourceEntries().stream().filter(e -> e.name.equals("items_count")).count());
     }
 
-    /** An app with all its text in the code has no strings.xml; its hardcoded strings are found the same. */
+    /** An app with all its text in the code has no strings.xml, and its hardcoded strings are found the same. */
     @Test
     void anAppWithoutStringsXmlIsAnalysedTheSame() throws Exception {
         Path app = out.resolve("shop");
@@ -371,6 +364,6 @@ class HardcodedDetectionTest {
         assertEquals(false, facts.get("hasStrings"));
         assertEquals(true, facts.get("launchable"));
         assertEquals(2L, facts.get("activities"), "the activities the manifest declares, to measure the exploration against");
-        Preflight.checkDecodedApp(facts, 34);   // accepted: no exception
+        Preflight.checkDecodedApp(facts, 34);   // accepted, no exception
     }
 }

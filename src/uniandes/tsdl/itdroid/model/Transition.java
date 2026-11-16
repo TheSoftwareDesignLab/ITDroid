@@ -1,18 +1,31 @@
 package uniandes.tsdl.itdroid.model;
 
 public class Transition {
+
+	public enum Type {
+	GUI_CLICK_BUTTON,
+    SWIPE,
+    SCROLL,
+    GUI_RANDOM,
+    GUI_INPUT_TEXT,
+    GUI_INPUT_NUMBER,
+    CONTEXT_INTERNET_ON,
+    CONTEXT_INTERNET_OFF,
+    CONTEXT_LOCATION_ON,
+    CONTEXT_LOCATION_OFF,
+    ROTATE_LANDSCAPE,
+    ROTATE_PORTRAIT,
+    BUTTON_BACK,
+    FIRST_INTERACTION;
+	}
+
 	
 	private State origin;
 	private State destination;
-	private TransitionType type;
+	private Type type;
 	private AndroidNode originElement;
-	
-	/**
-	 * Creates a transition with a known origin state and a type
-	 * @param origin
-	 * @param type
-	 */
-	public Transition(State origin, TransitionType type) {
+
+	public Transition(State origin, Type type) {
 		this.origin = origin;
 		this.type = type;
 
@@ -30,7 +43,7 @@ public class Transition {
 		this.destination = destination;
 	}
 
-	public TransitionType getType() {
+	public Type getType() {
 		return type;
 	}
 

@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The keys of the configuration file that have a default: what they are when absent and what they accept. */
+/** The configuration keys that have a default, their value when absent and what they accept. */
 class RunConfigTest {
 
     @TempDir
@@ -66,7 +66,7 @@ class RunConfigTest {
         assertEquals(0, cfg.getMaxClickables());
         assertEquals(30, cfg.getMaxMinutes());
 
-        // a negative number is not a smaller limit: it reads as no limit, like 0
+        // a negative number reads as no limit, like 0
         RunConfig none = config("exploration.maxStates=-1", "exploration.maxClickables=-5", "exploration.maxMinutes=-2");
         assertEquals(0, none.getMaxStates());
         assertEquals(0, none.getMaxClickables());

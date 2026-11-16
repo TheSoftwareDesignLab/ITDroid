@@ -19,7 +19,7 @@ final class TestGraphs {
     private TestGraphs() {
     }
 
-    /** A node as uiautomator dumps it; {@code children} are nested {@code node(...)} strings. */
+    /** A node as uiautomator dumps it, with nested node strings as children. */
     static String node(int index, String clazz, String resourceId, int x1, int y1, int x2, int y2, String... children) {
         StringBuilder sb = new StringBuilder();
         sb.append("<node index=\"").append(index).append("\" text=\"\" resource-id=\"").append(resourceId)
@@ -84,12 +84,12 @@ final class TestGraphs {
         return folder;
     }
 
-    /** Compares a source exploration (English) with a replayed one in Spanish, as the pipeline does; returns the language report. */
+    /** Compares an English exploration with a replayed Spanish one and returns the language report. */
     static JSONObject compare(Path source, Path language, Path out) throws IOException {
         return compare(source, language, out, "es", "Spanish");
     }
 
-    /** The same, for the language of the given code: "ar" makes it a comparison with a right-to-left language. */
+    /** The same for the given language code, "ar" gives a right-to-left comparison. */
     static JSONObject compare(Path source, Path language, Path out, String code, String name) throws IOException {
         Files.createDirectories(out);
         LayoutGraph sourceGraph = new LayoutGraph("en", source.toString());

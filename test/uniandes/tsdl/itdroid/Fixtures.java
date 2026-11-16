@@ -11,9 +11,8 @@ public final class Fixtures {
     }
 
     /**
-     * Real evaluations (batch of 2026-10-19, Hy-MT2, emulator API 33) reduced to what the comparison
-     * needs: a trimmed {@code report.json} and the {@code result.json} of the source language and
-     * of some target languages. Screenshot paths hold only the file name.
+     * Real evaluations (batch of 2026-10-19, Hy-MT2, API 33) trimmed to what the comparison needs.
+     * Screenshot paths hold only the file name.
      */
     public static Path evaluations() {
         return resource("/fixtures/evaluations");

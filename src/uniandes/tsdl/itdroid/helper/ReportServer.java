@@ -27,11 +27,8 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 /**
- * {@code java -jar ITDroid.jar --report [resultsFolder] [--port N] [--no-browser]}: serves the web
- * report ({@code webreport/}) together with the results folder on localhost and opens the browser.
- * The page lists every evaluation found in the folder ({@code /api/results}) and reads each app's
- * {@code report.json}, inventory, screenshots and exploration results from {@code /results/...}.
- * A local server is needed because browsers do not let a page opened from disk read other files.
+ * The --report mode, which serves the web report and the results folder on localhost and opens the
+ * browser. A server is needed because a page opened from disk cannot read other files.
  */
 public class ReportServer {
 
@@ -75,7 +72,7 @@ public class ReportServer {
         Thread.currentThread().join();
     }
 
-    /** {@code webreport/} next to the working directory or next to the jar. */
+    /** The webreport folder in the working directory or next to the jar. */
     static Path findWebReport() throws ITDroidException {
         List<Path> candidates = new ArrayList<>();
         candidates.add(Paths.get("webreport"));
@@ -89,7 +86,7 @@ public class ReportServer {
                 }
             }
         } catch (Exception ignored) {
-            // not running from a jar/folder we can locate
+            // the jar location is unknown
         }
         for (Path c : candidates) {
             if (Files.isRegularFile(c.resolve("index.html"))) {
@@ -107,12 +104,10 @@ public class ReportServer {
                 return;
             }
         } catch (Throwable ignored) {
-            // headless or no browser: the URL is printed anyway
+            // headless, the URL is printed anyway
         }
         System.out.println("  (open the address above in your browser)");
     }
-
-    // ------------------------------------------------------------------ the index
 
     /** One entry per sub-folder of the results folder that holds a report.json. */
     @SuppressWarnings("unchecked")
@@ -139,18 +134,15 @@ public class ReportServer {
         return out;
     }
 
-    // ------------------------------------------------------------------ runs that never finished
-
     /**
-     * A report that says "running" and carries no process id (it was written by an older ITDroid)
-     * is taken for an interrupted run when it has not been rewritten for this long. A run rewrites
-     * its report after every step, and no step takes hours.
+     * Hours after which a "running" report without a process id counts as interrupted, since a run
+     * rewrites its report after every step.
      */
     static final long STALE_HOURS = 3;
 
     /** Tells whether the process that was writing a report is still there. */
     interface Processes {
-        /** True when a process with that id is alive and, if both start times are known, it started then. */
+        /** True when that process is alive and, if both start times are known, started then. */
         boolean alive(long pid, Instant startedAt);
     }
 
@@ -159,17 +151,16 @@ public class ReportServer {
         if (handle.isEmpty() || !handle.get().isAlive()) {
             return false;
         }
-        // the system gives the id of a dead process to a new one: the run is the one that started then
+        // ids of dead processes are reused, so the start time must match too
         Optional<Instant> start = handle.get().info().startInstant();
         return startedAt == null || start.isEmpty() || Math.abs(Duration.between(start.get(), startedAt).toMillis()) < 2000;
     };
 
     /**
-     * The status to show for a run, and why when it is not the one its report states. A run that
-     * was killed could not write that it stopped, so its report says "running" for ever: it is
-     * shown as "interrupted" when the process that was writing it is gone.
+     * The status to show for a run. A killed run still says "running", so it shows as "interrupted"
+     * once its process is gone.
      *
-     * @return the status and a note, the note null when the status is the one of the report
+     * @return the status and a note, the note null when the report status stands
      */
     static String[] effectiveStatus(JSONObject itdroid, boolean hasError, Instant reportModified, Instant now, Processes processes) {
         String status = itdroid != null && itdroid.get("status") != null ? String.valueOf(itdroid.get("status"))
@@ -182,7 +173,7 @@ public class ReportServer {
             try {
                 started = itdroid.get("processStartedAt") == null ? null : Instant.parse(String.valueOf(itdroid.get("processStartedAt")));
             } catch (RuntimeException ignored) {
-                // an unreadable start time only means the process id is trusted alone
+                // then the process id is trusted alone
             }
             return processes.alive(((Number) itdroid.get("pid")).longValue(), started) ? new String[] {"running", null}
                     : new String[] {"interrupted", "the process that was running it is gone"};
@@ -193,15 +184,10 @@ public class ReportServer {
         return new String[] {status, null};
     }
 
-    // ------------------------------------------------------------------ the files of one evaluation
-
-    /** Files listed for one evaluation; an evaluation has a few dozen. */
+    /** Cap on the files listed for one evaluation, which usually has a few dozen. */
     static final int MAX_LISTED_FILES = 500;
 
-    /**
-     * The files of one evaluation, each with its path from the evaluation folder and its size, so
-     * the page links only to what is there. Screenshots are counted per folder, not listed.
-     */
+    /** The files of one evaluation with path and size, and screenshots counted per folder. */
     @SuppressWarnings("unchecked")
     static JSONObject listFiles(Path results, String dirName) {
         JSONObject out = new JSONObject();
@@ -212,7 +198,7 @@ public class ReportServer {
         out.put("screenshots", screenshots);
         Path base = results.toAbsolutePath().normalize();
         Path dir = base.resolve(dirName).normalize();
-        // only a direct sub-folder of the results folder: no "..", no nested path
+        // only a direct sub-folder of the results folder
         if (dirName.isEmpty() || !base.equals(dir.getParent()) || !Files.isDirectory(dir)) {
             out.put("error", "not an evaluation of this results folder");
             return out;
@@ -304,9 +290,7 @@ public class ReportServer {
                     l.put("ipfs", v.get("amIPFs"));
                     l.put("paired", v.get("pairedStates"));
                     l.put("error", v.get("error"));
-                    // Where the exploration of the language is: under trnsResults when the app shipped
-                    // the language, under noTrnsResults when ITDroid translated it. Read from the disk,
-                    // so it also holds for reports that do not say it.
+                    // read from disk, so it also works for reports that do not say it
                     Path folder = Reanalysis.resultFolder(dir, String.valueOf(k), Boolean.TRUE.equals(v.get("dflt")));
                     if (folder != null) {
                         l.put("folder", folder.getParent().getFileName().toString());
@@ -324,32 +308,12 @@ public class ReportServer {
             }
             entry.put("languages", langs);
             entry.put("totalIPFs", total);
-            Path meta = dir.resolve("meta.json");
-            if (Files.isRegularFile(meta)) {
-                // Written by the evaluation harness (eval/run-eval.ps1): status and resource telemetry.
-                try {
-                    JSONObject m = (JSONObject) new JSONParser().parse(stripBom(Files.readString(meta, StandardCharsets.UTF_8)));
-                    JSONObject h = new JSONObject();
-                    h.put("status", m.get("status"));
-                    h.put("wallSec", m.get("wallSec"));
-                    h.put("note", m.get("note"));
-                    entry.put("harness", h);
-                } catch (Exception ignored) {
-                    // an unreadable meta.json only hides the harness columns
-                }
-            }
         } catch (Exception e) {
             entry.put("status", "unreadable");
             entry.put("error", "report.json could not be read: " + e.getMessage());
         }
         return entry;
     }
-
-    static String stripBom(String s) {
-        return s.startsWith("﻿") ? s.substring(1) : s;
-    }
-
-    // ------------------------------------------------------------------ static files
 
     private static void sendJson(HttpExchange ex, JSONObject body) throws IOException {
         byte[] bytes = body.toJSONString().getBytes(StandardCharsets.UTF_8);

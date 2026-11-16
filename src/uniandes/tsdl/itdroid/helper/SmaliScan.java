@@ -14,15 +14,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * One pass over the app's smali: every string literal ({@code const-string}) with the class, method
- * and line it is in, and what the code does with it. The detector, the inventory and the patcher
- * all work from this list, so the smali is read once and they agree on what is where.
- *
- * <p>What a literal is used for is found by following its register inside the method to the first
- * instruction that consumes it; a text appended to a {@code StringBuilder} is followed through the
- * builder's {@code toString()} to wherever the whole sentence goes. The consumer is then classified
- * with {@link ConsumerRules}. The method is read forward: a {@code goto} is followed, a conditional
- * branch is not, which is enough for the straight-line code compilers emit around a literal.
+ * One pass over the app's smali listing every string literal with its class, method, line and use.
+ * The use is found by following the register forward to the first consumer, through StringBuilder
+ * and goto, and classified with {@link ConsumerRules}.
  */
 public final class SmaliScan {
 
@@ -56,22 +50,22 @@ public final class SmaliScan {
         }
     }
 
-    /** One {@code const-string} instruction. */
+    /** One const-string instruction. */
     public static final class Occurrence {
-        /** Path relative to the decoded folder, with forward slashes: smali_classes2/com/x/Foo.smali. */
+        /** Path relative to the decoded folder, with forward slashes. */
         public final String file;
         /** 1-based line of the instruction. */
         public final int line;
-        /** Dotted class name, inner classes with {@code $}: com.x.Foo$1. */
+        /** Dotted class name, inner classes with a dollar sign. */
         public final String className;
         public final String method;
         public final String register;
         /** The literal, decoded. */
         public final String text;
         public final Consumer consumer;
-        /** The callee or field that consumes it ({@code Landroid/widget/TextView;->setText}); "" when none. */
+        /** The callee or field that consumes it, empty when none. */
         public final String via;
-        /** Position in the scan (dex folder, file, line): sorting by it gives the order of the code. */
+        /** Position in the scan, sorting by it gives the order of the code. */
         public final int order;
 
         Occurrence(String file, int line, String className, String method, String register, String text, Consumer consumer,
@@ -124,7 +118,7 @@ public final class SmaliScan {
             try {
                 scan.scanFile(Files.readAllLines(file.toPath(), StandardCharsets.UTF_8), relative, rules);
             } catch (IOException e) {
-                // Unreadable file: skip it.
+                // unreadable file, skipped
             }
         }
         return scan;
@@ -135,7 +129,7 @@ public final class SmaliScan {
         return Collections.unmodifiableList(occurrences);
     }
 
-    /** The smali files of the app (all of them, with or without literals). */
+    /** Every smali file of the app, with or without literals. */
     public List<File> files() {
         return Collections.unmodifiableList(files);
     }
@@ -168,7 +162,7 @@ public final class SmaliScan {
                 }
                 Object[] use = resolve(lines, i + 1, k + 1, end, m.group(1), rules);
                 occurrences.add(new Occurrence(relativePath, k + 1, className, method, m.group(1),
-                        SmaliText.unescape(m.group(2)), (Consumer) use[0], (String) use[1], occurrences.size()));
+                        unescape(m.group(2)), (Consumer) use[0], (String) use[1], occurrences.size()));
             }
             i = end + 1;
         }
@@ -185,13 +179,13 @@ public final class SmaliScan {
                 break;
             }
         }
-        // no .class line: derive it from the path below the dex folder
+        // no .class line, derived from the path below the dex folder
         int slash = relativePath.indexOf('/');
         String p = slash >= 0 ? relativePath.substring(slash + 1) : relativePath;
         return p.replace(".smali", "").replace('/', '.');
     }
 
-    /** {@code .method public static final foo(I)V} gives {@code foo}. */
+    /** The method name of a .method line. */
     private static String methodNameOf(String methodLine) {
         int paren = methodLine.indexOf('(');
         String head = paren >= 0 ? methodLine.substring(0, paren) : methodLine;
@@ -199,10 +193,7 @@ public final class SmaliScan {
         return space >= 0 ? head.substring(space + 1) : head;
     }
 
-    /**
-     * Follows {@code register} from line index {@code from} to the end of the method (whose body is
-     * the lines {@code start} to {@code end}) and returns {consumer, via}.
-     */
+    /** Follows {@code register} from line {@code from} to the end of the method and returns the consumer and via. */
     private Object[] resolve(List<String> lines, int start, int from, int end, String register, ConsumerRules rules) {
         Set<String> value = new HashSet<>();      // registers that hold the text, or a text built from it
         Set<String> builders = new HashSet<>();   // registers that hold a builder the text went into
@@ -211,7 +202,7 @@ public final class SmaliScan {
         for (int i = from; i < end && steps < MAX_STEPS; i++) {
             String t = lines.get(i).trim();
             if (t.isEmpty() || t.charAt(0) == '.' || t.charAt(0) == ':' || t.charAt(0) == '#') {
-                continue;   // directives (.line, .local, .catch), labels, comments
+                continue;   // directives, labels and comments
             }
             steps++;
             Matcher inv = INVOKE.matcher(t);
@@ -229,7 +220,7 @@ public final class SmaliScan {
                         builders.add(args.get(0));          // the text goes into the receiver
                     }
                     int result = moveResultLine(lines, i + 1, end);
-                    if (result >= 0) {                      // append() returns the builder: another name for it
+                    if (result >= 0) {                      // append() returns the builder under another name
                         String r = firstRegister(lines.get(result).trim());
                         value.remove(r);
                         builders.add(r);
@@ -263,7 +254,7 @@ public final class SmaliScan {
             Matcher op = OPERANDS.matcher(t);
             if (!op.find()) {
                 Matcher jump = GOTO.matcher(t);
-                if (jump.matches()) {                       // the code goes on at the label (the step limit stops a loop)
+                if (jump.matches()) {                       // go on at the label, the step limit stops a loop
                     int target = labelLine(lines, start, end, jump.group(1));
                     if (target < 0) {
                         break;
@@ -272,7 +263,7 @@ public final class SmaliScan {
                     continue;
                 }
                 if (t.startsWith("return")) {
-                    break;                                  // return-void: this path of the method ends here
+                    break;                                  // return-void ends this path
                 }
                 continue;
             }
@@ -307,9 +298,9 @@ public final class SmaliScan {
                 break;
             } else if (opcode.startsWith("if-") || opcode.startsWith("monitor") || opcode.equals("check-cast")
                     || opcode.contains("switch") || opcode.startsWith("fill-array-data")) {
-                // reads its operand: nothing to follow
+                // only reads its operand, nothing to follow
             } else {
-                // any other instruction writes its first operand: that register no longer holds the text
+                // any other instruction overwrites its first operand
                 value.remove(first);
                 builders.remove(first);
             }
@@ -321,7 +312,7 @@ public final class SmaliScan {
     }
 
     private static Object[] use(Consumer consumer, String via) {
-        // keep class and method, drop the descriptor: it is long and adds nothing to a report
+        // keep class and method, drop the long descriptor
         int paren = via.indexOf('(');
         return new Object[] {consumer, paren > 0 ? via.substring(0, paren) : via};
     }
@@ -382,5 +373,71 @@ public final class SmaliScan {
             }
         }
         return false;
+    }
+
+    // ------------------------------------------------------------------ escaping of literals
+
+
+
+    /** Decodes the body of a smali string literal, without its quotes. */
+    public static String unescape(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char n = s.charAt(i + 1);
+                if (n == 'u' && i + 5 < s.length()) {
+                    try {
+                        sb.append((char) Integer.parseInt(s.substring(i + 2, i + 6), 16));
+                        i += 5;
+                        continue;
+                    } catch (NumberFormatException ignored) {
+                        // not a valid escape, kept verbatim
+                    }
+                } else if (n == 'n' || n == 't' || n == 'r') {
+                    sb.append(n == 'n' ? '\n' : n == 't' ? '\t' : '\r');
+                    i++;
+                    continue;
+                } else if (n == '"' || n == '\'' || n == '\\') {
+                    sb.append(n);
+                    i++;
+                    continue;
+                }
+            }
+            sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    /** Encodes a text as the body of a smali string literal, escaping quotes, backslashes, controls and non-ASCII. */
+    public static String escape(String s) {
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"':
+                    sb.append("\\\"");
+                    break;
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
+                default:
+                    if (c < 0x20 || c > 0x7e) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
     }
 }

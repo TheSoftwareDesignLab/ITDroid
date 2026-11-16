@@ -18,7 +18,7 @@ import uniandes.tsdl.itdroid.Fixtures;
 import uniandes.tsdl.itdroid.helper.SmaliScan.Consumer;
 import uniandes.tsdl.itdroid.helper.SmaliScan.Occurrence;
 
-/** The single pass over the smali: where every literal is and what the code does with it. */
+/** Tests the single pass over the smali, where every literal is and what the code does with it. */
 class SmaliScanTest {
 
     @TempDir
@@ -95,7 +95,7 @@ class SmaliScanTest {
         assertConsumer(scan, "view.resources", Consumer.COMPILER, "Lkotlin/jvm/internal/Intrinsics;->checkNotNullExpressionValue");
         assertConsumer(scan, "C(EmptyCart)42@1337L64:CartScreen.kt#x1y2z3", Consumer.COMPILER, "Landroidx/compose/runtime/ComposerKt;->sourceInformation");
 
-        // the destination is outside the method: the scan says so instead of guessing
+        // the destination is outside the method, so the scan reports that instead of guessing
         assertConsumer(scan, " LIMIT 0", Consumer.CONCATENATION, "");
         assertConsumer(scan, "Bearer ", Consumer.RETURN, "");
     }
@@ -110,7 +110,7 @@ class SmaliScanTest {
 
     @Test
     void followsAGotoToTheInstructionThatUsesTheLiteral() throws IOException {
-        // a ternary: both branches load the label, one jumps over the other
+        // a ternary, both branches load the label and one jumps over the other
         SmaliScan scan = scanMethods(method("label(ZLandroid/widget/TextView;)V",
                 "if-eqz p1, :cond_0",
                 "const-string v0, \"Enabled\"",
@@ -207,8 +207,8 @@ class SmaliScanTest {
     }
 
     /**
-     * A composable function of the app that receives a text most likely draws it, but it can also
-     * take the name of an icon: the label is translated, the bare identifier is not even listed.
+     * An app composable that receives a text most likely draws it, but it may be an icon name. The
+     * label is translated and the bare identifier is not even listed.
      */
     @Test
     void aTextGivenToAComposableOfTheAppIsTakenForTextUnlessItIsABareIdentifier() throws Exception {
@@ -250,7 +250,7 @@ class SmaliScanTest {
         assertEquals(Consumer.UI, of(scan, "Share with").consumer);
     }
 
-    /** What a login needs is never text for the user, whoever receives it; the label of the field is. */
+    /** Login data is never text for the user, whoever receives it, but the label of the field is. */
     @Test
     void credentialsAreDataWhateverClassReceivesThem() throws IOException {
         SmaliScan scan = scanMethods(method("auth(Lcom/acme/app/Session;Landroid/widget/EditText;)V",

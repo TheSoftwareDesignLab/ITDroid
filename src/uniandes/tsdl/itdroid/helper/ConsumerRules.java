@@ -15,9 +15,8 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * The table that says what a method does with a string it receives: shows it, logs it, throws it,
- * uses it as data, or passes it on. Read from {@code hardcoded-consumers.txt} (packaged next to
- * this class); a file with the same name in the settings folder adds rules that are tried first.
+ * Rules saying what a method does with a string it receives, read from {@code hardcoded-consumers.txt}.
+ * A file with that name in the settings folder adds rules that are tried first.
  */
 public final class ConsumerRules {
 
@@ -48,7 +47,7 @@ public final class ConsumerRules {
         return load(null);
     }
 
-    /** The rules of {@code <settingsDir>/hardcoded-consumers.txt}, if that file exists, then the packaged ones. */
+    /** The rules of the settings folder file when it exists, then the packaged ones. */
     public static ConsumerRules load(String settingsDir) {
         ConsumerRules r = new ConsumerRules();
         if (settingsDir != null && !settingsDir.isEmpty()) {
@@ -90,14 +89,14 @@ public final class ConsumerRules {
             try {
                 rules.add(new Rule(Kind.valueOf(parts[0].toUpperCase()), Pattern.compile(parts[1].trim())));
             } catch (IllegalArgumentException e) {
-                // unknown category, or a PatternSyntaxException (which is an IllegalArgumentException)
+                // unknown category or invalid pattern, both are IllegalArgumentException
                 String why = e instanceof PatternSyntaxException ? "invalid regular expression" : "unknown category '" + parts[0] + "'";
                 System.out.println("WARNING: " + source + ":" + n + " ignored (" + why + ")");
             }
         }
     }
 
-    /** What the callee (as written in smali: {@code Lpkg/Class;->method(args)ret}) does with a string, or null when no rule knows it. */
+    /** What the callee, written as in smali, does with a string, or null when no rule knows it. */
     public Kind classify(String callee) {
         for (Rule rule : rules) {
             if (rule.pattern.matcher(callee).find()) {

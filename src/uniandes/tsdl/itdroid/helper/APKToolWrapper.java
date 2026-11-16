@@ -17,33 +17,22 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.io.FileUtils;
 
-/** Decodes APKs with apktool and rebuilds + signs them with uber-apk-signer (both in {@code extra/}). */
+/** Decodes APKs with apktool and rebuilds and signs them with uber-apk-signer, both kept in {@code extra/}. */
 public class APKToolWrapper {
 
 	private static final String APKTOOL_JAR = "apktool.jar";
 	private static final String SIGNER_JAR = "uber-apk-signer.jar";
 
-	/**
-	 * How aapt2 reports an attribute of the android: namespace that the framework bundled with
-	 * apktool does not have (the app was built for a newer Android than apktool knows):
-	 * {@code W: C:\...\temp\AndroidManifest.xml:76: error: attribute android:pageSizeCompat not found.}
-	 */
+	/** The aapt2 error for an android attribute newer than the framework bundled with apktool. */
 	private static final Pattern UNKNOWN_ATTRIBUTE =
 			Pattern.compile("(?m)^W:\\s+(.+\\.xml):\\d+: error: attribute (android:\\w+) not found\\.");
-	/**
-	 * How aapt2 reports an attribute of the app (or of a library inside it) that a resource uses
-	 * but no resource declares, because its declaration did not survive the decoding:
-	 * {@code W: C:\...\temp\res\drawable\mtrl_switch_thumb.xml:6: error: attribute state_with_icon (aka org.tasks:state_with_icon) not found.}
-	 */
+	/** The aapt2 error for an app attribute whose declaration was lost in the decoding. */
 	private static final Pattern MISSING_ATTRIBUTE =
 			Pattern.compile("(?m)^W:\\s+.+\\.xml:\\d+: error: attribute (\\w+) \\(aka [\\w.]+:\\w+\\) not found\\.");
-	/** Rounds of "adjust what the build rejected and build again" before giving up. */
+	/** Rounds of adjusting what the build rejected and building again before giving up. */
 	private static final int MAX_BUILD_ATTEMPTS = 6;
 
-	/**
-	 * What had to be changed in the decoded app of this run to make it build:
-	 * "AndroidManifest.xml: removed android:pageSizeCompat", "res/values/attrs.xml: declared attr state_with_icon".
-	 */
+	/** What had to be changed in the decoded app of this run to make it build. */
 	private static final Set<String> buildAdjustments = new LinkedHashSet<>();
 
 	/** Decodes the APK into {@code temp/} (cleaned first) and returns that folder's absolute path. */
@@ -51,16 +40,13 @@ public class APKToolWrapper {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
 		File tempFolder = new File(decodedPath + File.separator + "temp");
 		if (tempFolder.exists()) {
-			// File.delete() only removes an EMPTY directory; a previously decoded app must be
-			// wiped recursively so apktool does not reuse stale smali/resources.
+			// Wiped recursively so apktool does not reuse stale smali or resources.
 			FileUtils.deleteDirectory(tempFolder);
 		}
 		tempFolder.mkdirs();
 		buildAdjustments.clear();
 
-		// resolve() (not the joining Paths.get(a, b)) keeps an absolute user path intact and only
-		// appends it when relative, so an absolute extraPath/apkPath does not produce an illegal
-		// joined path (e.g. ...\ITDroid\C:\APKs\app.apk) that throws InvalidPathException on Windows.
+		// resolve() keeps an absolute user path intact, joining it would be an invalid path on Windows.
 		String apktool = Paths.get(decodedPath).resolve(extraPath).resolve(APKTOOL_JAR).toAbsolutePath().toString();
 		String apk = Paths.get(decodedPath).resolve(path).toAbsolutePath().toString();
 		String out = Paths.get(decodedPath, "temp").toAbsolutePath().toString();
@@ -74,25 +60,13 @@ public class APKToolWrapper {
 	}
 
 	/**
-	 * Rebuilds and signs the decoded app; returns the signed APK path, or {@code ""} on failure.
-	 *
-	 * <p>Two things apktool is known to trip on are adjusted in the decoded app, and the build
-	 * tried again; {@link #buildAdjustments()} says what was done.
-	 * <ul>
-	 *   <li>An app built for a newer Android than apktool knows uses attributes of the android:
-	 *       namespace that its bundled framework lacks. Such an attribute means nothing to the
-	 *       older Android the app is evaluated on: it is removed.</li>
-	 *   <li>A resource uses an attribute of the app whose declaration was lost in the decoding
-	 *       (seen with Material 3's {@code state_with_icon}). It is declared again, so the
-	 *       resources link; the app's code still looks for the id the attribute had, so the state
-	 *       it marks never applies and that one visual variant is not drawn.</li>
-	 * </ul>
+	 * Rebuilds and signs the decoded app and returns the signed APK path, or an empty string on failure.
+	 * Android attributes newer than apktool are removed and lost app attributes are declared again,
+	 * then the build is retried. {@link #buildAdjustments()} says what was done.
 	 */
 	public static String buildAPK(String extraPath, String appName, String outputPath) throws IOException, InterruptedException {
 		String decodedPath = Helper.getInstance().getCurrentDirectory();
-		// resolve() (not the joining Paths.get(a, b)) keeps an absolute user path intact and only
-		// appends it when relative, so an absolute extraPath/outputPath does not produce an illegal
-		// joined path that throws InvalidPathException on Windows.
+		// resolve() keeps an absolute user path intact, joining it would be an invalid path on Windows.
 		String apktool = Paths.get(decodedPath).resolve(extraPath).resolve(APKTOOL_JAR).toAbsolutePath().toString();
 		String signer = Paths.get(decodedPath).resolve(extraPath).resolve(SIGNER_JAR).toAbsolutePath().toString();
 		String temp = Paths.get(decodedPath, "temp").toAbsolutePath().toString();
@@ -122,8 +96,7 @@ public class APKToolWrapper {
 
 		System.out.println("Signing the APK...");
 		File signed = Paths.get(decodedPath).resolve(outputPath).resolve(appName + "-aligned-debugSigned.apk").toAbsolutePath().toFile();
-		// Every build of a run is signed into this same name. The one of the build before goes
-		// first, so the file being there afterwards means this build was signed.
+		// Every build is signed into this name, so the previous one goes first.
 		forgetPreviousBuild(signed);
 		run("java", "-jar", signer, "-a", unsigned, "-o", outDir);
 
@@ -135,19 +108,13 @@ public class APKToolWrapper {
 		return "";
 	}
 
-	/** Removes the signed APK a previous build left under the name the next one is signed into, and its v4 signature file. */
+	/** Removes the signed APK and v4 signature file a previous build left. */
 	static void forgetPreviousBuild(File signed) throws IOException {
 		Files.deleteIfExists(signed.toPath());
 		Files.deleteIfExists(Paths.get(signed.getPath() + ".idsig"));
 	}
 
-	/**
-	 * After signing: when the signed APK is there, the unsigned one apktool wrote has done its job
-	 * and is removed (it was as large as the signed one and nothing used it again). When signing
-	 * failed it is kept, it is what there is to look at.
-	 *
-	 * @return true when the signed APK exists
-	 */
+	/** Deletes the unsigned APK when the signed one exists and returns whether it exists. */
 	static boolean keepOnlySigned(File unsigned, File signed) throws IOException {
 		if (!signed.isFile()) {
 			return false;
@@ -156,15 +123,14 @@ public class APKToolWrapper {
 		return true;
 	}
 
-	/** What was changed in the decoded app of this run so that it builds, as "file: what"; empty when nothing. */
+	/** What was changed in the decoded app of this run so that it builds, empty when nothing. */
 	public static List<String> buildAdjustments() {
 		return new ArrayList<>(buildAdjustments);
 	}
 
 	/**
-	 * Removes from the decoded app every android: attribute the build output reports as unknown,
-	 * and returns what it removed as "file: removed attribute" (file relative to the decoded
-	 * folder). Files outside the decoded folder are never touched.
+	 * Removes every android attribute the build output reports as unknown and returns what it removed.
+	 * Files outside the decoded folder are never touched.
 	 */
 	static List<String> removeUnknownAttributes(String buildOutput, Path decoded) throws IOException {
 		List<String> removed = new ArrayList<>();
@@ -175,7 +141,7 @@ public class APKToolWrapper {
 			try {
 				file = Paths.get(m.group(1).trim()).toAbsolutePath().normalize();
 			} catch (RuntimeException e) {
-				continue;   // not a path this system understands
+				continue;   // not a valid path here
 			}
 			String attribute = m.group(2);
 			if (!file.startsWith(root) || !Files.isRegularFile(file)) {
@@ -196,10 +162,8 @@ public class APKToolWrapper {
 	}
 
 	/**
-	 * Declares in {@code res/values/attrs.xml} every attribute the build output reports as used but
-	 * not declared, and returns what it declared as "res/values/attrs.xml: declared attr name".
-	 * An attribute already declared somewhere in res/values is left alone (declaring it twice is
-	 * an error of its own), so the same failure is never "fixed" twice.
+	 * Declares in {@code res/values/attrs.xml} every attribute the build reports as undeclared and
+	 * returns what it declared. One already declared in res/values is skipped, a duplicate is an error too.
 	 */
 	static List<String> declareMissingAttributes(String buildOutput, Path decoded) throws IOException {
 		List<String> declared = new ArrayList<>();
@@ -235,7 +199,7 @@ public class APKToolWrapper {
 			String text = Files.readString(attrs, StandardCharsets.UTF_8);
 			int close = text.lastIndexOf("</resources>");
 			if (close < 0) {
-				return new ArrayList<>();   // not a file this can be added to; leave the build to fail with its own message
+				return new ArrayList<>();   // cannot be extended, the build fails with its own message
 			}
 			Files.writeString(attrs, text.substring(0, close) + added + text.substring(close), StandardCharsets.UTF_8);
 		} else {
@@ -245,19 +209,12 @@ public class APKToolWrapper {
 		return declared;
 	}
 
-	/**
-	 * Runs an external command with stdout/stderr inherited by this process and returns its exit code.
-	 * Inheriting the streams avoids the classic pipe-buffer deadlock of a chatty child that fills an
-	 * undrained {@code Process} output stream.
-	 */
+	/** Runs a command with inherited streams, which avoids a full pipe blocking it, and returns its exit code. */
 	private static int run(String... command) throws IOException, InterruptedException {
 		return new ProcessBuilder(command).inheritIO().start().waitFor();
 	}
 
-	/**
-	 * Runs a command echoing its output (stdout and stderr together) line by line and keeping a copy
-	 * in {@code output}. The stream is read until it closes, so the child never blocks on a full pipe.
-	 */
+	/** Runs a command, echoing its merged output and keeping a copy in {@code output}. */
 	private static int runCapturing(StringBuilder output, String... command) throws IOException, InterruptedException {
 		Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
 		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** What report.json says of the run itself: how it ended, and nothing about the machine it ran on. */
+/** What report.json says about the run itself, how it ended and no path of the machine it ran on. */
 class ITDroidReportTest {
 
     @TempDir

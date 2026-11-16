@@ -32,36 +32,20 @@ import org.jdom2.output.Format;
 import org.jdom2.output.XMLOutputter;
 
 /**
- * Moves hardcoded strings of the code to string resources, so that a single APK shows them in the
- * language of the device, like the rest of its text.
- *
- * <p>The literal stays in the code and is handed to a small class added to the app, which returns
- * the resource created for that text ({@code itdroid-strings.smali}, next to this class):
- * <pre>
- *     const-string v1, "Welcome back"
- *     invoke-static/range {v1 .. v1}, Litdroid/hc/Strings;-&gt;t(Ljava/lang/String;)Ljava/lang/String;
- *     move-result-object v1
- * </pre>
- * It needs no free register and no {@code Context} in the method, so it works in static methods,
- * lambdas and class initialisers alike. The resource is found by name, {@code itdroid_code_} plus
- * the hexadecimal {@code hashCode} of the text, so no resource id has to be reserved before the
- * build. If the resource is missing or the app has no {@code Application} object yet, the added
- * class returns the text it was given: the app behaves as it did.
- *
- * <p>(The original team's {@code replaceHCS} did this with {@code getResources().getString(id)},
- * only in non-static methods of classes that are a {@code Context}, with ids counted from a fixed
- * number.)
+ * Moves hardcoded strings of the code to string resources so one APK shows them in the device language.
+ * Each literal is passed to a small added class that looks up the resource by a name built from the
+ * text hash and returns the text unchanged when there is none. It needs no free register or Context.
  */
 public final class CodeLiteralExtractor {
 
-    /** Prefix of the names given to the resources; the added class builds the same names. */
+    /** Prefix of the resource names, the added class builds the same names. */
     public static final String PREFIX = "itdroid_code_";
 
     private static final String HELPER_RESOURCE = "itdroid-strings.smali";
     private static final String HELPER_PATH = "itdroid/hc/Strings.smali";
     private static final String CALL = "invoke-static/range {%1$s .. %1$s}, Litdroid/hc/Strings;->t(Ljava/lang/String;)Ljava/lang/String;";
     private static final Pattern CONST_STRING = Pattern.compile("^(\\s*)const-string(?:/jumbo)?\\s+([vp]\\d+),\\s*\"(.*)\"$");
-    /** A dex file holds at most this many method (and type) references; the call adds one of each. */
+    /** Most method or type references a dex file holds, the call adds one of each. */
     private static final int DEX_REFERENCE_LIMIT = 65536;
 
     /** What an extraction did, and how to undo it. */
@@ -72,11 +56,11 @@ public final class CodeLiteralExtractor {
         public final Map<String, String> valueByName = new LinkedHashMap<>();
         /** The places rewritten, as the scan gave them. */
         public final Set<SmaliScan.Occurrence> places = new HashSet<>();
-        /** What could not be extracted and why (those places are still patched per language). */
+        /** What could not be extracted and why, those places are still patched per language. */
         public final List<String> problems = new ArrayList<>();
 
         private final Map<Path, List<String>> originals = new LinkedHashMap<>();
-        /** file (as in the scan) to the original lines of the literals extracted in it. */
+        /** Scan file to the original lines of the literals extracted in it. */
         private final Map<String, List<Integer>> extractedLines = new HashMap<>();
         private Path stringsFile;
         private String stringsBefore;
@@ -93,10 +77,7 @@ public final class CodeLiteralExtractor {
             return valueByName.keySet();
         }
 
-        /**
-         * The line a place of the scan is on now: every literal extracted above it in the same file
-         * added two lines.
-         */
+        /** The line a scan place is on now, each literal extracted above it added two lines. */
         public int currentLine(SmaliScan.Occurrence place) {
             int shift = 0;
             for (int line : extractedLines.getOrDefault(place.file, List.of())) {
@@ -123,7 +104,7 @@ public final class CodeLiteralExtractor {
                 FileUtils.deleteDirectory(helperDexFolder.toFile());
             }
             if (decodedPath != null) {
-                // translations already written for the resources that no longer exist would stop the build
+                // translations of resources that no longer exist would stop the build
                 File[] folders = new File(decodedPath, "res").listFiles((d, n) -> n.startsWith("values-"));
                 if (folders != null) {
                     for (File folder : folders) {
@@ -150,9 +131,7 @@ public final class CodeLiteralExtractor {
     /**
      * Moves the literals at the given places to resources.
      *
-     * @param places the places chosen for translation (see {@link StringInventory#placesToTranslate})
-     * @param fullDexFolders dex folders ({@code smali}, {@code smali_classes2}...) with no room for
-     *        the reference the call adds (see {@link #fullDexFolders}); their literals are left alone
+     * @param fullDexFolders dex folders with no room for the added call, their literals are left alone
      */
     public static Extraction extract(String decodedPath, List<SmaliScan.Occurrence> places, Set<String> fullDexFolders)
             throws IOException {
@@ -161,7 +140,7 @@ public final class CodeLiteralExtractor {
         if (places.isEmpty()) {
             return result;
         }
-        Set<String> taken = XmlLiteralExtractor.existingNames(decodedPath);
+        Set<String> taken = XmlLiterals.existingNames(decodedPath);
         Map<String, String> textByName = new HashMap<>();
         Set<String> skippedTexts = new HashSet<>();
         Map<String, List<SmaliScan.Occurrence>> byFile = new LinkedHashMap<>();
@@ -175,7 +154,7 @@ public final class CodeLiteralExtractor {
             String name = resourceName(place.text);
             String owner = textByName.get(name);
             if (skippedTexts.contains(place.text) || (owner == null && taken.contains(name)) || (owner != null && !owner.equals(place.text))) {
-                // two texts with the same hashCode, or a name the app already uses: the second one is patched instead
+                // hash collision or a name the app already uses, so this one is patched instead
                 if (skippedTexts.add(place.text)) {
                     result.problems.add("\"" + place.text + "\": the resource name " + name + " is already in use");
                 }
@@ -193,12 +172,12 @@ public final class CodeLiteralExtractor {
             List<String> original = Files.readAllLines(file, StandardCharsets.UTF_8);
             List<String> lines = new ArrayList<>(original);
             List<SmaliScan.Occurrence> inFile = new ArrayList<>(f.getValue());
-            inFile.sort(Comparator.comparingInt((SmaliScan.Occurrence o) -> o.line).reversed());   // bottom up: lines above keep their number
+            inFile.sort(Comparator.comparingInt((SmaliScan.Occurrence o) -> o.line).reversed());   // bottom up so lines above keep their number
             List<Integer> done = new ArrayList<>();
             for (SmaliScan.Occurrence place : inFile) {
                 int index = place.line - 1;
                 Matcher m = index >= 0 && index < lines.size() ? CONST_STRING.matcher(lines.get(index)) : null;
-                if (m == null || !m.matches() || !SmaliText.unescape(m.group(3)).equals(place.text)) {
+                if (m == null || !m.matches() || !SmaliScan.unescape(m.group(3)).equals(place.text)) {
                     result.problems.add(place.origin() + " no longer holds the literal found by the scan");
                     continue;
                 }
@@ -224,21 +203,17 @@ public final class CodeLiteralExtractor {
         result.stringsFile = Paths.get(decodedPath, "res", "values", "strings.xml");
         result.stringsExisted = Files.isRegularFile(result.stringsFile);
         result.stringsBefore = result.stringsExisted ? Files.readString(result.stringsFile, StandardCharsets.UTF_8) : null;
-        // formatted="false": a literal may hold several % that are not a positional format
-        XmlLiteralExtractor.appendToDefaultStrings(decodedPath, result.valueByName, " formatted=\"false\"");
+        // formatted false, a literal may hold several % that are not a positional format
+        XmlLiterals.appendToDefaultStrings(decodedPath, result.valueByName, " formatted=\"false\"");
         return result;
     }
 
-    /** The name of the resource of a text: the added class computes the same at run time. */
+    /** The resource name of a text, the added class computes the same at run time. */
     static String resourceName(String text) {
         return PREFIX + Integer.toHexString(text.hashCode());
     }
 
-    /**
-     * A string of the code as the value of a string resource, such that reading the resource gives
-     * the string back character by character: backslashes, quotes and control characters escaped,
-     * the whole value quoted when it has whitespace a resource would otherwise drop.
-     */
+    /** Escapes a code string as a resource value that reads back exactly the same. */
     static String resourceValue(String literal) {
         StringBuilder sb = new StringBuilder(literal.length() + 8);
         for (int i = 0; i < literal.length(); i++) {
@@ -305,11 +280,7 @@ public final class CodeLiteralExtractor {
         return folder;
     }
 
-    /**
-     * The dex folders of the decoded app whose dex file is already at the limit of method or type
-     * references, read from the headers of the dex files of the APK. A call to the added class
-     * needs one more of each, and a build that goes over the limit fails.
-     */
+    /** Dex folders whose dex file is already at the method or type reference limit, read from the APK. */
     public static Set<String> fullDexFolders(String apkPath) {
         Set<String> full = new HashSet<>();
         try (ZipFile zip = new ZipFile(apkPath)) {
@@ -333,7 +304,7 @@ public final class CodeLiteralExtractor {
                 }
             }
         } catch (IOException e) {
-            // unreadable APK: nothing is known to be full, and a build that fails makes ITDroid go back to patching
+            // unreadable APK, a failed build makes ITDroid fall back to patching
         }
         return full;
     }
@@ -342,11 +313,7 @@ public final class CodeLiteralExtractor {
         return (b[offset] & 0xffL) | (b[offset + 1] & 0xffL) << 8 | (b[offset + 2] & 0xffL) << 16 | (b[offset + 3] & 0xffL) << 24;
     }
 
-    /**
-     * Removes from a language's strings.xml the translations of the literals of the code, so that
-     * language shows them as written in the code. Used when the build of a language fails with
-     * them. Returns how many were removed.
-     */
+    /** Removes the code literal translations from a language's strings.xml and returns how many. */
     public static int removeTranslations(File stringsXml) {
         if (!stringsXml.isFile()) {
             return 0;

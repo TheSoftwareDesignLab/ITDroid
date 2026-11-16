@@ -20,45 +20,33 @@ import org.jdom2.Namespace;
 import org.jdom2.input.SAXBuilder;
 
 /**
- * Where the app's own code lives in a decoded APK.
- *
- * <p>The applicationId is not a reliable guide. A build flavour adds a suffix to it
- * ({@code com.x.app.pro} with the code in {@code com.x.app}) and the Gradle namespace can be
- * unrelated to it ({@code org.birthdayadapter} with the code in {@code fr.heinisch.birthdayadapter}),
- * so looking only under the applicationId folder finds nothing in such apps. The code is located
- * from three sources instead:
- * <ol>
- *   <li>the applicationId folder, when it holds code;</li>
- *   <li>a {@code BuildConfig} class that declares this applicationId (it sits in the namespace);</li>
- *   <li>the classes the manifest declares: the application class and the launcher activity anchor
- *       the search, and the common package of the components that share their prefix is the root.</li>
- * </ol>
- * Extra roots can be given by hand (config key {@code hardcoded.codePackages}) for apps split in
- * modules that the manifest does not mention.
+ * Finds where the app's own code lives in a decoded APK. The applicationId alone is not enough
+ * (flavour suffixes, unrelated Gradle namespaces), so the BuildConfig class and the manifest
+ * components are used too, plus roots given in {@code hardcoded.codePackages}.
  */
 public final class AppCode {
 
     private static final Namespace ANDROID = Namespace.getNamespace("android", "http://schemas.android.com/apk/res/android");
 
-    /** Packages of platform, library and framework code: never an anchor, never an app root. */
+    /** Packages of platform, library and framework code, never an app root. */
     private static final String[] LIBRARY_PREFIXES = {"android.", "androidx.", "com.android.", "com.google.", "kotlin.",
             "kotlinx.", "java.", "javax.", "dalvik.", "io.flutter.", "org.chromium.", "com.facebook.react.",
             "com.getcapacitor.", "org.apache.cordova.", "com.unity3d.", "org.qtproject.", "org.libsdl.", "expo.modules.",
             "org.jetbrains.", "okhttp3.", "okio.", "retrofit2.", "dagger.", "leakcanary.", "org.acra.", "com.squareup.",
             "io.sentry.", "com.journeyapps.", "org.koin.", "coil.", "com.bumptech."};
 
-    /** Hosting domains shared by many unrelated authors: the vendor is one level deeper. */
+    /** Domains shared by many authors, where the vendor is one level deeper. */
     private static final Set<String> SHARED_DOMAINS = Set.of("com.github", "io.github", "com.gitlab", "io.gitlab",
             "org.bitbucket", "com.google", "org.apache", "org.jetbrains", "com.android", "net.sourceforge", "org.codeberg",
             "io.codeberg", "page.codeberg", "com.example");
 
-    /** Extra package roots given by hand (config), added to whatever is found. */
+    /** Package roots given in the config, added to whatever is found. */
     private static volatile List<String> extraRoots = List.of();
 
     private AppCode() {
     }
 
-    /** Sets the extra roots of {@code hardcoded.codePackages} (comma separated; blank to clear). */
+    /** Sets the comma separated roots of {@code hardcoded.codePackages}, blank clears them. */
     public static void setExtraRoots(String commaSeparated) {
         List<String> roots = new ArrayList<>();
         if (commaSeparated != null) {
@@ -71,10 +59,7 @@ public final class AppCode {
         extraRoots = roots;
     }
 
-    /**
-     * Package roots of the app's own code, e.g. {@code [com.example.shop]}. Only roots that hold
-     * smali are returned; when nothing can be located the applicationId is returned alone.
-     */
+    /** Package roots of the app's own code that hold smali, or the applicationId alone when none is found. */
     public static List<String> packageRoots(String decodedPath, String applicationId) {
         File decoded = new File(decodedPath);
         Set<String> found = new LinkedHashSet<>();
@@ -92,7 +77,7 @@ public final class AppCode {
             }
             roots.add(candidate);
         }
-        // A root inside another root adds nothing: keep the outermost.
+        // Keep only the outermost of nested roots.
         List<String> outer = new ArrayList<>();
         for (String r : roots) {
             boolean nested = false;
@@ -113,11 +98,7 @@ public final class AppCode {
         return outer;
     }
 
-    /**
-     * The app's smali files across every dex folder, in a stable order ({@code smali},
-     * {@code smali_classes2}, ...; then by path), without the test-instrumentation classes the
-     * original tool skipped.
-     */
+    /** The app's smali files across every dex folder in a stable order, without test instrumentation classes. */
     public static List<File> smaliFiles(String decodedPath, String applicationId) {
         return smaliFiles(decodedPath, packageRoots(decodedPath, applicationId));
     }
@@ -146,7 +127,7 @@ public final class AppCode {
         return result;
     }
 
-    /** The dex folders of a decoded app: smali, smali_classes2, smali_classes3, ... in that order. */
+    /** The dex folders of a decoded app in order, smali then smali_classes2 and so on. */
     public static List<File> smaliDirs(File decoded) {
         File[] dirs = decoded.listFiles((dir, name) -> name.equals("smali") || name.startsWith("smali_classes"));
         if (dirs == null) {
@@ -166,7 +147,7 @@ public final class AppCode {
         }
     }
 
-    /** True when the internal class name ({@code com/x/Foo}) or package belongs to one of the roots. */
+    /** True when the internal class name or package belongs to one of the roots. */
     public static boolean isUnder(List<String> packageRoots, String internalClassName) {
         String dotted = internalClassName.replace('/', '.');
         for (String root : packageRoots) {
@@ -189,7 +170,7 @@ public final class AppCode {
         return false;
     }
 
-    /** Packages of the BuildConfig classes whose APPLICATION_ID is this app's: the Gradle namespace. */
+    /** Packages of the BuildConfig classes whose APPLICATION_ID is this app's, the Gradle namespace. */
     private static List<String> buildConfigNamespaces(File decoded, String applicationId) {
         List<String> namespaces = new ArrayList<>();
         if (applicationId == null || applicationId.isEmpty()) {
@@ -209,11 +190,11 @@ public final class AppCode {
                             }
                         }
                     } catch (IOException e) {
-                        // unreadable: this source simply adds nothing
+                        // unreadable, adds nothing
                     }
                 });
             } catch (IOException e) {
-                // unreadable dex folder: this source simply adds nothing
+                // unreadable dex folder, adds nothing
             }
         }
         return namespaces;
@@ -303,7 +284,7 @@ public final class AppCode {
         return false;
     }
 
-    /** Fully qualified class name of a manifest {@code android:name} (".Foo" and "Foo" are relative to the package). */
+    /** Fully qualified class name of a manifest component name, relative names resolved against the package. */
     private static String qualify(String name, String manifestPackage) {
         if (name == null || name.trim().isEmpty()) {
             return null;
@@ -330,10 +311,8 @@ public final class AppCode {
     }
 
     /**
-     * The prefix that identifies whose code a package is. Reverse-domain packages
-     * ({@code fr.heinisch.birthdayadapter.ui}) belong to their first two segments, three under a
-     * domain shared by many authors ({@code io.github.user}). A package that does not start with a
-     * domain suffix ({@code fulguris.activity}) belongs to its first segment.
+     * The prefix that says whose code a package is. Two segments for a reverse domain, three under a
+     * shared domain, one when the package does not start with a domain suffix.
      */
     static String familyPrefix(String packageName) {
         String[] s = packageName.split("\\.");
@@ -352,7 +331,7 @@ public final class AppCode {
                 "club", "online", "cloud", "software", "digital", "studio", "world", "network", "systems").contains(segment);
     }
 
-    /** Longest common package of two packages, by whole segments ("" when they share none). */
+    /** Longest common package of two packages by whole segments, empty when they share none. */
     static String commonPackage(String a, String b) {
         String[] x = a.split("\\.");
         String[] y = b.split("\\.");

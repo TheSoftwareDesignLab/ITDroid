@@ -20,22 +20,21 @@ import org.json.simple.JSONObject;
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 
 /**
- * Phase 0: decides whether the app can be processed at all BEFORE spending minutes on translation
- * and exploration. Every failure is an {@link ITDroidException} with the concrete reason, so a
- * batch can classify it instead of discovering it half-way as a confusing install/explore error.
+ * Decides whether the app can be processed at all before translation and exploration start. Each
+ * failure is an {@link ITDroidException} with the concrete reason, so a batch can classify it.
  */
 public class Preflight {
 
-    /** Per-app locales ({@code cmd locale set-app-locales}) exist since Android 13. */
+    /** Per-app locales exist since Android 13. */
     public static final int MIN_DEVICE_SDK = 33;
 
     /**
-     * Apps built for an older Android (targetSdk below 23, Android 5.1 or older) open behind a review
-     * of their permissions after every clean start, and Android 14 refuses to install them.
+     * Apps targeting Android 5.1 or older open behind a permission review after every clean start,
+     * and Android 14 refuses to install them.
      */
     public static final int MIN_TARGET_SDK = 23;
 
-    /** Device checks: Android version and supported ABIs. */
+    /** Checks the Android version of the device and describes it for the report. */
     @SuppressWarnings("unchecked")
     public static JSONObject checkDevice(String serial) throws Exception {
         int sdk = AdbExplorer.deviceSdk(serial);
@@ -51,14 +50,13 @@ public class Preflight {
         JSONArray a = new JSONArray();
         a.addAll(abis);
         o.put("abis", a);
-        // Static facts for the report: which device/emulator image the app was evaluated on.
         o.put("model", AdbExplorer.deviceProp(serial, "ro.product.model"));
         o.put("manufacturer", AdbExplorer.deviceProp(serial, "ro.product.manufacturer"));
         o.put("androidVersion", AdbExplorer.deviceProp(serial, "ro.build.version.release"));
         return o;
     }
 
-    /** ABIs the APK ships native code for (empty when it is pure Java/Kotlin). */
+    /** ABIs the APK ships native code for, empty for pure Java or Kotlin. */
     public static List<String> apkAbis(String apkPath) throws IOException {
         Set<String> abis = new LinkedHashSet<>();
         try (ZipFile zip = new ZipFile(apkPath)) {
@@ -91,11 +89,7 @@ public class Preflight {
                 + deviceAbis + " (e.g. an ARM-only app on an x86_64 emulator); it cannot be installed here.");
     }
 
-    /**
-     * Facts of the decoded app, read without a device: its package, minSdk and targetSdk, whether
-     * it has a launchable activity, whether it is a Trusted Web Activity, whether it has a default
-     * strings.xml. Rejects nothing: the static analysis runs on any app that decodes.
-     */
+    /** Facts of the decoded app read without a device. It rejects nothing. */
     @SuppressWarnings("unchecked")
     public static JSONObject describeDecodedApp(String decodedPath) throws Exception {
         JSONObject o = new JSONObject();
@@ -113,7 +107,7 @@ public class Preflight {
             activities++;
         }
         o.put("activities", activities);   // what the exploration is measured against
-        // an interface built with a cross-platform framework keeps its texts where ITDroid does not translate
+        // cross-platform frameworks keep their texts where ITDroid does not translate
         org.json.simple.JSONArray frameworks = new org.json.simple.JSONArray();
         frameworks.addAll(AppFramework.detect(decodedPath));
         o.put("frameworks", frameworks);
@@ -126,10 +120,8 @@ public class Preflight {
     }
 
     /**
-     * Checks that the app described by {@link #describeDecodedApp} can be explored on the device:
-     * minSdk within the device's API level, a launchable activity, and not a Trusted Web Activity
-     * (its screens belong to the browser). An app without a default strings.xml is accepted: its
-     * hardcoded strings are still detected and translated.
+     * Checks that the app from {@link #describeDecodedApp} can be explored on the device. A Trusted
+     * Web Activity is rejected since the browser draws its screens.
      */
     public static void checkDecodedApp(JSONObject app, int deviceSdk) throws Exception {
         long minSdk = ((Number) app.get("minSdk")).longValue();
@@ -157,7 +149,7 @@ public class Preflight {
                         : "no default strings.xml (only its hardcoded strings can be translated)"));
     }
 
-    /** Reads minSdkVersion/targetSdkVersion from apktool.yml (written by apktool when decoding). */
+    /** Reads an SDK version from the apktool.yml that apktool writes when decoding. */
     private static int readSdkFromApktoolYml(String decodedPath, String key) {
         File yml = new File(decodedPath, "apktool.yml");
         if (!yml.isFile()) {
@@ -170,15 +162,12 @@ public class Preflight {
                 return Integer.parseInt(m.group(1));
             }
         } catch (Exception ignored) {
-            // unreadable: not fatal, the install will tell
+            // not fatal, the install will tell
         }
         return -1;
     }
 
-    /**
-     * True when some activity or activity-alias has an intent filter with MAIN + LAUNCHER. A plain
-     * text scan of the decoded manifest: both must appear inside the same intent-filter element.
-     */
+    /** True when one intent-filter of the manifest text has both MAIN and LAUNCHER. */
     static boolean hasLauncher(String manifestText) {
         Matcher m = Pattern.compile("(?s)<intent-filter.*?</intent-filter>").matcher(manifestText);
         while (m.find()) {

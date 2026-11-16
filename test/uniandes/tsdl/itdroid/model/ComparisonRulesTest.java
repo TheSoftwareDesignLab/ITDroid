@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The rules of the comparison between the source screen and the translated one, each on a
- * hand-made screen. In every screen node 0 is the full-screen root (1000 x 2000).
+ * Tests each rule of the comparison between the source and the translated screen on a hand-made
+ * screen. Node 0 is always the full-screen root (1000 x 2000).
  */
 class ComparisonRulesTest {
 
@@ -61,7 +61,7 @@ class ComparisonRulesTest {
 
     @Test
     void aButtonPushedToTheNextRowIsReportedOnBothButtons() throws Exception {
-        // Source: two buttons side by side. Translated: the second one wrapped below the first.
+        // two buttons side by side, and in the translation the second one wrapped below the first
         String source = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200));
         String translated = screen(button(0, 50, 100, 450, 200), button(1, 50, 300, 450, 400));
 
@@ -150,7 +150,7 @@ class ComparisonRulesTest {
         assertEquals(0, count(report, "amIPFs"));
     }
 
-    /** The rule of 2020: it is enough that either element of the pair is a text, whichever comes first. */
+    /** As in the 2020 rule, it is enough that either element of the pair is a text. */
     @Test
     void anAlignmentChangeIsIgnoredWhenTheTextViewComesSecondInTheDump() throws Exception {
         String source = screen(button(0, 50, 100, 450, 200), textView(1, 50, 300, 450, 400));
@@ -163,7 +163,7 @@ class ComparisonRulesTest {
 
     @Test
     void aTextThatChangesPlaceIsStillReported() throws Exception {
-        // only alignments are forgiven to a text: one pushed below its neighbour is a finding
+        // only alignments are forgiven to a text, one pushed below its neighbour is a finding
         String source = screen(textView(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200));
         String translated = screen(textView(0, 50, 100, 450, 200), button(1, 50, 300, 450, 400));
 
@@ -194,8 +194,8 @@ class ComparisonRulesTest {
 
     @Test
     void aScreenWithMoreNodesThanTheSourceIsComparedAndTheExtraOnesAreFindings() throws Exception {
-        // 4 nodes against 6. The number of nodes used to decide; now the screen is the same one
-        // because the four of the source are all there.
+        // 4 nodes against 6. The node count used to decide, now it is the same screen because
+        // the four of the source are all there.
         String source = screen(button(0, 50, 100, 450, 200), button(1, 50, 300, 450, 400), button(2, 50, 500, 450, 600));
         String translated = screen(button(0, 50, 100, 450, 200), button(1, 50, 300, 450, 400), button(2, 50, 500, 450, 600),
                 button(3, 50, 700, 450, 800), button(4, 50, 900, 450, 1000));
@@ -211,7 +211,7 @@ class ComparisonRulesTest {
 
     @Test
     void aScreenThatShowsSomethingElseIsNotCompared() throws Exception {
-        // same activity, same step of the replay, but only the root can be matched: 1 of 8
+        // same activity and replay step, but only the root can be matched (1 of 8)
         String source = screen(button(0, 50, 100, 450, 200), button(1, 50, 300, 450, 400), button(2, 50, 500, 450, 600));
         String translated = screen(textView(0, 50, 100, 950, 200), textView(1, 50, 300, 950, 400), textView(2, 50, 500, 950, 600),
                 textView(3, 50, 700, 950, 800), textView(4, 50, 900, 950, 1000), textView(5, 50, 1100, 950, 1200),
@@ -235,7 +235,7 @@ class ComparisonRulesTest {
 
         JSONObject report = compareScreens(source, translated);
 
-        // compared after all: the three buttons are gone and seven texts are new
+        // compared after all, the three buttons are gone and seven texts are new
         assertEquals(1, count(report, "pairedStates"));
         assertEquals(3, summary(report, "componentsLost"));
         assertEquals(7, summary(report, "componentsAdded"));
@@ -264,7 +264,7 @@ class ComparisonRulesTest {
 
     @Test
     void aMissingContainerIsOneFindingThatCountsWhatItHeld() throws Exception {
-        // nodes of the source: 0 root, 1 the container, 2 and 3 what it holds, 4 to 6 the buttons below
+        // source nodes are 0 root, 1 the container, 2 and 3 what it holds, 4 to 6 the buttons below
         String source = screen(group(0, 0, 100, 1000, 400, button(0, 50, 150, 450, 250), textView(1, 500, 150, 900, 250)),
                 button(1, 50, 500, 450, 600), button(2, 50, 700, 450, 800), button(3, 50, 900, 450, 1000));
         String translated = screen(button(0, 50, 500, 450, 600), button(1, 50, 700, 450, 800), button(2, 50, 900, 450, 1000));

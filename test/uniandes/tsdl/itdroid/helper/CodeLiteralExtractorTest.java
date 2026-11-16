@@ -65,7 +65,7 @@ class CodeLiteralExtractorTest {
 
     private StringInventory inventory(HardcodedPolicy policy, CodeLiteralExtractor.Extraction extraction) throws Exception {
         return StringInventory.collect(app.toString(), APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
-                hits, XmlLiteralFinder.find(app.toString()), policy, null, extraction);
+                hits, XmlLiterals.find(app.toString()), policy, null, extraction);
     }
 
     private Map<String, String> strings() throws Exception {
@@ -92,7 +92,7 @@ class CodeLiteralExtractorTest {
         int jumbo = code.indexOf("    const-string/jumbo v3, \"Checkout now\"");
         assertEquals("    " + String.format(CALL, "v3"), code.get(jumbo + 1));
 
-        // what is not shown is not touched: the operand of equals() and the returned value keep their code
+        // what is not shown is not touched, like the operand of equals() and the returned value
         int operand = code.indexOf("    const-string v0, \"Premium\"");
         assertFalse(code.get(operand + 1).contains("Litdroid/hc/Strings;"));
         assertEquals(Files.readAllLines(Fixtures.decodedApp().resolve("smali/com/example/shop/free/CartRepository.smali")), lines(cartRepository));
@@ -110,7 +110,7 @@ class CodeLiteralExtractorTest {
     void theClassTheCallsGoToIsAddedInADexFolderOfItsOwn() throws Exception {
         extract(HardcodedPolicy.UI);
 
-        // the app has smali and smali_classes2: the class goes to a third dex
+        // the app has smali and smali_classes2, so the class goes to a third dex
         Path helper = app.resolve("smali_classes3/itdroid/hc/Strings.smali");
         String smali = Files.readString(helper, StandardCharsets.UTF_8);
         assertTrue(smali.contains(".class public final Litdroid/hc/Strings;"));
@@ -219,7 +219,7 @@ class CodeLiteralExtractorTest {
         assertFalse(inventory.hardcodedTexts().contains("Your cart is empty"));
     }
 
-    /** A dex header as far as the counters ITDroid reads: type_ids_size at 0x40, method_ids_size at 0x58. */
+    /** A dex header with only the counters ITDroid reads, type_ids_size at 0x40 and method_ids_size at 0x58. */
     private static byte[] dexHeader(int types, int methods) {
         byte[] header = new byte[0x70];
         writeInt(header, 0x40, types);

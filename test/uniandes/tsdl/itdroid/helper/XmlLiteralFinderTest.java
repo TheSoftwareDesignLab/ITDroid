@@ -15,7 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import uniandes.tsdl.itdroid.Fixtures;
 
-/** Text written directly in layouts, menus, preference screens and the manifest. */
+/** Tests finding text written directly in layouts, menus, preference screens and the manifest. */
 class XmlLiteralFinderTest {
 
     private static final String ANDROID = "xmlns:android=\"http://schemas.android.com/apk/res/android\"";
@@ -30,16 +30,16 @@ class XmlLiteralFinderTest {
         Files.writeString(file, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" + xml, StandardCharsets.UTF_8);
     }
 
-    private static List<String> texts(List<XmlLiteralFinder.Literal> literals) {
+    private static List<String> texts(List<XmlLiterals.Literal> literals) {
         return literals.stream().map(l -> l.text).toList();
     }
 
     @Test
     void findsTheThreeLiteralsOfTheHandWrittenLayout() {
-        List<XmlLiteralFinder.Literal> found = XmlLiteralFinder.find(Fixtures.decodedApp().toString());
+        List<XmlLiterals.Literal> found = XmlLiterals.find(Fixtures.decodedApp().toString());
 
         assertEquals(List.of("Add to cart", "Adds the product to the cart", "Coupon code"), texts(found));
-        XmlLiteralFinder.Literal button = found.get(0);
+        XmlLiterals.Literal button = found.get(0);
         assertEquals("res/layout/activity_main.xml", button.file);
         assertEquals(4, button.line);
         assertEquals("Button", button.element);
@@ -60,7 +60,7 @@ class XmlLiteralFinderTest {
                 + "  </FrameLayout>\n"
                 + "</LinearLayout>\n");
 
-        List<XmlLiteralFinder.Literal> found = XmlLiteralFinder.find(tmp.toString());
+        List<XmlLiterals.Literal> found = XmlLiterals.find(tmp.toString());
 
         assertEquals(List.of("Meeep"), texts(found));
         assertEquals("TextView", found.get(0).element);
@@ -83,7 +83,7 @@ class XmlLiteralFinderTest {
                 + "  <application android:label=\"Acme Notes\" android:name=\"com.acme.App\">\n"
                 + "    <activity android:name=\"com.acme.Main\" android:label=\"@string/app_name\" />\n  </application>\n</manifest>\n");
 
-        List<XmlLiteralFinder.Literal> found = XmlLiteralFinder.find(tmp.toString());
+        List<XmlLiterals.Literal> found = XmlLiterals.find(tmp.toString());
 
         // folders by name, files by name, the manifest last
         assertEquals(List.of("Color Value", "Sync now", "Home", "Dark theme", "Uses less battery", "Zoom level", "Acme Notes"), texts(found));
@@ -111,9 +111,9 @@ class XmlLiteralFinderTest {
         write("res/drawable/shape.xml", "<shape " + ANDROID + " android:label=\"Not a screen\" />\n");
         write("res/layout/broken.xml", "<LinearLayout><TextView android:text=\"unbound prefix\" /></LinearLayout>\n");
 
-        assertEquals(List.of("@home"), texts(XmlLiteralFinder.find(tmp.toString())), "only the escaped @ is literal text");
-        assertNull(XmlLiteralFinder.literalOf("@string/x"));
-        assertEquals("Cancel", XmlLiteralFinder.literalOf("Cancel"));
-        assertTrue(XmlLiteralFinder.isLibraryFile("design_bottom_sheet_dialog.xml"));
+        assertEquals(List.of("@home"), texts(XmlLiterals.find(tmp.toString())), "only the escaped @ is literal text");
+        assertNull(XmlLiterals.literalOf("@string/x"));
+        assertEquals("Cancel", XmlLiterals.literalOf("Cancel"));
+        assertTrue(XmlLiterals.isLibraryFile("design_bottom_sheet_dialog.xml"));
     }
 }

@@ -296,6 +296,7 @@
    "pairedStates": 3,
    "ipfSummary": {
     "nodesAffected": 2,
+    "severe": 2,
     "componentsAdded": 0,
     "nodesChanged": 2,
     "nodesCompared": 32,
@@ -305,18 +306,23 @@
      "overlapAdded": 2,
      "positionLost": 4,
      "positionAdded": 2,
+     "outOfFrame": 0,
      "missingMirroring": 0,
      "componentAdded": 0,
      "alignmentLost": 0,
-     "overlapRemoved": 0
+     "overlapRemoved": 0,
+     "textOverGraphic": 0
     },
     "mirrorExpected": false,
-    "componentsLost": 1
+    "componentsLost": 1,
+    "textOverGraphic": 0,
+    "moderate": 3
    },
    "amStates": 3,
    "pairing": "replay",
    "ipfs": [
     {
+     "severity": "severe",
      "score": 1,
      "types": [
       "positionLost",
@@ -337,6 +343,7 @@
      "nodeID": 5
     },
     {
+     "severity": "severe",
      "score": 1,
      "types": [
       "positionLost",
@@ -357,6 +364,7 @@
      "nodeID": 6
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "componentLost"
@@ -368,6 +376,7 @@
      "nodeID": 8
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "positionLost",
@@ -388,6 +397,7 @@
      "nodeID": 12
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "positionLost",
@@ -439,6 +449,7 @@
     "nodesAffected": 2,
     "siblingPairsNotMirrored": 1,
     "siblingPairsChecked": 10,
+    "severe": 0,
     "componentsAdded": 0,
     "nodesChanged": 0,
     "nodesCompared": 33,
@@ -448,18 +459,23 @@
      "overlapAdded": 0,
      "positionLost": 0,
      "positionAdded": 0,
+     "outOfFrame": 0,
      "missingMirroring": 2,
      "componentAdded": 0,
      "alignmentLost": 0,
-     "overlapRemoved": 0
+     "overlapRemoved": 0,
+     "textOverGraphic": 0
     },
     "mirrorExpected": true,
-    "componentsLost": 0
+    "componentsLost": 0,
+    "textOverGraphic": 0,
+    "moderate": 2
    },
    "amStates": 3,
    "pairing": "replay",
    "ipfs": [
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "missingMirroring"
@@ -480,6 +496,7 @@
      "nodeID": 5
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "missingMirroring"
@@ -584,6 +601,7 @@
    "pairedStates": 1,
    "ipfSummary": {
     "nodesAffected": 5,
+    "severe": 0,
     "componentsAdded": 0,
     "nodesChanged": 2,
     "nodesCompared": 13,
@@ -593,18 +611,23 @@
      "overlapAdded": 0,
      "positionLost": 6,
      "positionAdded": 2,
+     "outOfFrame": 0,
      "missingMirroring": 0,
      "componentAdded": 0,
      "alignmentLost": 2,
-     "overlapRemoved": 0
+     "overlapRemoved": 0,
+     "textOverGraphic": 0
     },
     "mirrorExpected": false,
-    "componentsLost": 0
+    "componentsLost": 0,
+    "textOverGraphic": 0,
+    "moderate": 7
    },
    "amStates": 2,
    "pairing": "replay",
    "ipfs": [
     {
+     "severity": "moderate",
      "score": 4,
      "types": [
       "positionLost",
@@ -645,6 +668,7 @@
      "nodeID": 5
     },
     {
+     "severity": "moderate",
      "score": 4,
      "types": [
       "positionLost",
@@ -685,6 +709,7 @@
      "nodeID": 6
     },
     {
+     "severity": "moderate",
      "score": 2,
      "types": [
       "alignmentAdded"
@@ -710,6 +735,7 @@
      "nodeID": 8
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "positionLost"
@@ -729,6 +755,7 @@
      "nodeID": 2
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "positionLost",
@@ -749,6 +776,7 @@
      "nodeID": 3
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "positionLost"
@@ -768,6 +796,7 @@
      "nodeID": 10
     },
     {
+     "severity": "moderate",
      "score": 1,
      "types": [
       "positionLost"
@@ -832,6 +861,7 @@
    },
    "ipfSummary": {
     "nodesAffected": 0,
+    "severe": 0,
     "componentsAdded": 0,
     "nodesChanged": 0,
     "nodesCompared": 33,
@@ -841,13 +871,17 @@
      "overlapAdded": 0,
      "positionLost": 0,
      "positionAdded": 0,
+     "outOfFrame": 0,
      "missingMirroring": 0,
      "componentAdded": 0,
      "alignmentLost": 0,
-     "overlapRemoved": 0
+     "overlapRemoved": 0,
+     "textOverGraphic": 0
     },
     "mirrorExpected": false,
-    "componentsLost": 0
+    "componentsLost": 0,
+    "textOverGraphic": 0,
+    "moderate": 0
    },
    "statesNotCompared": []
   },

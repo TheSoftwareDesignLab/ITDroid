@@ -14,8 +14,8 @@ import org.junit.jupiter.api.io.TempDir;
 import uniandes.tsdl.itdroid.Fixtures;
 
 /**
- * What an app is built with, from the files of its decoded APK: an app that keeps the texts of its
- * interface outside Android resources and Dalvik code is not translated on screen, and the report says so.
+ * Which framework an app is built with, from its decoded files. Such apps keep their texts outside
+ * Android resources and are not translated on screen.
  */
 class AppFrameworkTest {
 

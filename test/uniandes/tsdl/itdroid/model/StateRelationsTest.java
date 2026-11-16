@@ -24,8 +24,8 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * The layout graph of one screen: {@code graph[a][b]} holds the relations of node a with respect to
- * node b ("a is LEFT of b"). Node 0 is the full-screen root, nodes 1 and 2 the two buttons.
+ * The layout graph of one screen, where graph[a][b] holds the relations of node a to node b. Node 0
+ * is the root, nodes 1 and 2 the two buttons.
  */
 class StateRelationsTest {
 

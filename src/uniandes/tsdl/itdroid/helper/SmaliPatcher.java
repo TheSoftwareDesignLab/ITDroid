@@ -14,15 +14,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Rewrites hardcoded {@code const-string} literals in the app's smali so a per-language APK can
- * show translated hardcoded text. It patches places, not texts: the same literal can be a label in
- * one method and a key in another, and only the places chosen for translation are touched. The
- * files it changes are remembered, so each language starts from the original code and
+ * Rewrites hardcoded const-string literals in the smali so a per-language APK shows translated text.
+ * It patches places, not texts, since one literal can be a label in one method and a key in another.
  * {@link #restoreOriginal()} puts everything back.
  */
 public class SmaliPatcher {
 
-	/** One literal rewritten: where, and what it was replaced with. */
+	/** One literal rewritten, where and with what. */
 	public static final class Patch {
 		public final SmaliScan.Occurrence place;
 		public final String translation;
@@ -33,12 +31,12 @@ public class SmaliPatcher {
 		}
 	}
 
-	/** Captures (indent + const-string + register + opening quote) and the raw literal. */
+	/** Captures the line up to the opening quote, then the raw literal. */
 	private static final Pattern CONST_STRING =
 			Pattern.compile("^(\\s*const-string(?:/jumbo)?\\s+[vp]\\d+,\\s*\")(.*)\"$");
 
 	private final Path decoded;
-	/** Original content of the files patched so far, by file. Only files that were changed are here. */
+	/** Original content of the files patched so far. */
 	private final Map<Path, List<String>> originals = new LinkedHashMap<>();
 
 	/** @param decodedFolderPath the decoded app the places of a {@link SmaliScan} refer to */
@@ -47,23 +45,14 @@ public class SmaliPatcher {
 	}
 
 	/**
-	 * Replaces the literal at each of the given places with the translation of its text. A place
-	 * whose text has no translation, or whose translation equals the source, is left alone, and so
-	 * is one whose line no longer holds that literal. The code is first put back as it was, so a
-	 * second call does not build on the patches of the previous language.
-	 *
-	 * @param places where to patch (file and line, from the scan)
-	 * @param translations source text to translated text
-	 * @return the patches applied, in the order of the places
+	 * Restores the code, then replaces the literal at each place with its translation and returns the
+	 * patches applied. Places without a different translation or whose line changed are left alone.
 	 */
 	public List<Patch> patch(List<SmaliScan.Occurrence> places, Map<String, String> translations) throws IOException {
 		return patch(places, translations, place -> place.line);
 	}
 
-	/**
-	 * The same when the files changed since the scan in a known way (literals moved to resources
-	 * add lines): {@code currentLine} gives the line each place is on now.
-	 */
+	/** The same, with {@code currentLine} giving the line each place is on now after extraction. */
 	public List<Patch> patch(List<SmaliScan.Occurrence> places, Map<String, String> translations,
 			ToIntFunction<SmaliScan.Occurrence> currentLine) throws IOException {
 		restoreOriginal();
@@ -83,12 +72,12 @@ public class SmaliPatcher {
 			for (SmaliScan.Occurrence place : f.getValue()) {
 				int index = currentLine.applyAsInt(place) - 1;
 				Matcher m = index >= 0 && index < patched.size() ? CONST_STRING.matcher(patched.get(index)) : null;
-				if (m == null || !m.matches() || !SmaliText.unescape(m.group(2)).equals(place.text)) {
+				if (m == null || !m.matches() || !SmaliScan.unescape(m.group(2)).equals(place.text)) {
 					System.out.println("  WARNING: " + place.origin() + " no longer holds the literal found by the scan; not patched");
 					continue;
 				}
 				String translated = translations.get(place.text);
-				patched.set(index, m.group(1) + SmaliText.escape(translated) + "\"");
+				patched.set(index, m.group(1) + SmaliScan.escape(translated) + "\"");
 				applied.add(new Patch(place, translated));
 				changed = true;
 			}
@@ -108,7 +97,7 @@ public class SmaliPatcher {
 		originals.clear();
 	}
 
-	/** The files currently patched (empty after {@link #restoreOriginal()}). */
+	/** The files currently patched, empty after {@link #restoreOriginal()}. */
 	public List<Path> patchedFiles() {
 		return new ArrayList<>(originals.keySet());
 	}

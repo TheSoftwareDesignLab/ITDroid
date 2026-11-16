@@ -106,7 +106,7 @@ body {
   background: rgba(253, 126, 20, 0.22);
 }
 .legend.diff {
-  background: #d6249f;
+  background: #17a2b8;
 }
 .legend {
   display: inline-block;
@@ -169,4 +169,13 @@ pre.small {
 .legend.graphic {
   border: 3px solid #ffc107;
   background: rgba(255, 193, 7, 0.3);
+}
+/* an element with a severe finding, one that breaks the screen */
+.shot .box.severe {
+  border: 3px solid #ffc107;
+  background: rgba(255, 193, 7, 0.15);
+}
+.legend.severe {
+  border: 3px solid #ffc107;
+  background: rgba(255, 193, 7, 0.15);
 }

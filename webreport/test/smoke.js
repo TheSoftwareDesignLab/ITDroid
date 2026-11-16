@@ -216,6 +216,13 @@ async function checkEvaluation(base, dir) {
     check(at('the ' + tab + ' tab renders'), content.length > 20 && !/Could not (render|read)/.test(content) && !/undefined|NaN|\[object/.test(own), short(content, 140));
     if (tab === 'performance') {
       check(at('the performance tab says it is that of ITDroid, not of the app'), /ITDroid performance/.test(text(page.$('#tabs'))) && (!page.$('#tabContent p.perf-note') || /Nothing here measures how the app itself performs/.test(content)), text(page.$('#tabs')));
+      // in the order of the run, the exploration before any language and every language before the closing build
+      const phases = page.$$('#tabContent tr.phase-row').map(tr => text(tr.querySelector('td')));
+      const pos = re => phases.findIndex(p => re.test(p));
+      const after = (a, b) => pos(a) < 0 || pos(b) < 0 || pos(a) < pos(b);
+      const langs = phases.filter(p => /^replay:/.test(p)).map(p => p.split(':')[1]);
+      check(at('the phases are listed in the order of the run'), after(/^preflight$/, /^explore:/) && after(/^explore:/, /^(translate|replay):/)
+        && langs.every(l => after(new RegExp('^translate:' + l + '$'), new RegExp('^replay:' + l + '$')) && after(new RegExp('^replay:' + l + '$'), /^build:all$/)), phases.join(', '));
     }
   }
 

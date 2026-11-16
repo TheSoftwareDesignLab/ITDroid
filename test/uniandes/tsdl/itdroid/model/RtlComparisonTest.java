@@ -24,9 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The comparison between a left-to-right source and a right-to-left language. There the layout is
- * expected to be mirrored: that the element that was on the left is now on the right is not a
- * failure, and that it is still on the left is. The screen is 1000 wide.
+ * Tests the comparison between a left-to-right source and a right-to-left language, where the
+ * layout is expected to be mirrored and an element still on its old side is the failure. The screen
+ * is 1000 wide.
  */
 class RtlComparisonTest {
 
@@ -71,7 +71,7 @@ class RtlComparisonTest {
         assertEquals(2, count(report, "amIPFs"));
         assertEquals(Set.of(1L, 2L), ipfNodes(report));
         assertEquals(List.of("missingMirroring"), types(report, 1));
-        // what should be there and is not: the first button to the right of the second
+        // what is missing is the first button to the right of the second
         assertEquals(Set.of("RIGHT"), relations(report, 1, 2, "missing"));
         assertEquals(Set.of("LEFT"), relations(report, 2, 1, "missing"));
         assertEquals(Set.of(), relations(report, 1, 2, "removed"));
@@ -89,21 +89,20 @@ class RtlComparisonTest {
 
     @Test
     void onlyElementsOfTheSameContainerAreAskedToSwapSides() throws Exception {
-        // 0 root; 1 the left half with button 2; 3 the right half with button 4. Nothing is mirrored.
+        // 0 root, 1 the left half with button 2, 3 the right half with button 4. Nothing is mirrored.
         String s = screen(group(0, 0, 100, 500, 300, button(0, 50, 150, 450, 250)),
                 group(1, 500, 100, 1000, 300, button(0, 550, 150, 950, 250)));
 
         JSONObject report = compareWith("ar", "Arabic", s, s);
 
-        // the two halves are siblings and should have swapped; a button and the one of the other
-        // half are not, and are not reported on top of it
+        // the two halves are siblings and should have swapped, the buttons in different halves are not
         assertEquals(Set.of(1L, 3L), ipfNodes(report));
         assertEquals(1, summary(report, "siblingPairsChecked"));
     }
 
     @Test
     void aMovementThatMirroringDoesNotExplainIsStillReportedInArabic() throws Exception {
-        // the second button dropped below the first: neither as it was nor mirrored
+        // the second button dropped below the first, neither as it was nor mirrored
         String translated = screen(button(0, 550, 100, 950, 200), button(1, 550, 300, 950, 400));
 
         JSONObject report = compareWith("ar", "Arabic", ROW, translated);
@@ -117,8 +116,8 @@ class RtlComparisonTest {
 
     @Test
     void aTextIsNotAskedToMirrorItsAlignment() throws Exception {
-        // a label above a wider button, both starting at the left edge, the same in Arabic: the
-        // width of a text says nothing about the side it is aligned to
+        // a label above a wider button, both at the left edge and unchanged in Arabic. The width of a
+        // text says nothing about the side it is aligned to.
         String withText = screen(textView(0, 50, 100, 450, 200), button(1, 50, 300, 600, 400));
         String withoutText = screen(button(0, 50, 100, 450, 200), button(1, 50, 300, 600, 400));
 
@@ -142,21 +141,18 @@ class RtlComparisonTest {
         assertEquals(2, summary(report, "nodesAffected"));
     }
 
-    /** A dialog from 100 to 900 of the screen: its dump only reaches its own edges. */
+    /** A dialog from 100 to 900 of the screen, whose dump only reaches its own edges. */
     private static String dialog(String... children) {
         return "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation=\"0\">"
                 + TestGraphs.node(0, "android.widget.FrameLayout", "", 100, 500, 900, 1200, children) + "</hierarchy>";
     }
 
-    /**
-     * The mirror image of an element is taken across the middle of the screen. The screen is as wide
-     * as the widest screen of the exploration, not as the dialog whose elements are compared.
-     */
+    /** The screen width is that of the widest screen of the exploration, not that of the dialog. */
     @Test
     void anElementOfADialogIsMirroredAcrossTheMiddleOfTheScreen() throws Exception {
         String main = screen(button(0, 50, 100, 450, 200));
         String mainInArabic = screen(button(0, 550, 100, 950, 200));
-        // two buttons over a line of text; in Arabic the buttons swap sides and the text went above them
+        // two buttons over a line of text, in Arabic the buttons swap sides and the text goes above them
         String sourceDialog = dialog(button(0, 150, 600, 400, 700), button(1, 600, 600, 850, 700), textView(2, 150, 800, 850, 900));
         String arabicDialog = dialog(button(0, 600, 600, 850, 700), button(1, 150, 600, 400, 700), textView(2, 150, 520, 850, 580));
 
@@ -164,7 +160,7 @@ class RtlComparisonTest {
                 writeResult(tmp.resolve("ar"), true, ".Main", mainInArabic, arabicDialog), tmp.resolve("out"), "ar", "Arabic");
 
         assertEquals(2, count(report, "pairedStates"));
-        // the buttons have a finding because of the text, and they themselves are where a mirrored screen has them
+        // the buttons have a finding because of the text, but they sit where a mirrored screen puts them
         assertEquals("mirrored", finding(report, 1).get("geometry"));
         assertEquals("mirrored", finding(report, 2).get("geometry"));
         assertEquals(0, summary(report, "siblingPairsNotMirrored"));

@@ -7,26 +7,19 @@ import java.util.regex.Pattern;
 import org.json.simple.JSONObject;
 
 /**
- * Whether a translated version showed other text than the source: of the texts on the source
- * screens, how many are on the translated screens letter for letter.
- *
- * <p>ITDroid translates the string resources of the app and the literals of its Dalvik code. An app
- * whose interface is a web page, a Flutter or a React Native bundle, or that reads its texts from
- * another kind of resource, shows what it does by itself with the language of the device, often the
- * source language. Its translated screens then equal the source and the comparison finds nothing,
- * which reads as "the translation fits" when nothing was translated. This count tells the two apart.
- *
- * <p>It is a fact about the screens, not a verdict: a screen that is mostly data (a list of
- * currencies, a ledger) also keeps most of its texts, and its figures deserve the same caution.
+ * Whether a translated version showed other text than the source, counting the source texts found
+ * unchanged on the translated screens. An app whose texts ITDroid cannot reach (a web page, Flutter,
+ * React Native) keeps the source text, and finding nothing there must not read as a fitting
+ * translation. A screen that is mostly data also keeps its texts, so this is a fact, not a verdict.
  */
 public final class ScreenTexts {
 
-	/** From this share of the source texts found unchanged on, the screens are reported as showing the source text. */
+	/** Share of unchanged source texts from which the screens are reported as showing the source text. */
 	public static final double SAME_TEXT_SHARE = 0.9;
-	/** With fewer source texts than this the share is not judged: two or three texts can be a name and a unit. */
+	/** With fewer source texts the share is not judged, as two or three texts can be a name and a unit. */
 	public static final int MIN_TEXTS = 5;
 
-	/** A text counts when it has a word: two letters of any alphabet in a row. Figures and symbols do not. */
+	/** A text counts when it has a word, two letters of any alphabet in a row. */
 	private static final Pattern WORD = Pattern.compile("\\p{L}{2,}");
 
 	/** How many of the unchanged texts that are not in the APK the report quotes. */
@@ -36,20 +29,17 @@ public final class ScreenTexts {
 	private static ApkTexts apkTexts;
 
 	/**
-	 * The texts of the app being evaluated: its string resources (every item of an array or a
-	 * plural) and the literals found in its code and its XML, as the inventory has them. With them,
-	 * the texts that stayed the same are told apart: those the APK has, and those it does not, which
-	 * came from the network, the device or the app's data (an ad, a list, a date) and that no
-	 * translation of the APK can reach. Null forgets them.
+	 * Sets the texts of the app being evaluated (string resources and code and XML literals), which
+	 * tell unchanged texts the APK has from those of the network, the device or the app's data. Null
+	 * forgets them.
 	 */
 	public static void setApkTexts(java.util.Collection<String> texts) {
 		setApkTexts(texts, "");
 	}
 
 	/**
-	 * The same, with the readable content of the APK's other files too (lower case): its assets and
-	 * native libraries, where a web interface, a React Native bundle or Flutter keep their texts. The
-	 * texts should then include the strings of all its code, not only those of the app's packages.
+	 * The same, plus the lower-case readable content of the APK's assets and native libraries, where
+	 * web, React Native and Flutter interfaces keep their texts. The texts should then cover all code.
 	 */
 	public static void setApkTexts(java.util.Collection<String> texts, String files) {
 		apkTexts = texts == null ? null : new ApkTexts(texts, files);
@@ -60,9 +50,8 @@ public final class ScreenTexts {
 	private final Set<String> notInApk = new LinkedHashSet<>();
 
 	/**
-	 * The distinct texts a screen shows or announces: the text and the content description of every
-	 * element that has a word. What the user typed into a field is left out: the exploration types
-	 * the same value in every language.
+	 * The distinct texts and content descriptions with a word on a screen. Text fields are left out,
+	 * as the exploration types the same value in every language.
 	 */
 	public static Set<String> of(State screen) {
 		Set<String> out = new LinkedHashSet<>();
@@ -97,7 +86,7 @@ public final class ScreenTexts {
 		}
 	}
 
-	/** Of the texts that stayed the same, the ones the APK does not have; empty when its texts are not known. */
+	/** The unchanged texts the APK does not have, empty when its texts are not known. */
 	public Set<String> notInApk() {
 		return notInApk;
 	}
@@ -110,7 +99,7 @@ public final class ScreenTexts {
 		return unchanged.size();
 	}
 
-	/** Share of the source texts found unchanged, from 0 to 1; 0 when the screens have no text. */
+	/** Share of the source texts found unchanged, from 0 to 1, and 0 when the screens have no text. */
 	public double share() {
 		return source.isEmpty() ? 0 : (double) unchanged.size() / source.size();
 	}
@@ -120,11 +109,7 @@ public final class ScreenTexts {
 		return source.size() >= MIN_TEXTS && share() >= SAME_TEXT_SHARE;
 	}
 
-	/**
-	 * {@code sourceTexts}, {@code unchanged}, {@code share} (two decimals) and {@code sameAsSource}, for
-	 * report.json; with the texts of the APK known, also {@code unchangedNotInApk} and up to
-	 * {@link #EXAMPLES} of them in {@code notInApkExamples}.
-	 */
+	/** The counts for report.json, with up to {@link #EXAMPLES} texts not in the APK when its texts are known. */
 	@SuppressWarnings("unchecked")
 	public JSONObject toJson() {
 		JSONObject o = new JSONObject();
@@ -147,10 +132,8 @@ public final class ScreenTexts {
 	}
 
 	/**
-	 * Whether a text on a screen comes from the APK: it is one of its texts, or one with its
-	 * placeholders filled in ({@code %d tasks} for "3 tasks"), or it is made mostly of one of them
-	 * ("Presets" in "Presets (PREVIEW)"). Case is ignored (a button may show its text in capitals),
-	 * and so are the escapes and the markup of a resource.
+	 * Whether a screen text comes from the APK, as one of its texts, one with its placeholders filled
+	 * in, or one made mostly of one of them. Case, escapes and markup are ignored.
 	 */
 	static final class ApkTexts {
 		private static final Pattern FORMAT = Pattern.compile("%(\\d+\\$)?[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z%]");
@@ -179,7 +162,7 @@ public final class ScreenTexts {
 				java.util.regex.Matcher m = FORMAT.matcher(text);
 				if (m.find()) {
 					if (letters(FORMAT.matcher(text).replaceAll(" ")) < MIN_PART_LETTERS) {
-						continue;   // "%s", "%1$s: %2$s": a format with no words of its own would match any text
+						continue;   // a format with no words of its own would match any text
 					}
 					StringBuilder regex = new StringBuilder();
 					int last = 0;
@@ -209,7 +192,7 @@ public final class ScreenTexts {
 			}
 		}
 
-		/** A text of several lines is in the APK when each line is: an app often joins lines that it keeps apart. */
+		/** A text of several lines is in the APK when each line is, as an app often joins lines it keeps apart. */
 		boolean has(String shown) {
 			if (hasOne(shown)) {
 				return true;

@@ -16,9 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * What ITDroid writes into a results folder must not say whose machine it ran on. The machine of
- * these tests: the home of "ana", ITDroid in ana/work, and the results of one app in
- * ana/work/results/org.foo.
+ * What ITDroid writes into a results folder must not say whose machine it ran on. Here the home is
+ * "ana", ITDroid runs in ana/work and one app's results go to ana/work/results/org.foo.
  */
 class PortablePathsTest {
 
@@ -77,7 +76,7 @@ class PortablePathsTest {
 
     @Test
     void onlyAWholePathIsReplaced() {
-        // "anabel" and "ana.old" are other folders; the full stop that ends a sentence is not part of the path
+        // "anabel" and "ana.old" are other folders, and a full stop ending a sentence is not part of the path
         String anabel = slashes(home) + "bel/file.txt";
         String old = slashes(home) + ".old/file.txt";
         assertEquals(anabel, paths.scrub(anabel));

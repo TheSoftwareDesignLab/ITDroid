@@ -5,6 +5,53 @@ import org.w3c.dom.Node;
 
 public class AndroidNode {
 
+	public enum Property {
+	// Not accessibility friendly
+	NAF ("NAF"),
+	// Position on the device screen, e.g. [0,336][1080,1794]
+	BOUNDS ("bounds"),
+	PACKAGE ("package"),
+	TEXT ("text"),
+	CHECKABLE ("checkable"),
+	CHECKED ("checked"),
+	SELECTED ("selected"),
+	CLICKABLE ("clickable"),
+	CONTENT_DESCRIPTION ("content-desc"),
+	ENABLED ("enabled"),
+	FOCUSABLE ("focusable"),
+	FOCUSED ("focused"),
+	INDEX ("index"),
+	PASSWORD ("password"),
+	RESOURCE_ID ("resource-id"),
+	SCROLLABLE ("scrollable"),
+	// Class of the element, e.g. android.widget.ImageButton
+	CLASS ("class"),
+	LONG_CLICKABLE ("long-clickable");
+	
+	private final String name;
+	
+	/** The property with that attribute name, or null when there is none. */
+	public static Property fromName(String name) {
+		for(Property anp : values()) {
+			if(anp.name.equals(name)) {
+				return anp;
+			}
+		}
+		return null;
+	}
+	
+	public String getName() {
+		return name;
+	}
+	
+
+	
+	Property(String name){
+		this.name = name;
+	}
+	}
+
+
 	public static String TRUE = "true";
 
 	private boolean clickable;
@@ -63,11 +110,11 @@ public class AndroidNode {
 		NamedNodeMap attributes = domNode.getAttributes();
 		name = domNode.getNodeName();
 		String attributeValue;
-		AndroidNodeProperty androidNodeProperty;
+		Property androidNodeProperty;
 		for (int j = 0; j < attributes.getLength(); j++) {
 			Node attribute = attributes.item(j);
 			attributeValue = attribute.getNodeValue();
-			 androidNodeProperty = AndroidNodeProperty.fromName(attribute.getNodeName());
+			 androidNodeProperty = Property.fromName(attribute.getNodeName());
 			if (androidNodeProperty != null) {
 				switch (androidNodeProperty) {
 				case CLICKABLE:
@@ -98,8 +145,6 @@ public class AndroidNode {
 					break;
 				}
 			}
-			// Attributes not in AndroidNodeProperty (e.g. NAF, password, scrollable) are simply
-			// not part of the UI model and are ignored.
 		}
 	}
 	
@@ -117,7 +162,7 @@ public class AndroidNode {
 		return text;
 	}
 
-	/** What a screen reader announces for the element: the label of an icon, of an image, of a button without text. */
+	/** What a screen reader announces, such as the label of an icon or of a button without text. */
 	public String getContentDesc() {
 		return contentDesc;
 	}
@@ -171,14 +216,9 @@ public class AndroidNode {
 		return point2;
 	}
 
-	/**
-	 * Calculates the bounding box of a node.
-	 * @param text Raw input
-	 * Initializes point1 and point2
-	 */
+	/** Parses bounds such as [0,336][1080,1794] into point1 and point2, keeping {0,0} when malformed. */
 	public void loadBounds(String text) {
 		if (text == null) {
-			// keep the default {0,0} points
 			return;
 		}
 		try {

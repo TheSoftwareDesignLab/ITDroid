@@ -22,19 +22,13 @@ import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
 import uniandes.tsdl.itdroid.model.ScreenTexts;
 
 /**
- * {@code java -jar ITDroid.jar --reanalyze <folder> [--out <folder>] [--min-similarity <0..1>]}: recomputes the layout
- * comparison of evaluations that were already explored, from their stored {@code result.json}
- * files. No device and no LLM are needed, so a change to the comparison can be measured on a whole
- * batch without exploring every app again.
- *
- * <p>The input is one evaluation (a folder with a {@code report.json}) or a folder of evaluations.
- * It is only read. The output folder gets, per evaluation, a {@code reanalysis.json} (what the
- * report said and what the current code computes) and an {@code ipfs.csv}, plus a
- * {@code summary.csv} with one row per evaluation and language.
+ * The --reanalyze mode, which recomputes the layout comparison of stored evaluations without a device
+ * or an LLM. It only reads the input and writes a reanalysis.json and an ipfs.csv per evaluation plus
+ * a summary.csv to the output folder.
  */
 public class Reanalysis {
 
-    /** The comparison of one target language of one evaluation: reported by the run vs recomputed now. */
+    /** One target language of one evaluation, as reported by the run and as recomputed now. */
     public static class Row {
         public String evaluation;
         public String language;
@@ -42,11 +36,11 @@ public class Reanalysis {
         public Long recomputedIpfs;
         public Long reportedPaired;
         public Long recomputedPaired;
-        /** Why there is no recomputed value (missing result.json, unreadable graph), else "". */
+        /** Why there is no recomputed value, else empty. */
         public String note = "";
-        /** The breakdown of the recomputed comparison (the ipfSummary of the language), or null. */
+        /** The ipfSummary of the recomputed comparison, or null. */
         public JSONObject summary;
-        /** How much of the text of the source screens the translated screens still show (screenText), or null. */
+        /** How much source text the translated screens still show, or null. */
         public JSONObject screenText;
 
         public boolean same() {
@@ -61,7 +55,7 @@ public class Reanalysis {
             if (args[i].equals("--out") && i + 1 < args.length) {
                 out = args[++i];
             } else if (args[i].equals("--min-similarity") && i + 1 < args.length) {
-                // the same threshold as the config key comparison.minSimilarity, to try values on stored runs
+                // same threshold as comparison.minSimilarity, to try values on stored runs
                 String raw = args[++i];
                 try {
                     LayoutGraphComparision.setMinSimilarity(Double.parseDouble(raw));
@@ -86,10 +80,7 @@ public class Reanalysis {
         printSummary(rows, outDir, (System.currentTimeMillis() - t0) / 1000.0);
     }
 
-    /**
-     * Recomputes every evaluation found in {@code in} and writes the results under {@code outDir},
-     * which must not be inside {@code in}: the evaluations are never modified.
-     */
+    /** Recomputes every evaluation in {@code in} into {@code outDir}, which must be outside it. */
     public static List<Row> reanalyze(Path in, Path outDir) throws Exception {
         in = in.toAbsolutePath().normalize();
         outDir = outDir.toAbsolutePath().normalize();
@@ -124,10 +115,7 @@ public class Reanalysis {
         return found;
     }
 
-    /**
-     * An APK the evaluation kept: the source-language build or the internationalized one, which carry
-     * the code and the files of the original. Null when none was kept.
-     */
+    /** A built APK the evaluation kept, which carries the code of the original, or null. */
     static Path storedApk(Path evaluation) {
         try (Stream<Path> files = Files.list(evaluation)) {
             return files.filter(p -> p.getFileName().toString().endsWith("-aligned-debugSigned.apk")).sorted().findFirst().orElse(null);
@@ -136,7 +124,7 @@ public class Reanalysis {
         }
     }
 
-    /** The texts of the APK, from the evaluation's strings_inventory.json; null when it has none. */
+    /** The texts of the strings_inventory.json of the evaluation, or null without one. */
     static List<String> apkTexts(Path evaluation) {
         Path file = evaluation.resolve("strings_inventory.json");
         if (!Files.isRegularFile(file)) {
@@ -185,7 +173,7 @@ public class Reanalysis {
                 texts.addAll(content.codeStrings);
                 files = content.files;
             } catch (IOException e) {
-                // only the inventory is known: the texts it lacks are counted as not in the APK
+                // only the inventory is known, so texts it lacks count as not in the APK
             }
         }
         ScreenTexts.setApkTexts(texts, files);
@@ -273,10 +261,8 @@ public class Reanalysis {
     }
 
     /**
-     * The folder holding the {@code result.json} of a language. The source exploration is always
-     * written under {@code trnsResults}; a target language is under {@code trnsResults} when the app
-     * shipped it and under {@code noTrnsResults} when ITDroid translated it. If a folder reused
-     * across runs has both, the most recent one is the one the report describes.
+     * The folder with the result.json of a language, under trnsResults when the app shipped it and
+     * under noTrnsResults when ITDroid translated it. When both exist the newer one wins.
      */
     static Path resultFolder(Path evaluation, String lang, boolean isSource) {
         Path shipped = evaluation.resolve("trnsResults").resolve(lang);
@@ -297,9 +283,9 @@ public class Reanalysis {
         return hasTranslated ? translated : null;
     }
 
-    /** The kinds of change of the comparison, in the order of the columns of summary.csv. */
+    /** The kinds of change, in the column order of summary.csv. */
     private static final String[] TYPES = {"positionLost", "positionAdded", "alignmentLost", "alignmentAdded", "overlapAdded",
-            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded", "textOverGraphic"};
+            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded", "textOverGraphic", "outOfFrame"};
 
     private static void writeSummaryCsv(List<Row> rows, Path file) throws IOException {
         try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
@@ -313,7 +299,7 @@ public class Reanalysis {
                         .append(cell(r.recomputedIpfs)).append(';').append(r.recomputedIpfs == null ? "" : String.valueOf(r.same()))
                         .append(';').append(cell(r.reportedPaired)).append(';').append(cell(r.recomputedPaired)).append(';')
                         .append(r.note.replace(';', ',').replace('\n', ' '));
-                // the breakdown of the recomputed comparison (empty for a row that could not be recomputed)
+                // empty for a row that could not be recomputed
                 for (String key : new String[] {"nodesCompared", "nodesChanged", "nodesAffected", "componentsLost", "componentsAdded", "textOverGraphic"}) {
                     line.append(';').append(r.summary == null ? "" : String.valueOf(r.summary.get(key)));
                 }
@@ -325,7 +311,7 @@ public class Reanalysis {
                     Object v = r.summary == null ? null : r.summary.get(key);
                     line.append(';').append(v == null ? "" : String.valueOf(v));
                 }
-                // did the language reach the screen: texts of the source screens, and how many are still there
+                // whether the language reached the screen
                 for (String key : new String[] {"sourceTexts", "unchanged", "sameAsSource", "unchangedNotInApk"}) {
                     Object v = r.screenText == null ? null : r.screenText.get(key);
                     line.append(';').append(v == null ? "" : String.valueOf(v));
@@ -337,7 +323,7 @@ public class Reanalysis {
     }
 
     private static void printSummary(List<Row> rows, Path outDir, double seconds) {
-        Map<String, long[]> perLang = new TreeMap<>();   // language -> {reported, recomputed, pairs}
+        Map<String, long[]> perLang = new TreeMap<>();   // reported, recomputed and pairs per language
         int compared = 0;
         int same = 0;
         List<Row> different = new ArrayList<>();

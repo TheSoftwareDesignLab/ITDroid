@@ -20,7 +20,7 @@ import org.json.simple.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** What the report server tells the page about a results folder: the runs, their status and their files. */
+/** What the report server tells the page about a results folder, its runs, their status and their files. */
 class ReportServerTest {
 
     @TempDir
@@ -74,7 +74,7 @@ class ReportServerTest {
 
     @Test
     void aRunningReportWhoseProcessIsAliveIsRunning() {
-        // however old the file is: translating a large app can take long without a step ending
+        // however old the file is, since translating a large app can take long without a step ending
         Instant yesterday = NOW.minus(26, ChronoUnit.HOURS);
 
         assertArrayEquals(new String[] {"running", null}, ReportServer.effectiveStatus(run("running", 4242L), false, yesterday, NOW, EVERYBODY));
@@ -148,7 +148,7 @@ class ReportServerTest {
 
     @Test
     void theIndexSaysInWhichFolderEachLanguageWasExplored() throws Exception {
-        // the app shipped Arabic; ITDroid translated Spanish; Russian failed before it was explored
+        // the app shipped Arabic, ITDroid translated Spanish, and Russian failed before it was explored
         evaluation("org.foo", "{\"appName\":\"org.foo\",\"dfltLang\":\"en\",\"langsReport\":{"
                 + "\"en\":{\"dflt\":true,\"amStates\":3},\"ar\":{\"amIPFs\":2},\"es\":{\"amIPFs\":5},\"ru\":{\"error\":\"build failed\"}}}",
                 "trnsResults/en/result.json", "trnsResults/ar/result.json", "noTrnsResults/es/result.json");

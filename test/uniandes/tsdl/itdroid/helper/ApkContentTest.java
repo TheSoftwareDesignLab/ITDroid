@@ -16,7 +16,7 @@ import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The texts an APK carries, read from the file: the strings of its code and the readable runs of its files. */
+/** The texts read from an APK file, the strings of its code and the readable runs of its files. */
 class ApkContentTest {
 
     @TempDir

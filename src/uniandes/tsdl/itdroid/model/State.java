@@ -26,39 +26,18 @@ import uniandes.tsdl.itdroid.helper.Helper;
 
 public class State {
 
-	/**
-	 * State ID
-	 */
 	private int id;
 
-	/**
-	 * Activity name
-	 */
 	private String activityName;
 
-	/**
-	 * Parsed XML
-	 */
 	private Document parsedXML;
 
-	/**
-	 * Raw XML
-	 */
 	private String rawXML;
 
-	/**
-	 * List of the state elements
-	 */
 	private List<AndroidNode> stateNodes;
 
-	/**
-	 * Array of outbound transitions
-	 */
 	private List<Transition> outboundTransitions = new ArrayList<Transition>();
 
-	/**
-	 * Array of inbound transitions
-	 */
 	private List<Transition> inboundTransitions = new ArrayList<Transition>();
 
 	private String screenShot;
@@ -68,17 +47,7 @@ public class State {
 	/** Id of the source-language state this one reproduces (replayed explorations), 0 when unknown. */
 	private int sourceStateId;
 
-	/**
-	 * Creates a new state
-	 * 
-	 * @param hybrid
-	 *            The application is hybrid
-	 * @param contextualChanges
-	 *            Contextual changes must be invoked
-	 * @throws ParserConfigurationException 
-	 * @throws IOException 
-	 * @throws SAXException 
-	 */
+	/** Parses the raw XML dump of a screen into its nodes and the relations between them. */
 	public State(int id, String activityName, String rawXML, String screenShot) throws ParserConfigurationException, SAXException, IOException {
 		stateNodes = new ArrayList<AndroidNode>();
 		outboundTransitions = new ArrayList<Transition>();
@@ -190,9 +159,8 @@ public class State {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINED);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINS);
 		}
-		// Two elements intersect when they share some area and neither holds the other. They may be
-		// aligned at the same time: two buttons of the same row that overlap by a few pixels share
-		// their top and bottom edges, and that overlap is exactly what a longer text causes.
+		// Two elements intersect when they share area and neither holds the other, even when aligned,
+		// as two buttons of one row overlapped by a longer text are.
 		boolean shareArea = firstNodeCoor1[xCoord] < secondNodeCoor2[xCoord] && secondNodeCoor1[xCoord] < firstNodeCoor2[xCoord]
 				&& firstNodeCoor1[yCoord] < secondNodeCoor2[yCoord] && secondNodeCoor1[yCoord] < firstNodeCoor2[yCoord];
 		boolean oneHoldsTheOther = tempGraph[firstNodeIndex][secondNodeIndex].contains(GraphEdgeType.CONTAINS)
@@ -218,11 +186,8 @@ public class State {
 	}
 
 	/**
-	 * First check for a state reached by REPLAYING the same taps in another language: it must be on
-	 * the same activity. Whether it shows the same screen is then decided from how many of its
-	 * elements can be matched with those of the source ({@link NodePairing}), not from the number
-	 * of nodes: a translated screen can have a few more or fewer and still be the same screen, and
-	 * those extra or missing elements are findings in themselves.
+	 * First check for a state reached by replaying the same taps in another language, which must be
+	 * on the same activity. Whether it is the same screen is then decided by {@link NodePairing}.
 	 */
 	public boolean matchesReplayed(State other) {
 		return activityName == null ? other.getActivityName() == null : activityName.equals(other.getActivityName());
@@ -394,10 +359,7 @@ public class State {
 		if(amntNodesDiff>1) {
 			return false;
 		}
-		// false, if the levenshtein distance is greater than 10% of rawXML length.
-		// Use long arithmetic so very large XML doesn't overflow int, and enforce a minimum
-		// threshold of 1 so that XML shorter than 10 chars (whose 10% truncates to 0) can still
-		// pair when the two raw strings are identical.
+		// Long avoids overflow on large XML, and a minimum of 1 lets identical short XML still pair.
 		int acceptancePercentage = 10;
 		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
 		long threshold = ((long) rawXML.length() * acceptancePercentage) / 100;

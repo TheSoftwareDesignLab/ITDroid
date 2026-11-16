@@ -11,9 +11,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The reviewable record of what was done with every hardcoded string for one language:
- * {@code hardcoded_<lang>.csv}, one row per place (a line of smali or an attribute of the XML), so
- * each row can be traced back to where the text is written.
+ * Writes {@code hardcoded_<lang>.csv}, the record of what was done with every hardcoded string for one
+ * language, one row per smali line or XML attribute.
  */
 public final class HardcodedLog {
 
@@ -30,14 +29,10 @@ public final class HardcodedLog {
     }
 
     /**
-     * Writes the record.
+     * Writes the record and returns the rows written by action.
      *
-     * @param translations source text to translation, for the literals of the code that were sent to the translator
-     * @param applied the patches made in the smali for this language
-     * @param revertReason when the build with the translated literals of the code had to be
-     *        discarded, why; else null. The patched and extracted rows of the code are then written
-     *        as reverted.
-     * @return rows written, by action
+     * @param translations source text to translation for the code literals sent to the translator
+     * @param revertReason why the build with translated code literals was discarded, or null
      */
     public static Map<String, Integer> write(Path file, StringInventory inventory, String lang, Map<String, String> translations,
             List<SmaliPatcher.Patch> applied, String revertReason) throws IOException {
@@ -57,7 +52,7 @@ public final class HardcodedLog {
                         String action;
                         String reason;
                         if (e.extractedPlaces.contains(p)) {
-                            // moved to a resource: translated with the resources, in every APK
+                            // moved to a resource, translated with the resources
                             action = revertReason == null ? EXTRACTED : REVERTED;
                             reason = revertReason != null ? revertReason
                                     : "@string/" + e.extractedTo + (asResource == null ? " (no translation for this language)" : "");
@@ -72,8 +67,7 @@ public final class HardcodedLog {
                         } else {
                             action = NOT_TRANSLATED;
                             if (!e.translatable) {
-                                // kept for what it is (not text, the shape of data, the app's name), or
-                                // for what the code does with it: then each row says what its place does
+                                // when kept for its use, each row says what its place does
                                 reason = keptForItsUse(e.skipReason) ? useReason(p.consumer) : e.skipReason;
                             } else if (!e.patchPlaces.contains(p)) {
                                 reason = "this place: " + p.consumer.description;
@@ -91,7 +85,7 @@ public final class HardcodedLog {
                     }
                 } else if (StringInventory.KIND_HARDCODED_XML.equals(e.kind)) {
                     String translation = e.resourceText == null ? null : inventory.translation(lang, e.resourceText);
-                    for (XmlLiteralFinder.Literal p : e.xmlPlaces) {
+                    for (XmlLiterals.Literal p : e.xmlPlaces) {
                         boolean extracted = e.extractedTo != null;
                         String action = extracted ? EXTRACTED : NOT_TRANSLATED;
                         String reason = extracted ? "@string/" + e.extractedTo + (translation == null ? " (no translation for this language)" : "")
@@ -133,7 +127,7 @@ public final class HardcodedLog {
         w.newLine();
     }
 
-    /** A CSV field: quoted, quotes doubled, line breaks written as the two characters backslash and n. */
+    /** A quoted CSV field with quotes doubled and line breaks written as backslash n. */
     private static String csv(String s) {
         return "\"" + s.replace("\"", "\"\"").replace("\r", "").replace("\n", "\\n") + "\"";
     }

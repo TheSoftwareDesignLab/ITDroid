@@ -23,8 +23,7 @@ public class NotTranslatableStringsDictionary {
         Element e;
         for(int i = 0; i < strings.size(); i++){
             e = strings.get(i);
-            // Hashtable rejects null keys/values; skip elements without a name attribute and
-            // substitute "" for missing text so a malformed entry cannot NPE the whole run.
+            // Hashtable rejects nulls, so nameless entries are skipped and missing text becomes empty.
             String name = e.getAttributeValue("name");
             String text = e.getText();
             if (name != null) {

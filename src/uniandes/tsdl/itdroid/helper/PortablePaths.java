@@ -16,19 +16,14 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 /**
- * Keeps what ITDroid writes into a results folder free of the paths of the machine it ran on, so
- * the folder can be moved to another place, or published, and still be read.
- *
- * <p>A file of the evaluation is named by its path relative to the results folder. Any other
- * absolute path that ends up in a text (the message of an error, mostly) has its start replaced:
- * the results folder by {@code <output>}, the folder ITDroid ran in by {@code <itdroid>} and the
- * home of the user by {@code ~}. What is left says where the file was without saying whose
- * machine it was.
+ * Keeps the paths of the machine out of a results folder so it can be moved or published. Files are
+ * named relative to the folder, and other absolute paths start with {@code <output>},
+ * {@code <itdroid>} or {@code ~} instead.
  */
 public final class PortablePaths {
 
     private final Path output;
-    /** {pattern, replacement}, the longest path first so the most specific one wins. */
+    /** Pattern and replacement pairs, longest path first so the most specific one wins. */
     private final List<Object[]> replacements = new ArrayList<>();
 
     public PortablePaths(Path outputFolder) {
@@ -60,10 +55,8 @@ public final class PortablePaths {
     }
 
     /**
-     * Matches the path written with either separator, in any case on Windows, and only as a whole
-     * path: {@code C:\Users\ana} does not match inside {@code C:\Users\anabel} nor inside
-     * {@code C:\Users\ana.old}, and it does match before the full stop that ends a sentence. A
-     * drive or the root alone is left out, it would match every path.
+     * Matches the whole path with either separator, ignoring case on Windows, so "ana" never matches
+     * inside "anabel" or "ana.old". A bare root is left out since it would match every path.
      */
     private static Pattern pattern(Path path) {
         int names = path.getNameCount();
@@ -87,10 +80,7 @@ public final class PortablePaths {
                 | (windows ? Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE : 0));
     }
 
-    /**
-     * How a file is named in what ITDroid writes: its path from the results folder, with forward
-     * slashes, when it is inside it; its name alone when it is somewhere else on the machine.
-     */
+    /** The path from the results folder with forward slashes, or the bare file name when outside it. */
     public String relative(String file) {
         if (file == null || file.isEmpty()) {
             return "";
@@ -114,7 +104,7 @@ public final class PortablePaths {
         return out;
     }
 
-    /** A copy of a JSON value with every text in it scrubbed; the value itself is not touched. */
+    /** A scrubbed copy of a JSON value, leaving the original untouched. */
     @SuppressWarnings("unchecked")
     public Object scrub(Object json) {
         if (json instanceof String) {
@@ -137,7 +127,7 @@ public final class PortablePaths {
         return json;
     }
 
-    /** SHA-256 of a file in hexadecimal: says which file it was without saying where it was. */
+    /** Hex SHA-256 of a file, which identifies it without saying where it was. */
     public static String sha256(Path file) throws IOException {
         try (InputStream in = Files.newInputStream(file)) {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A replay that lost its way can keep the same capture for two screens of the source. Forest Pond
- * in Spanish: the dump of screen 1 again for screen 4, and that of screen 3 for screen 5.
+ * Tests a replay that lost its way and kept the same capture for two source screens, as Forest
+ * Pond in Spanish did with screens 1 and 4, and 3 and 5.
  */
 class RepeatedCaptureTest {
 
@@ -27,7 +27,7 @@ class RepeatedCaptureTest {
     @Test
     void oneCaptureIsComparedOnlyWithTheScreenItIs() throws Exception {
         String first = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200));
-        // the second screen of the source: the same one with a third button below
+        // the second source screen is the same one with a third button below
         String second = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200), button(2, 50, 300, 450, 400));
         // the translated version captured the first screen for both
         String captured = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200));

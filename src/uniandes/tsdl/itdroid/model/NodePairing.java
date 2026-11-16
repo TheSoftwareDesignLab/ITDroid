@@ -5,17 +5,10 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Which element of the translated screen is which element of the source screen.
- *
- * <p>The two trees are walked together from the top: the children of two paired parents are put in
- * order against each other, pairing those that are the same kind of element (same class, same
- * resource id when they have one) and leaving out the ones that only one side has. So an element
- * inserted or removed in the translated screen costs exactly that element (and what hangs from
- * it), and everything after it is still compared with its true counterpart. Pairing by position
- * in the dump, which this replaces, compared every later element with its neighbour.
- *
- * <p>Identical siblings (the rows of a list, which have no id of their own) are told apart by what
- * hangs from them and, when that is equal too, by where they are on the screen.
+ * Which element of the translated screen is which element of the source screen. Both trees are
+ * walked from the top and the children of two paired parents are aligned in order by class and
+ * resource id, so an inserted or removed element costs only itself and what hangs from it.
+ * Identical siblings are told apart by their subtrees and then by their place on the screen.
  */
 public final class NodePairing {
 
@@ -64,28 +57,22 @@ public final class NodePairing {
 	}
 
 	/**
-	 * Pairs the elements of two screens. With {@code mirrored}, one language is written left to
-	 * right and the other right to left: an element is then looked for where it was and also at
-	 * the mirrored place, since the app may or may not mirror its layout.
+	 * Pairs the elements of two screens. With {@code mirrored} the languages are written in opposite
+	 * directions and an element is also looked for at its mirrored place, as the app may not mirror.
 	 */
 	public static NodePairing of(State source, State target, boolean mirrored) {
 		return new NodePairing(source, target, mirrored, 0);
 	}
 
 	/**
-	 * As {@link #of(State, State, boolean)}, with the width of the device screen. Without it the
-	 * width is taken from the source screen, which is narrower than the device when that screen is a
-	 * dialog, and the mirrored place of an element is then looked for off its true position.
+	 * As {@link #of(State, State, boolean)}, with the device screen width. Without it the width comes
+	 * from the source screen, which for a dialog is too narrow and puts the mirrored place off.
 	 */
 	public static NodePairing of(State source, State target, boolean mirrored, int screenWidth) {
 		return new NodePairing(source, target, mirrored, screenWidth);
 	}
 
-	/**
-	 * How much of the two screens was paired, from 0 to 1: pairs over the node count of the larger
-	 * screen. Two captures of the same screen are close to 1; a different screen pairs little
-	 * beyond the containers every screen has.
-	 */
+	/** Pairs over the node count of the larger screen, from 0 to 1. Two captures of one screen are close to 1. */
 	public double similarity() {
 		int larger = Math.max(source.size(), target.size());
 		return larger == 0 ? 1.0 : paired / (double) larger;
@@ -114,10 +101,7 @@ public final class NodePairing {
 		return size;
 	}
 
-	/**
-	 * Pairs two lists of siblings keeping their order (the best-scoring alignment, as in a diff)
-	 * and goes on with the children of every pair.
-	 */
+	/** Pairs two lists of siblings in order (the best-scoring alignment, as in a diff), then their children. */
 	private void align(List<Integer> a, List<Integer> b) {
 		int n = a.size();
 		int m = b.size();
@@ -136,8 +120,7 @@ public final class NodePairing {
 				best[i][j] = value;
 			}
 		}
-		// Walk back. When leaving an element out costs nothing, it is the later one that is left
-		// out: among equal candidates the first ones are paired, which is what a reader expects.
+		// Walk back. On a tie the later element is left out, so the first candidates are paired.
 		int i = n;
 		int j = m;
 		List<int[]> pairs = new ArrayList<>();
@@ -161,10 +144,8 @@ public final class NodePairing {
 	}
 
 	/**
-	 * The resource id of an element when it is one ({@code package:id/name}), else "". The dump
-	 * also puts Compose test tags in that attribute, and an app may use the visible label as the
-	 * tag ("Username" in one language, "Nombre de usuario" in another): a tag that differs between
-	 * languages does not make two elements different.
+	 * The resource id when it is a real one, else "". The dump also puts Compose test tags there,
+	 * which may be the visible label and so differ between languages.
 	 */
 	private static String realId(AndroidNode node) {
 		String id = node.getResourceID();
@@ -177,11 +158,8 @@ public final class NodePairing {
 
 	/**
 	 * How likely two siblings are the same element, 0 when they cannot be. Class and resource id
-	 * decide; what the element is like (clickable, shows text, how much hangs from it) separates
-	 * siblings of the same kind; and position on the screen breaks the ties that remain. Position
-	 * weighs little on purpose: moving is what a translation makes elements do. Against a language
-	 * written in the other direction the horizontal distance is measured to the element or to its
-	 * mirror image, whichever is closer, so a mirrored layout does not confuse it.
+	 * decide, then what the element is like, then its position, which weighs little as translation
+	 * moves elements. When mirrored, the horizontal distance to the mirror image also counts.
 	 */
 	private double similarity(AndroidNode s, AndroidNode t) {
 		if (!s.getpClass().equals(t.getpClass())) {

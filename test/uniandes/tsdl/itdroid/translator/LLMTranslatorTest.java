@@ -26,12 +26,7 @@ import uniandes.tsdl.itdroid.Fixtures;
 import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
 import uniandes.tsdl.itdroid.helper.StringInventory;
 
-/**
- * The LLM translator against {@link FakeLlmServer}: no model, no network beyond localhost.
- *
- * <p>Tests named {@code knownGap_...} pin behaviour the audit found wrong: they assert what the code
- * does TODAY and name the TODO item that changes it; when that item is done the assertion flips.
- */
+/** Tests the LLM translator against {@link FakeLlmServer}, with no model and no network beyond localhost. */
 class LLMTranslatorTest {
 
     private static final String[] KEYS = {"ITDROID_LLM_ENDPOINT", "ITDROID_LLM_MODEL", "ITDROID_LLM_TIMEOUT",
@@ -75,13 +70,13 @@ class LLMTranslatorTest {
         });
     }
 
-    /** Batches of texts in one JSON object: the style used with general chat models. */
+    /** Batched JSON, the style for general chat models. */
     private static void useJsonStyle() {
         System.setProperty("ITDROID_LLM_STYLE", "json");
         System.setProperty("ITDROID_LLM_MASK_PLACEHOLDERS", "false");
     }
 
-    /** One text per request in a prompt template: the style used with translation-only models. */
+    /** One text per request in a prompt template, the style for translation models. */
     private static void useTemplateStyle(boolean maskPlaceholders) {
         System.setProperty("ITDROID_LLM_STYLE", "template");
         System.setProperty("ITDROID_LLM_MASK_PLACEHOLDERS", String.valueOf(maskPlaceholders));
@@ -197,11 +192,7 @@ class LLMTranslatorTest {
         assertEquals(Map.of("Your cart", "Your cart"), out);
     }
 
-    /**
-     * A translation without the {@code %1$s} of its source makes the app crash when it formats it.
-     * In the batched style, as in the others, such an answer is rejected, asked for again and
-     * finally the source text is kept.
-     */
+    /** A translation that lost its placeholder would crash the app, so it is rejected, retried and the source kept. */
     @Test
     void theBatchedStyleRejectsATranslationThatLostItsPlaceholder() {
         server.responder = r -> FakeLlmServer.translateItems(r, v -> v.startsWith("Hello") ? "Hola" : "ES " + v);
@@ -251,11 +242,7 @@ class LLMTranslatorTest {
         assertEquals(2, server.requests.size(), "one attempt and one retry");
     }
 
-    /**
-     * A literal is often one piece of a sentence built in the code ("Items: " + n + " of 3"): the
-     * translation takes the edge whitespace of the source, whatever the model returned, or the
-     * pieces would run together ("2de 3").
-     */
+    /** A literal is often a piece of a sentence built in code, so the translation takes the source's edge whitespace. */
     @Test
     void theEdgeSpacesOfTheSourceAreKept() {
         useTemplateStyle(true);
@@ -288,12 +275,7 @@ class LLMTranslatorTest {
 
     // ------------------------------------------------------------------ values wrapped in quotes
 
-    /**
-     * The quotes around a whole resource value are Android syntax ("keep the whitespace inside";
-     * apktool also writes that way every string with an apostrophe), not text. The model gets what
-     * is inside and the answer is wrapped again; sent as they were, the quotes came back as part
-     * of the translation and the app showed them.
-     */
+    /** Quotes around a whole value are Android syntax, so the model gets only the inside and the answer is rewrapped. */
     @Test
     void aValueWrappedInQuotesIsTranslatedWithoutThem() {
         useTemplateStyle(true);
@@ -302,7 +284,7 @@ class LLMTranslatorTest {
         String source = "\"Here you can switch to %1$s's calendar.\"";
         Map<String, String> out = translator().translateResourceTexts(List.of(source, "\" of 3 in your cart\""), "en", "es");
 
-        // the two requests travel in parallel: either may arrive first
+        // the two requests run in parallel, either may arrive first
         List<String> sent = server.requests.stream().map(r -> r.text.trim()).toList();
         assertTrue(sent.contains("Here you can switch to <ph0>'s calendar."), "no quotes in what the model sees: " + sent);
         assertTrue(sent.stream().noneMatch(t -> t.contains("\"")), sent.toString());
@@ -367,10 +349,7 @@ class LLMTranslatorTest {
         assertEquals("Hola %1$s, tienes %2$d art\u00edculos ", out.get("Hello %1$s, you have %2$d items "));
     }
 
-    /**
-     * A word alone is ambiguous ("Open": a verb on a button, an adjective in a sentence). PLaMo is
-     * told that a short text is a label of an app; a sentence carries its own context.
-     */
+    /** A word alone is ambiguous, so PLaMo is told a short text is an app label. A sentence carries its own context. */
     @Test
     void aShortLabelIsSentToPlamoWithItsContext() {
         System.setProperty("ITDROID_LLM_STYLE", "plamo");
@@ -435,9 +414,8 @@ class LLMTranslatorTest {
     }
 
     /**
-     * A model that repeats its instruction instead of translating (seen with "English" in a real
-     * batch) used to have that sentence stored as the translation. The answer is now rejected,
-     * asked for again, and the source text kept; the rejections are counted for the report.
+     * An answer that echoes the instruction instead of translating is rejected, asked again and the
+     * source kept, and the rejections are counted for the report.
      */
     @Test
     void anAnswerThatRepeatsTheInstructionIsNotStoredAsTheTranslation() {
@@ -468,7 +446,7 @@ class LLMTranslatorTest {
         assertEquals("a comment instead of a translation", t.rejectReason("Your cart is empty", "Sure! Tu carrito est\u00e1 vac\u00edo", "es"));
         assertEquals("a comment instead of a translation", t.rejectReason("Your cart is empty", "Translation: Tu carrito", "es"));
 
-        // a language with its own alphabet: an answer left in Latin letters is not a translation
+        // for a language with its own alphabet, an answer in Latin letters is not a translation
         assertNull(t.rejectReason("Settings", "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", "ru"));
         assertNull(t.rejectReason("Hello %1$s", "\u041f\u0440\u0438\u0432\u0435\u0442 %1$s", "ru"));
         assertNull(t.rejectReason("Open GitHub", "\u041e\u0442\u043a\u0440\u044b\u0442\u044c GitHub", "ru"), "a brand inside a translated sentence is fine");
@@ -486,10 +464,7 @@ class LLMTranslatorTest {
                 "# names that are never translated\n\n" + String.join("\n", terms) + "\n");
     }
 
-    /**
-     * A name in protected-terms.txt never reaches the model: it travels as a token, like a
-     * placeholder, and comes back exactly as written, whatever the model would have done with it.
-     */
+    /** A name in protected-terms.txt travels as a token and comes back exactly as written. */
     @Test
     void aProtectedTermTravelsMaskedAndComesBackAsWritten() throws IOException {
         protect("Juan P\u00e9rez", "Beanbook Cloud");
@@ -548,11 +523,7 @@ class LLMTranslatorTest {
         assertFalse(LLMTranslator.looksLikeBrand("Tasks"), "an ordinary word is only protected when the user lists it");
     }
 
-    /**
-     * A translation model writes a figure the way the target language does: "6,568.65 EUR" came back
-     * as "6.568,65 EUR" in Spanish and "6 568,65" in Russian. A figure of the app is data, so it
-     * travels as a token and comes back as it was written.
-     */
+    /** Models rewrite figures in the target locale's format, so a figure travels as a token and comes back as written. */
     @Test
     void aFigureTravelsMaskedAndComesBackAsWritten() throws IOException {
         useTemplateStyle(true);
@@ -628,11 +599,7 @@ class LLMTranslatorTest {
         assertFalse(LLMTranslator.placeholdersKept("<b>Bold</b>", "Negrita"));
     }
 
-    /**
-     * A percent sign is a format only where one can be: "% o" in "50% of users" used to be cut out
-     * as a placeholder (the space is a valid printf flag) and put back untranslated, leaving a
-     * stray letter in the translation.
-     */
+    /** A percent sign is a format only where one can be, so "% o" in "50% of users" is left alone. */
     @Test
     void aPercentageIsNotTakenForAPlaceholder() {
         List<String> originals = new ArrayList<>();
@@ -677,7 +644,7 @@ class LLMTranslatorTest {
         assertEquals(List.of("ES %d item", "ES %d items"), byName.get("items_count").getChildren("item").stream().map(Element::getText).toList());
         assertEquals("one", byName.get("items_count").getChildren("item").get(0).getAttributeValue("quantity"));
         assertEquals(List.of("ES Newest first", "@string/cart_title"), byName.get("sort_labels").getChildren("item").stream().map(Element::getText).toList());
-        // data, references, dictionary entries and letter-less values are not written: the default applies
+        // data, references, dictionary entries and letter-less values keep the default
         for (String kept : new String[] {"sort_values", "title_reference", "abc_action_bar_home_description", "version_label"}) {
             assertNull(byName.get(kept), kept + " must not be redefined for the language");
         }
@@ -704,10 +671,7 @@ class LLMTranslatorTest {
         assertTrue(server.requests.stream().noneMatch(r -> r.items.containsValue("Your cart")), "the developer's translation is not sent again");
     }
 
-    /**
-     * A language the app already ships is evaluated as the developer left it: only the strings
-     * ITDroid added (the literals moved out of the XML) are written, never the ones it lacks.
-     */
+    /** A language the app ships stays as the developer left it, only the strings ITDroid added are written. */
     @Test
     void translateCanBeRestrictedToTheResourcesItdroidAdded() throws Exception {
         Path app = tmp.resolve("shop");
@@ -715,8 +679,8 @@ class LLMTranslatorTest {
         Path values = Files.createDirectories(app.resolve("res/values-es"));
         Files.writeString(values.resolve("strings.xml"),
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <string name=\"cart_title\">Tu carrito</string>\n</resources>\n");
-        uniandes.tsdl.itdroid.helper.XmlLiteralExtractor.Extraction extraction = uniandes.tsdl.itdroid.helper.XmlLiteralExtractor.extract(
-                app.toString(), uniandes.tsdl.itdroid.helper.XmlLiteralFinder.find(app.toString()), java.util.Set.of("Shop"));
+        uniandes.tsdl.itdroid.helper.XmlLiterals.Extraction extraction = uniandes.tsdl.itdroid.helper.XmlLiterals.extract(
+                app.toString(), uniandes.tsdl.itdroid.helper.XmlLiterals.find(app.toString()), java.util.Set.of("Shop"));
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
         StringInventory inventory = StringInventory.collect(app.toString(), "",
                 new NotTranslatableStringsDictionary(settingsDir.toString()));

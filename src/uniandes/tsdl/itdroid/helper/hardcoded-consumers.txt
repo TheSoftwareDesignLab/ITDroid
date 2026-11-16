@@ -1,31 +1,22 @@
 # What a hardcoded literal is used for.
 #
-# ITDroid follows every string literal of the app's smali to the first instruction that consumes
-# it, and classifies that consumer with the rules below. Only text that reaches the user is worth
-# translating; a log message, an exception message, an SQL fragment or a preference key must stay
-# as written, or the app changes its behaviour.
+# ITDroid follows each smali string literal to the first instruction that consumes it and
+# classifies that consumer with these rules. Only text that reaches the user is translated.
 #
-# One rule per line:   <category>   <regular expression>
-# The expression is searched in the callee as smali writes it, for example
-#     Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-# Rules are tried from top to bottom and the first match wins, so put the specific ones first.
+# One rule per line, a category then a regular expression searched in the callee as smali writes it.
+# Rules are tried top to bottom and the first match wins, so specific ones go first.
 #
 # Categories
-#   ui           the text is shown (or spoken) to the user
-#   composable   the text goes to a composable function the table does not know: most likely
-#                drawn, but it can also be the name of an icon or a key, so a bare identifier
-#                ("search", "arrow_back") is not taken for text
-#   log          the text goes to a log
-#   exception    the text is the message of an exception
-#   data         the text is a key, a query, a pattern, a path, a comparison operand...
-#   compiler     plumbing emitted by the compiler (null checks, Compose source information)
-#   builder      the text is appended to the object in the first argument (StringBuilder);
-#                the object is followed to its toString() and beyond
-#   passthrough  the call returns a text derived from this one (String.format, trim...);
-#                the result is followed
+#   ui           shown or spoken to the user
+#   composable   passed to an unknown composable, a bare identifier is not taken for text
+#   log          goes to a log
+#   exception    the message of an exception
+#   data         a key, query, pattern, path or comparison operand
+#   compiler     compiler plumbing such as null checks or Compose source information
+#   builder      appended to the first argument object, which is followed to its toString()
+#   passthrough  the call returns a text derived from this one, which is followed
 #
-# To add or override rules without rebuilding, put a file named hardcoded-consumers.txt in the
-# settings folder: its rules are tried before these.
+# A hardcoded-consumers.txt file in the settings folder adds rules tried before these.
 
 # ---------------------------------------------------------------- compiler plumbing
 data        ^Lkotlin/jvm/internal/Intrinsics;->areEqual\(
@@ -49,7 +40,7 @@ log         ^Lmu/K?Logger
 log         ^Lorg/apache/commons/logging/
 log         ^Landroid/os/Trace;->
 log         ^Landroidx/tracing/
-# a logger of the app or of a library the table does not name: a class called ...Log..., or a method called like a log level
+# any other logger, a class named like Log or a method named like a log level
 log         ^L[\w/$]*(Log|Logger|Logging)(?![a-z])[\w$]*;->(d|e|i|v|w|wtf|log|debug|info|warn|warning|error|verbose|trace|severe|fine)\(
 log         ;->(?i:logd|loge|logi|logw|logv|log|debug|trace|verbose)\(Ljava/lang/String;
 
@@ -64,7 +55,7 @@ builder     ^Landroid/text/SpannableStringBuilder;->(append|insert|<init>)\(
 builder     ^Landroid/text/SpannableString;-><init>\(
 passthrough ^Ljava/lang/String;->(format|valueOf|concat|trim|strip|intern|toString|toUpperCase|toLowerCase|substring|repeat)\(
 passthrough ^Ljava/lang/(StringBuilder|StringBuffer);->toString\(
-# concatenations that R8 moved out of the method into a synthetic helper that returns the joined text
+# concatenations R8 moved into a synthetic helper that returns the joined text
 passthrough ^Lcom/android/tools/r8/[\w/$]+;->[\w$]+\(.*\)Ljava/lang/String;$
 passthrough \$\$ExternalSyntheticOutline\d+;->[\w$]+\(.*\)Ljava/lang/String;$
 passthrough ^Landroid/text/Html;->fromHtml\(
@@ -72,7 +63,7 @@ passthrough ^Landroidx/core/text/HtmlCompat;->fromHtml\(
 passthrough ^Landroid/text/TextUtils;->(concat|expandTemplate)\(
 passthrough ^Lkotlin/text/StringsKt;->(trim|trimIndent|trimMargin|capitalize|replaceFirstChar|padStart|padEnd)
 
-# ---------------------------------------------------------------- data: keys, queries, patterns, comparisons
+# ---------------------------------------------------------------- data
 data        ^Ljava/lang/String;->(equals|equalsIgnoreCase|startsWith|endsWith|contains|split|replace|replaceAll|replaceFirst|indexOf|lastIndexOf|matches|compareTo|compareToIgnoreCase|getBytes|contentEquals|regionMatches)\(
 data        ^Lkotlin/text/(StringsKt|Regex)
 data        ^Ljava/util/regex/
@@ -128,7 +119,7 @@ data        ^Landroidx/work/
 data        ^Land(roid|roidx/core)/app/Notification(Compat)?\$Builder;-><init>\(
 data        ^Ldagger/
 data        ^Ljavax/inject/
-# credentials and what a login needs are never text for the user, whoever receives them
+# credentials and login data are never text for the user
 data        ;->(set|with|put|add)(Password|Passwd|Passphrase|Token|AccessToken|AuthToken|ApiKey|Secret|ClientSecret|ClientId|Credential|Credentials|Username|UserName|Login)\(
 data        ;->(login|logIn|signIn|authenticate|authorize)\(
 data        ^Lokhttp3/Credentials;->
@@ -150,5 +141,5 @@ ui          ^Landroidx/compose/ui/text/AnnotatedString
 ui          ^Landroidx/compose/(material3?|foundation/text|ui/semantics)/
 ui          ;->set(Text|Hint|Error|Title|Subtitle|Message|Summary|SummaryOn|SummaryOff|ContentDescription|TooltipText|Label|PositiveButton|NegativeButton|NeutralButton|ContentTitle|ContentText|ContentInfo|Ticker|SubText|BigContentTitle|SummaryText|QueryHint|TextOn|TextOff|HelperText|PlaceholderText|PrefixText|SuffixText|DialogTitle|DialogMessage|PositiveButtonText|NegativeButtonText|Description|Header|Footer|EmptyText|StateDescription|PaneTitle|AccessibilityPaneTitle|ShortLabel|LongLabel|DisabledMessage)\(
 ui          ;->(bigText|setBigContentTitle|addAction|addLine|showText|showMessage|showToast|showSnackbar|showError|showDialog|toast|snackbar)\(
-# any other composable function that receives the text: it draws it or passes it down to one that does
+# any other composable that receives the text, it draws it or passes it down
 composable  \([^)]*Landroidx/compose/runtime/Composer;[^)]*\)

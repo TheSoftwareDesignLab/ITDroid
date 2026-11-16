@@ -27,60 +27,54 @@ import org.json.simple.parser.JSONParser;
 import uniandes.tsdl.itdroid.translator.LLMTranslator;
 
 /**
- * Every user-visible string of the app in one place, each with the file (and smali line) it came
- * from, whether it will be translated and why not, and the translation obtained per language. A
- * hardcoded string also says what the code does with it and lists every place it appears in.
- * Written to {@code <output>/strings_inventory.json} so a human can review or correct it. It is
- * also the translation memory: identical texts are translated once, and a previous inventory in
- * the same output folder seeds the next run so unchanged texts are not sent to the LLM again.
+ * Every user visible string of the app with its origin, whether it is translated and why not, and its
+ * translation per language. Saved as {@code strings_inventory.json} for review, it is also the
+ * translation memory that a later run in the same output folder reuses.
  */
 public class StringInventory {
 
     public static final String KIND_STRING = "string";
     public static final String KIND_PLURALS = "plurals";
     public static final String KIND_ARRAY = "string-array";
-    /** A literal of the code (smali). */
+    /** A literal of the smali code. */
     public static final String KIND_HARDCODED = "hardcoded";
-    /** A literal written in a layout, a menu, a preference screen or the manifest. */
+    /** A literal written in a layout, menu, preference screen or the manifest. */
     public static final String KIND_HARDCODED_XML = "hardcoded-xml";
 
-    /** Use recorded for the literals of the XML, next to the uses the code scan finds (ui, log...). */
+    /** Use recorded for the XML literals, next to the uses the code scan finds. */
     public static final String CONSUMER_XML = "xml";
-    /** Why a literal of the XML is listed but not translated. */
+    /** Why an XML literal is listed but not translated. */
     static final String XML_NOT_EXTRACTED = "XML literal (not extracted to a resource)";
-    /** Why the name of the app, and any literal equal to it, is kept as written. */
+    /** Why the app name, and any literal equal to it, is kept as written. */
     static final String APP_NAME = "application name";
-    /** Places written per literal in the JSON file; {@code occurrences} always has the real count. */
+    /** Places saved per literal in the JSON file, the occurrences field keeps the real count. */
     private static final int MAX_PLACES_SAVED = 50;
 
-    /** One string of the app: a resource value, one item of a container, or a hardcoded literal. */
+    /** One string of the app, a resource value, a container item or a hardcoded literal. */
     public static class Entry {
         public final String id;
         public final String kind;
-        public final String name;        // resource name; "" for hardcoded literals
-        public final String quantity;    // <plurals> item quantity, else null
-        public final int index;          // <string-array> item position, else -1
+        public final String name;        // resource name, empty for hardcoded literals
+        public final String quantity;    // plurals item quantity, else null
+        public final int index;          // string-array item position, else -1
         public final String text;        // inner XML of the resource, or the decoded smali literal
-        public final String origin;      // res/values/strings.xml, or smali_classes2/.../Foo.smali:123
-        public final String formatted;   // the <string formatted="..."> attribute, or null
+        public final String origin;      // resource file, or smali file and line
+        public final String formatted;   // the formatted attribute, or null
         public final boolean translatable;
-        public final String skipReason;  // why it is kept verbatim (null when translatable)
-        /** Hardcoded only: what the app does with it (ui, log, exception, data..., or xml); else null. */
+        public final String skipReason;  // why it is kept verbatim, null when translatable
+        /** Hardcoded only, what the app does with it, else null. */
         public String consumer;
-        /** Hardcoded only: the places of the code that hold this text. */
+        /** Hardcoded only, the places of the code that hold this text. */
         public List<SmaliScan.Occurrence> codePlaces = List.of();
-        /** Hardcoded only: the XML attributes that hold this text. */
-        public List<XmlLiteralFinder.Literal> xmlPlaces = List.of();
-        /**
-         * Literals of the code: the places that are patched with the translation, chosen by the
-         * {@link HardcodedPolicy} from what each place does with the text. Empty when not translatable.
-         */
+        /** Hardcoded only, the XML attributes that hold this text. */
+        public List<XmlLiterals.Literal> xmlPlaces = List.of();
+        /** Code places patched with the translation, chosen by the {@link HardcodedPolicy}. */
         public List<SmaliScan.Occurrence> patchPlaces = List.of();
-        /** Literals of the code: the places rewritten to read the text from a resource (see {@link CodeLiteralExtractor}). */
+        /** Code places rewritten by {@link CodeLiteralExtractor} to read the text from a resource. */
         public List<SmaliScan.Occurrence> extractedPlaces = List.of();
         /** The name of the string resource a hardcoded text was moved to, else null. */
         public String extractedTo;
-        /** A text moved to a resource: the text as that resource holds it (its translation is stored under it). */
+        /** The text as the resource it was moved to holds it, the key of its translation. */
         public String resourceText;
 
         Entry(String id, String kind, String name, String quantity, int index, String text, String origin,
@@ -101,21 +95,18 @@ public class StringInventory {
             return !KIND_HARDCODED.equals(kind) && !KIND_HARDCODED_XML.equals(kind);
         }
 
-        /** How many places hold this text (0 for a resource). */
+        /** How many places hold this text, 0 for a resource. */
         public int occurrences() {
             return codePlaces.size() + xmlPlaces.size();
         }
 
-        /** Entries of the same resource (all the items of one plurals/array) share this key. */
+        /** Entries of the same resource share this key. */
         public String groupKey() {
             return kind + ":" + name;
         }
     }
 
-    /**
-     * Container names that hold data, never UI text: preference entry values, keys, ids, urls,
-     * colors, fonts... Translating them breaks the app (the values are compared in code).
-     */
+    /** Container names that hold data, never UI text, translating them breaks the app. */
     private static final Pattern DATA_CONTAINER_NAME = Pattern.compile(
             "(?i)(^|_)(values?|keys?|ids?|codes?|urls?|uris?|paths?|tags?|locales?|packages?|classes|fonts?"
             + "|colou?rs?|patterns?|formats?|regex|hex|icons?|langs?|languages|entryvalues|models|vendors"
@@ -124,7 +115,7 @@ public class StringInventory {
     private static final XMLOutputter RAW = new XMLOutputter(Format.getRawFormat());
 
     private final List<Entry> entries = new ArrayList<>();
-    /** language -> (source text -> translation). Keyed by text so repeated texts are translated once. */
+    /** Language to source text to translation, keyed by text so repeated texts are translated once. */
     private final Map<String, Map<String, String>> translations = new TreeMap<>();
     private String packageName = "";
     private String sourceLanguage = "";
@@ -132,35 +123,29 @@ public class StringInventory {
     private AppName appName = new AppName();
     private int nextId = 0;
 
-    /**
-     * Scans {@code res/values/*.xml}, the app's smali and its XML under the decoded folder. With an
-     * empty package name only the resources are read.
-     */
+    /** Scans the values resources, smali and XML of the decoded app, only resources when the package is empty. */
     public static StringInventory collect(String decodedPath, String packageName,
             NotTranslatableStringsDictionary dictionary) throws IOException {
         boolean code = packageName != null && !packageName.isEmpty();
         return collect(decodedPath, packageName, dictionary,
                 code ? HardcodedStringFinder.hits(SmaliScan.scan(decodedPath, packageName)) : List.of(),
-                code ? XmlLiteralFinder.find(decodedPath) : List.of());
+                code ? XmlLiterals.find(decodedPath) : List.of());
     }
 
-    /** The same, from a scan already made: the resources plus the given hardcoded literals, with the default policy. */
+    /** The same from a scan already made, with the default policy. */
     public static StringInventory collect(String decodedPath, String packageName, NotTranslatableStringsDictionary dictionary,
-            List<HardcodedStringFinder.Hit> hits, List<XmlLiteralFinder.Literal> xmlLiterals) throws IOException {
+            List<HardcodedStringFinder.Hit> hits, List<XmlLiterals.Literal> xmlLiterals) throws IOException {
         return collect(decodedPath, packageName, dictionary, hits, xmlLiterals, HardcodedPolicy.DEFAULT, null);
     }
 
-    /** The same, when no literal of the code was moved to a resource: the chosen places are all patched. */
+    /** The same when no code literal was moved to a resource, so the chosen places are all patched. */
     public static StringInventory collect(String decodedPath, String packageName, NotTranslatableStringsDictionary dictionary,
-            List<HardcodedStringFinder.Hit> hits, List<XmlLiteralFinder.Literal> xmlLiterals, HardcodedPolicy policy,
-            XmlLiteralExtractor.Extraction extraction) throws IOException {
+            List<HardcodedStringFinder.Hit> hits, List<XmlLiterals.Literal> xmlLiterals, HardcodedPolicy policy,
+            XmlLiterals.Extraction extraction) throws IOException {
         return collect(decodedPath, packageName, dictionary, hits, xmlLiterals, policy, extraction, null);
     }
 
-    /**
-     * The places of the code that are translated under a policy, in the order of the scan: what
-     * {@link CodeLiteralExtractor} moves to resources. Decided exactly as the inventory decides it.
-     */
+    /** The code places translated under a policy in scan order, decided as the inventory decides it. */
     public static List<SmaliScan.Occurrence> placesToTranslate(String decodedPath, List<HardcodedStringFinder.Hit> hits,
             HardcodedPolicy policy) {
         AppName name = appName(decodedPath);
@@ -183,15 +168,12 @@ public class StringInventory {
     /**
      * The inventory of a decoded app.
      *
-     * @param policy which places of a literal of the code are translated
-     * @param extraction the literals of the XML already moved to resources (they are translated as
-     *        resources), or null when none were
-     * @param codeExtraction the literals of the code already moved to resources, or null when
-     *        none were; the chosen places it did not move are patched per language
+     * @param extraction the XML literals already moved to resources, or null
+     * @param codeExtraction the code literals already moved to resources, or null, the other chosen places are patched
      */
     public static StringInventory collect(String decodedPath, String packageName, NotTranslatableStringsDictionary dictionary,
-            List<HardcodedStringFinder.Hit> hits, List<XmlLiteralFinder.Literal> xmlLiterals, HardcodedPolicy policy,
-            XmlLiteralExtractor.Extraction extraction, CodeLiteralExtractor.Extraction codeExtraction) throws IOException {
+            List<HardcodedStringFinder.Hit> hits, List<XmlLiterals.Literal> xmlLiterals, HardcodedPolicy policy,
+            XmlLiterals.Extraction extraction, CodeLiteralExtractor.Extraction codeExtraction) throws IOException {
         StringInventory inv = new StringInventory();
         inv.packageName = packageName == null ? "" : packageName;
         inv.policy = policy == null ? HardcodedPolicy.DEFAULT : policy;
@@ -200,7 +182,7 @@ public class StringInventory {
         File valuesDir = new File(decodedPath, "res" + File.separator + "values");
         File[] files = valuesDir.listFiles((d, n) -> n.toLowerCase().endsWith(".xml"));
         if (files != null) {
-            // strings.xml first (canonical), then the rest alphabetically: deterministic ids and order.
+            // strings.xml first, then the rest alphabetically, for stable ids and order
             Arrays.sort(files, (a, b) -> {
                 boolean sa = a.getName().equalsIgnoreCase("strings.xml");
                 boolean sb = b.getName().equalsIgnoreCase("strings.xml");
@@ -208,7 +190,7 @@ public class StringInventory {
             });
             for (File f : files) {
                 if (f.getName().equalsIgnoreCase("donottranslate.xml")) {
-                    continue;   // Android convention: everything in it stays verbatim
+                    continue;   // by Android convention everything in it stays verbatim
                 }
                 inv.collectResourceFile(f, "res/values/" + f.getName(), dictionary);
             }
@@ -244,13 +226,12 @@ public class StringInventory {
             inv.entries.add(e);
         }
         n = 0;
-        for (Map.Entry<String, List<XmlLiteralFinder.Literal>> x : HardcodedStringFinder.byText(xmlLiterals).entrySet()) {
+        for (Map.Entry<String, List<XmlLiterals.Literal>> x : HardcodedStringFinder.byText(xmlLiterals).entrySet()) {
             n++;
-            // A literal of the XML is translated through the resource it was moved to; one that was
-            // not moved is listed so the report shows it.
+            // translated through the resource it was moved to, or listed for the report when not moved
             String resource = extraction == null ? null : extraction.nameByText.get(x.getKey());
             String skip = textSkipReason(x.getKey());
-            if (skip == null && XmlLiteralExtractor.isAppName(x.getValue().get(0), inv.appName.texts)) {
+            if (skip == null && XmlLiterals.isAppName(x.getValue().get(0), inv.appName.texts)) {
                 skip = APP_NAME;
             }
             if (skip == null && resource == null) {
@@ -269,18 +250,15 @@ public class StringInventory {
         return inv;
     }
 
-    /** The name of the app: the resources that hold it and the texts it is written as. It is never translated. */
+    /** The app name, which is never translated, with the resources that hold it and its texts. */
     public static final class AppName {
-        /** Resource names: {@code app_name} and the string the application label refers to. */
+        /** {@code app_name} and the string the application label refers to. */
         public final Set<String> resources = new LinkedHashSet<>();
-        /** The name itself, as those resources (or a literal label in the manifest) give it. */
+        /** The name itself, as those resources or a literal manifest label give it. */
         public final Set<String> texts = new LinkedHashSet<>();
     }
 
-    /**
-     * Finds the name of the app in a decoded folder: the {@code android:label} of the application
-     * element of the manifest (a reference or a literal) and the string called {@code app_name}.
-     */
+    /** Finds the app name from the manifest application label and the {@code app_name} string. */
     public static AppName appName(String decodedPath) {
         AppName out = new AppName();
         out.resources.add("app_name");
@@ -297,7 +275,7 @@ public class StringInventory {
                 }
             }
         } catch (Exception e) {
-            // unreadable manifest: only app_name is known
+            // unreadable manifest, only app_name is known
         }
         File[] files = new File(decodedPath, "res" + File.separator + "values").listFiles((d, f) -> f.toLowerCase().endsWith(".xml"));
         if (files != null) {
@@ -321,20 +299,12 @@ public class StringInventory {
         return occurrences > 1 ? " (+" + (occurrences - 1) + " more)" : "";
     }
 
-    /**
-     * Shapes that are data when nothing is known about the literal, but ordinary labels when the
-     * code shows it: an all-caps button ("CANCEL"), a word that is also the name of a table.
-     */
+    /** Shapes that are data unless the code shows the literal, such as an all caps button label. */
     private static final Set<String> REASONS_UI_OVERRIDES = Set.of("constant", "SQL identifier");
 
     /**
-     * Why a literal of the code is kept verbatim, or null when it is translated. Three checks, in
-     * order: the text rules every string passes; the shapes only code has (intent actions, SQL,
-     * table names, hashes, regular expressions: a translated table name or query crashes the app
-     * at startup); and what the code does with it, under the policy. A literal is translated
-     * when the policy translates at least one of its places; one whose every use is a log, an
-     * exception, data or compiler plumbing never reaches the screen, and is listed but never sent
-     * to the LLM.
+     * Why a code literal is kept verbatim, or null when it is translated. Checks the text rules, then
+     * code only shapes such as SQL or regular expressions, then whether the policy translates any place.
      */
     static String codeSkipReason(HardcodedStringFinder.Hit h, Set<String> sqlIdentifiers, HardcodedPolicy policy) {
         String skip = textSkipReason(h.text);
@@ -353,10 +323,7 @@ public class StringInventory {
         return h.neverShown() ? h.consumer().description : "use not known: " + h.consumer().description;
     }
 
-    /**
-     * SQL statements, recognised by their syntax rather than their first word: "Select a file" and
-     * "Create JSON file" are UI labels, "SELECT * FROM shortcut" and "CREATE TABLE x" are not.
-     */
+    /** SQL statements, recognised by their syntax rather than their first word. */
     private static final Pattern SQL_STATEMENT = Pattern.compile(
             "(?is)^\\s*(insert\\s+(or\\s+\\w+\\s+)?into\\b|update\\s+(or\\s+\\w+\\s+)?`?[A-Za-z_]\\w*`?\\s+set\\b|delete\\s+from\\b"
             + "|create\\s+(temp\\s+|temporary\\s+|unique\\s+|virtual\\s+)?(table|index|view|trigger)\\b|drop\\s+(table|index|view|trigger)\\b"
@@ -366,12 +333,12 @@ public class StringInventory {
     static boolean isSql(String text) {
         return SQL_STATEMENT.matcher(text).find() || SQL_SELECT.matcher(text).matches();
     }
-    /** Table/column names used by the app's own SQL: FROM x, INTO x, TABLE x, `x`. */
+    /** Table and column names used by the app's own SQL. */
     private static final Pattern SQL_IDENTIFIER = Pattern.compile(
             "(?i)\\b(?:from|into|table|update|join)\\s+(?:if\\s+(?:not\\s+)?exists\\s+)?`?([A-Za-z_]\\w*)`?|`([A-Za-z_]\\w*)`");
-    /** A backslash followed by a regex metacharacter or class, or the classic "(.*)" capture. */
+    /** A backslash before a regex metacharacter or class, or a catch all capture group. */
     private static final Pattern REGEX_LIKE = Pattern.compile("\\\\[{}()\\[\\]dswDSW.+*?|^$]|\\(\\.\\*\\)|\\[\\^");
-    /** Messages the Kotlin/Android runtime throws, inlined into the app's smali; never shown as UI. */
+    /** Kotlin and Android runtime messages inlined into the smali, never shown as UI. */
     private static final Pattern RUNTIME_MESSAGE = Pattern.compile(
             "^(null cannot be cast to non-null type|lateinit property|Required value was null|Parameter specified as non-null"
             + "|Check failed|Failed requirement|An operation is not implemented|Super calls with default arguments"
@@ -394,28 +361,28 @@ public class StringInventory {
             return "code token";
         }
         if (t.matches("^\\.[A-Za-z0-9]{1,10}$")) {
-            return "file extension";                 // .png, .json, .mmt
+            return "file extension";                 // .png, .json
         }
         if (t.matches("^\\S*_\\S*$")) {
-            return "identifier";                     // __db, cover_, song_allsongs_, is_sort_ascending_, room_fts_content_sync_
+            return "identifier";                     // cover_, is_sort_ascending_
         }
         if (t.matches("^[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)+$")) {
-            return "dotted identifier";              // Filled.Headphones, window.decorView, com.x.Y
+            return "dotted identifier";              // window.decorView, com.x.Y
         }
         if (t.matches("^'?[A-Z][A-Z0-9_]{2,}'?$") || t.matches("(?i)^(NO ACTION|SET NULL|SET DEFAULT|CASCADE|RESTRICT)$")) {
-            return "constant";                       // TEXT, INTEGER, MD5, NO_FILE_SELECTED, 'TEXT', NO ACTION
+            return "constant";                       // TEXT, MD5, NO_FILE_SELECTED, NO ACTION
         }
         if (t.matches("^[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+$")) {
-            return "class-like identifier";          // JsonShortcutUtils, MainActivity
+            return "class-like identifier";          // MainActivity
         }
         if (t.matches("(?i)^[a-z_][\\w.]*\\s*(=|!=|<>|<=|>=|<|>|like|in|is)\\s*(\\?|-?\\d+|'[^']*'|\\(.*\\)|null|not null)\\s*$")) {
-            return "SQL fragment";                   // is_music != 0, duration > ?, _data LIKE ?
+            return "SQL fragment";                   // a WHERE condition
         }
         if (t.matches("(?i)^[\\w.()]+\\s+(asc|desc)(\\s*,\\s*[\\w.()]+(\\s+(asc|desc))?)*$")) {
-            return "SQL fragment";                   // title ASC, date_added DESC, album, track ASC
+            return "SQL fragment";                   // an ORDER BY clause
         }
         if (t.matches("^[\\w-]+(,[\\w-]+){2,}$")) {
-            return "token list";                     // like,shuffle,repeat,crossfade
+            return "token list";                     // like,shuffle,repeat
         }
         if (REGEX_LIKE.matcher(t).find()) {
             return "regular expression";
@@ -429,7 +396,7 @@ public class StringInventory {
         return null;
     }
 
-    /** Identifiers named by the SQL literals of the app (lower-cased), to spot bare table/column names. */
+    /** Lower cased identifiers named by the app's SQL literals, to spot bare table and column names. */
     static Set<String> sqlIdentifiers(List<HardcodedStringFinder.Hit> hits) {
         Set<String> ids = new java.util.HashSet<>();
         for (HardcodedStringFinder.Hit h : hits) {
@@ -485,7 +452,7 @@ public class StringInventory {
                     index++;
                 }
             }
-            // color, dimen, bool, integer, style, item type=...: never user-visible text
+            // other resource types are never user visible text
         }
     }
 
@@ -534,17 +501,13 @@ public class StringInventory {
         return null;
     }
 
-    /**
-     * An API key, a token, an encoded secret: one long run of letters and digits with no space,
-     * such as {@code AIzaSyD4x...} or a Base64 value. Never text for a person, in a resource or in
-     * the code.
-     */
+    /** An API key, token or encoded secret, one long run of letters and digits with no space. */
     static boolean looksLikeKeyOrToken(String t) {
         return t.length() >= 24 && t.matches("[A-Za-z0-9+/_=.-]+") && t.matches(".*[0-9].*") && t.matches(".*[A-Za-z].*")
                 && !t.contains("..") && t.chars().filter(c -> c == '.').count() <= 2;
     }
 
-    /** The element's content as XML text, so inline markup ({@code <b>}, {@code <xliff:g>}) is kept. */
+    /** The element's content as XML text, so inline markup is kept. */
     static String innerXml(Element e) {
         return RAW.outputString(e.getContent());
     }
@@ -565,10 +528,7 @@ public class StringInventory {
         return out;
     }
 
-    /**
-     * Unique literals of the code that are patched into the smali, in discovery order. A literal
-     * whose places were all moved to a resource is not here: it is translated as a resource.
-     */
+    /** Unique code literals patched into the smali in discovery order, without those moved to resources. */
     public List<String> hardcodedTexts() {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         for (Entry e : entries) {
@@ -591,7 +551,7 @@ public class StringInventory {
         return out;
     }
 
-    /** Names of the string resources the hardcoded literals (of the XML and of the code) were moved to. */
+    /** Names of the string resources the XML and code literals were moved to. */
     public Set<String> extractedResources() {
         Set<String> out = new LinkedHashSet<>();
         for (Entry e : entries) {
@@ -619,13 +579,7 @@ public class StringInventory {
         this.sourceLanguage = sourceLanguage == null ? "" : sourceLanguage;
     }
 
-    /**
-     * Counts for the report. The hardcoded strings have one breakdown, the one every output shows:
-     * {@code hardcoded} distinct literals ({@code hardcodedCode} in the code plus
-     * {@code hardcodedXml} in the XML), found in {@code hardcodedOccurrences} places, split by what
-     * the app does with them in {@code hardcodedByConsumer}; {@code hardcodedTranslatable} of them
-     * are translated.
-     */
+    /** Counts for the report, with the one breakdown of hardcoded strings every output shows. */
     @SuppressWarnings("unchecked")
     public JSONObject summary() {
         long resources = 0, resourcesTranslatable = 0, hardcodedCode = 0, hardcodedXml = 0, hardcodedTranslatable = 0, places = 0;
@@ -721,7 +675,7 @@ public class StringInventory {
         return reused;
     }
 
-    /** Writes the inventory (entries, origins, skip reasons and the translations so far) as readable JSON. */
+    /** Writes the entries, origins, skip reasons and translations so far as readable JSON. */
     @SuppressWarnings("unchecked")
     public void save(Path json) throws IOException {
         JSONObject root = new JSONObject();
@@ -771,7 +725,7 @@ public class StringInventory {
                     }
                     places.add(place);
                 }
-                for (XmlLiteralFinder.Literal p : e.xmlPlaces) {
+                for (XmlLiterals.Literal p : e.xmlPlaces) {
                     if (places.size() >= MAX_PLACES_SAVED) {
                         break;
                     }
@@ -805,7 +759,7 @@ public class StringInventory {
         Files.writeString(json, pretty(root.toJSONString()), StandardCharsets.UTF_8);
     }
 
-    /** Indents compact JSON (json-simple has no pretty printer) so the file is reviewable by hand. */
+    /** Indents compact JSON for review by hand, json-simple has no pretty printer. */
     static String pretty(String json) {
         StringBuilder sb = new StringBuilder(json.length() * 2);
         int indent = 0;

@@ -7,14 +7,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * What an app is built with, when it is not plain Android: read from the files of the decoded APK.
- *
- * <p>ITDroid translates the string resources of the app and the literals of its Dalvik code. An app
- * written with a cross-platform framework keeps the texts of its interface somewhere else (the web
- * assets of Capacitor or Cordova, the Dart snapshot of Flutter, the JavaScript bundle of React
- * Native, the resource files of Compose Multiplatform), where they are not translated: the app
- * shows whatever it does by itself with the language of the device. Knowing it beforehand tells how
- * to read the result.
+ * Detects the cross-platform framework an app is built with from the decoded APK. Such apps keep
+ * their interface texts outside the resources and Dalvik code, so ITDroid does not translate them.
  */
 public final class AppFramework {
 
@@ -33,7 +27,7 @@ public final class AppFramework {
     private AppFramework() {
     }
 
-    /** The frameworks whose marks are in the decoded app, by id ({@code flutter}, {@code capacitor}...); empty for plain Android. */
+    /** Ids of the frameworks found in the decoded app, empty for plain Android. */
     public static List<String> detect(String decodedPath) {
         File root = new File(decodedPath);
         File assets = new File(root, "assets");
@@ -64,7 +58,7 @@ public final class AppFramework {
         return found;
     }
 
-    /** One sentence per framework found: what it is and where its texts are. */
+    /** One sentence per framework saying where its texts are. */
     public static String describe(List<String> frameworks) {
         List<String> parts = new ArrayList<>();
         for (String id : frameworks) {
@@ -73,7 +67,7 @@ public final class AppFramework {
         return String.join("; ", parts);
     }
 
-    /** True when some ABI folder of the decoded app ({@code lib/<abi>/}) has the library. */
+    /** True when some ABI folder under lib has the library. */
     private static boolean hasLibrary(File root, String name) {
         File[] abis = new File(root, "lib").listFiles(File::isDirectory);
         if (abis == null) {

@@ -21,7 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import uniandes.tsdl.itdroid.Fixtures;
 
-/** Loading the result.json of an exploration into a graph of states and transitions. */
+/** Tests loading the result.json of an exploration into a graph of states and transitions. */
 class LayoutGraphTest {
 
     @TempDir
@@ -70,7 +70,7 @@ class LayoutGraphTest {
     @Test
     @SuppressWarnings("unchecked")
     void aStateTheReplayNeverReachedLeavesAGapInsteadOfShiftingTheOthers() throws IOException {
-        // A replayed exploration keeps the source ids: here state 2 was never reached.
+        // a replayed exploration keeps the source ids, here state 2 was never reached
         JSONObject states = new JSONObject();
         for (long id : new long[] {1, 3}) {
             JSONObject s = new JSONObject();

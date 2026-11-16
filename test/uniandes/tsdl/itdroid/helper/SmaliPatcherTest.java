@@ -20,7 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import uniandes.tsdl.itdroid.Fixtures;
 
-/** Rewriting hardcoded literals, place by place, in the smali of a COPY of the hand-written app. */
+/** Tests rewriting hardcoded literals place by place in the smali of a copy of the hand-written app. */
 class SmaliPatcherTest {
 
     private static final String APPLICATION_ID = "com.example.shop.free";
@@ -65,10 +65,10 @@ class SmaliPatcherTest {
         return out;
     }
 
-    /** The places the inventory chooses with the default policy: only where the text is shown. */
+    /** The places the inventory chooses by default, only where the text is shown. */
     private List<SmaliScan.Occurrence> chosenPlaces() throws Exception {
         return StringInventory.collect(app.toString(), APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
-                HardcodedStringFinder.hits(scan), XmlLiteralFinder.find(app.toString())).hardcodedPlaces();
+                HardcodedStringFinder.hits(scan), XmlLiterals.find(app.toString())).hardcodedPlaces();
     }
 
     @Test
@@ -161,7 +161,7 @@ class SmaliPatcherTest {
         assertTrue(hasLine(freeActivity, "const-string v0, \"Saved\""), "the second language had no translation for it");
     }
 
-    /** The launcher activity is in {@code com.example.shop.ui}, outside the folder of the applicationId; the Compose screen is in the second dex. */
+    /** The launcher activity is outside the applicationId folder and the Compose screen is in the second dex. */
     @Test
     void patchesTheCodeOutsideTheApplicationIdFolderAndInEveryDex() throws Exception {
         List<SmaliPatcher.Patch> patched = patcher.patch(chosenPlaces(),
@@ -173,7 +173,7 @@ class SmaliPatcherTest {
                 "const-string v1, \"Tu carrito est\\u00e1 vac\\u00edo\""));
     }
 
-    /** The scan gives file and line; if the file changed since, the place is skipped instead of patching the wrong line. */
+    /** If the file changed after the scan, the place is skipped instead of patching the wrong line. */
     @Test
     void aPlaceWhoseLineNoLongerHoldsTheLiteralIsSkipped() throws IOException {
         List<SmaliScan.Occurrence> places = everyPlaceOf("Welcome back", "Saved");

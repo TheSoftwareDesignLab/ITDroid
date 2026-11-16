@@ -18,7 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import uniandes.tsdl.itdroid.Fixtures;
 
-/** {@code hardcoded_<lang>.csv}: what was done with every place a hardcoded string is written in. */
+/** What {@code hardcoded_<lang>.csv} says was done with every place a hardcoded string is written in. */
 class HardcodedLogTest {
 
     private static final String APPLICATION_ID = "com.example.shop.free";
@@ -35,9 +35,9 @@ class HardcodedLogTest {
     void translateTheApp() throws Exception {
         Path app = tmp.resolve("shop");
         FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
-        List<XmlLiteralFinder.Literal> literals = XmlLiteralFinder.find(app.toString());
+        List<XmlLiterals.Literal> literals = XmlLiterals.find(app.toString());
         List<HardcodedStringFinder.Hit> hits = HardcodedStringFinder.hits(SmaliScan.scan(app.toString(), APPLICATION_ID));
-        XmlLiteralExtractor.Extraction extraction = XmlLiteralExtractor.extract(app.toString(), literals, Set.of("Shop"));
+        XmlLiterals.Extraction extraction = XmlLiterals.extract(app.toString(), literals, Set.of("Shop"));
         inventory = StringInventory.collect(app.toString(), APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
                 hits, literals, HardcodedPolicy.UI, extraction);
 
@@ -82,7 +82,7 @@ class HardcodedLogTest {
         assertTrue(rows.get("\" LIMIT 0\"@\"limit\"").contains(";not translated;\"use not known: part of a text whose destination is not known\";"));
         assertTrue(rows.get("\"Shop\"@\"onCreate\"").contains(";not translated;\"application name\";"));
         assertTrue(rows.get("\"Saved\"@\"showSaved\"").contains(";not translated;\"the translation equals the source\";"));
-        // the XML: moved to a resource, with the translation that resource got
+        // the XML is moved to a resource and shows the translation that resource got
         assertEquals("xml;\"Coupon code\";\"Código de cupón\";extracted;\"@string/itdroid_hc_3\";\"res/layout/activity_main.xml\";5;"
                 + "\"EditText @id/coupon\";\"\";xml;\"android:hint\"", rows.get("\"Coupon code\"@\"\""));
         assertTrue(rows.get("\"Add to cart\"@\"\"").contains(";extracted;\"@string/itdroid_hc_1 (no translation for this language)\";"));

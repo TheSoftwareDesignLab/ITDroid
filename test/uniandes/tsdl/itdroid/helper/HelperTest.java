@@ -6,10 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * First test of the suite. Its job is to prove the wiring: the tests under {@code test/} compile
- * against the classes under {@code src/} and run with {@code mvn test}.
- */
+/** The Levenshtein distance and the detection of right-to-left languages. */
 class HelperTest {
 
     @Test

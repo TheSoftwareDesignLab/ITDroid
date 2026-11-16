@@ -9,30 +9,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Text of the translated screen drawn over a graphic of the app that is not an element of the dump.
- *
- * <p>The comparison works on the boxes of the elements, and some failures never move a box. The
- * arrow of a drop-down list is part of the list's background image; when a translated text grows
- * or is aligned to the other side (Arabic text aligns right by itself in a layout that is not
- * mirrored), the text runs over the arrow and every box is still where it was. Only the pixels show
- * it, so this looks at the two screenshots.
- *
- * <p>For each element with text that is where it was in the source screen, it takes the box of its
- * parent (or its own box, when the parent is the whole screen) in both screenshots:
- * <ul>
- * <li>ink: the pixels that differ from the median colour of their row, which is the background,
- * gradients included;</li>
- * <li>a graphic: ink of the source that is in the translated screenshot too, with the same colour,
- * and stands alone (a letter has letters of its height next to it on its line);</li>
- * <li>a collision: the source text did not touch the graphic and the translated text is drawn
- * over a good part of it, in thin strokes (a block of colour over it is a widget redrawn, not
- * text).</li>
- * </ul>
- * A graphic that is an element of the dump, or that is part of an element that moved or changed
- * size, is left to the comparison of boxes, which already sees it.
- *
- * <p>It is a heuristic: on the 16 apps it was tuned on it found the arrow and the border of
- * Forest Pond's drop-down in Arabic and nothing else.
+ * Text of the translated screen drawn over a graphic of the app that is not an element of the dump,
+ * such as the arrow of a drop-down. No box moves then, so the two screenshots are compared around
+ * each text that stayed in place, looking for unchanged graphics newly covered by thin strokes. It
+ * is a heuristic tuned on 16 apps.
  */
 public final class TextOverGraphic {
 
@@ -54,11 +34,11 @@ public final class TextOverGraphic {
 	static final double UNCHANGED_SHARE = 0.8;
 	/** Ink of the source near the graphic, as a share of the graphic, above which the source text already touched it. */
 	static final double SOURCE_TEXT_SHARE = 0.05;
-	/** Pixels of translated text over the graphic: at least this many... */
+	/** Fewest pixels of translated text over the graphic. */
 	static final int MIN_TEXT = 25;
-	/** ...and at least this share of the graphic... */
+	/** Smallest share of the graphic covered by translated text. */
 	static final double TEXT_SHARE = 0.15;
-	/** ...and at most this share of the graphic's box: more is a block of colour, not strokes of text. */
+	/** Largest share of the graphic's box covered by text, as more is a block of colour, not strokes. */
 	static final double MAX_FILL = 0.5;
 	/** A graphic whose box covers this share of an element's box (intersection over union) is that element. */
 	static final double SAME_ELEMENT = 0.5;
@@ -68,7 +48,7 @@ public final class TextOverGraphic {
 		/** The element with the text, in the source and in the translated screen. */
 		public final int sourceNode;
 		public final int languageNode;
-		/** Where the graphic is in the translated screen: x1, y1, x2, y2. */
+		/** The box of the graphic in the translated screen, as x1, y1, x2, y2. */
 		public final int[] graphic;
 		/** Pixels of the graphic, and pixels of translated text drawn over it. */
 		public final int graphicPixels;
@@ -86,7 +66,7 @@ public final class TextOverGraphic {
 	private TextOverGraphic() {
 	}
 
-	/** The collisions of one translated screen with its source screen; empty when a screenshot is missing. */
+	/** The collisions of one translated screen with its source screen, empty when a screenshot is missing. */
 	public static List<Hit> find(State source, BufferedImage sourceShot, State language, BufferedImage languageShot, NodePairing pairing) {
 		List<Hit> hits = new ArrayList<>();
 		if (sourceShot == null || languageShot == null
@@ -97,7 +77,7 @@ public final class TextOverGraphic {
 		List<AndroidNode> tn = language.getStateNodes();
 		long screen = (long) sourceShot.getWidth() * sourceShot.getHeight();
 
-		// what moved or changed size in this language, in source coordinates; and every element of the source
+		// every element of the source, and those that moved or changed size in this language
 		List<int[]> moved = new ArrayList<>();
 		List<int[]> elements = new ArrayList<>();
 		for (int i = 0; i < sn.size(); i++) {
@@ -109,10 +89,10 @@ public final class TextOverGraphic {
 			}
 		}
 
-		// the boxes to look at: the parent of each element with text that stayed where it was
+		// look at the parent box of each element with text that stayed where it was
 		List<int[]> regions = new ArrayList<>();
 		List<int[]> languageRegions = new ArrayList<>();
-		List<List<int[]>> texts = new ArrayList<>();   // per region: {sourceNode, languageNode} of its texts
+		List<List<int[]>> texts = new ArrayList<>();   // per region, the {sourceNode, languageNode} of its texts
 		for (int i = 0; i < sn.size(); i++) {
 			int k = pairing.targetOfSource[i];
 			if (k < 0 || !hasText(tn.get(k)) || !near(box(sn.get(i)), box(tn.get(k)))) {
@@ -141,7 +121,7 @@ public final class TextOverGraphic {
 	}
 
 	/**
-	 * The collisions in one box: each as x1, y1, x2, y2 of the graphic in the translated screen, its
+	 * The collisions in one box, each as x1, y1, x2, y2 of the graphic in the translated screen, its
 	 * pixels and the pixels of text over it.
 	 */
 	static List<int[]> collisions(BufferedImage sourceShot, int[] sourceBox, BufferedImage languageShot, int[] languageBox,
@@ -167,7 +147,7 @@ public final class TextOverGraphic {
 			differs[p] = inkT[p] && d > SAME;
 		}
 		int[] sourceLabels = new int[n];
-		List<int[]> sourceParts = label(inkS, w, h, sourceLabels);   // per component: x1, y1, x2, y2 (inclusive), size
+		List<int[]> sourceParts = label(inkS, w, h, sourceLabels);   // per component x1, y1, x2, y2 (inclusive) and size
 		int[] blobLabels = new int[n];
 		List<int[]> blobs = label(unchanged, w, h, blobLabels);
 		Set<String> done = new LinkedHashSet<>();
@@ -175,7 +155,7 @@ public final class TextOverGraphic {
 			if (blobs.get(b)[4] < MIN_BLOB) {
 				continue;
 			}
-			// the source components the unchanged blob belongs to: the whole graphic as the source draws it
+			// the source components of the unchanged blob, the whole graphic as the source draws it
 			Set<Integer> ids = new LinkedHashSet<>();
 			int[] bb = blobs.get(b);
 			for (int y = bb[1]; y <= bb[3]; y++) {
@@ -202,7 +182,7 @@ public final class TextOverGraphic {
 			int ya = Math.max(0, y1 - 2), yb = Math.min(h, y2 + 3), xa = Math.max(0, x1 - 2), xb = Math.min(w, x2 + 3);
 			int area = (yb - ya) * (xb - xa);
 			if (area > MAX_SHARE_OF_BOX * n || size < MIN_GRAPHIC) {
-				continue;   // borders and backgrounds as big as the box; specks
+				continue;   // borders and backgrounds as big as the box, and specks
 			}
 			int[] inSource = { sourceBox[0] + xa, sourceBox[1] + ya, sourceBox[0] + xb, sourceBox[1] + yb };
 			if (isAnElement(inSource, elements) || insideOne(inSource, moved)) {
@@ -237,7 +217,7 @@ public final class TextOverGraphic {
 		return out;
 	}
 
-	/** A letter has others of about its height beside it on its line; a graphic (an arrow, an icon) stands alone. */
+	/** A letter has others of about its height beside it on its line, a graphic (an arrow, an icon) stands alone. */
 	private static boolean isALetter(Set<Integer> ids, int x1, int y1, int x2, int y2, List<int[]> parts) {
 		int height = y2 - y1 + 1;
 		for (int j = 0; j < parts.size(); j++) {
@@ -317,7 +297,7 @@ public final class TextOverGraphic {
 				Math.max(Math.abs(((a >> 8) & 0xff) - ((b >> 8) & 0xff)), Math.abs((a & 0xff) - (b & 0xff))));
 	}
 
-	/** Connected groups of true pixels (8 neighbours), numbered from 1 in {@code labels}; per group x1, y1, x2, y2 and size. */
+	/** Connected groups of true pixels (8 neighbours), numbered from 1 in {@code labels}, each as x1, y1, x2, y2 and size. */
 	static List<int[]> label(boolean[] on, int w, int h, int[] labels) {
 		List<int[]> parts = new ArrayList<>();
 		ArrayDeque<Integer> queue = new ArrayDeque<>();
@@ -393,7 +373,7 @@ public final class TextOverGraphic {
 		return -1;
 	}
 
-	/** Of the texts of a box, the one nearest the graphic: the element the finding is reported on. */
+	/** The text of a box nearest the graphic, which the finding is reported on. */
 	private static int[] closest(List<int[]> texts, List<AndroidNode> tn, int[] graphic) {
 		int[] best = texts.get(0);
 		double bestDistance = Double.MAX_VALUE;

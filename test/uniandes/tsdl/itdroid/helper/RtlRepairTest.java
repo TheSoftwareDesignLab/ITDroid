@@ -17,9 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The repair that makes an app follow a right-to-left language (port of supportRTL of the
- * repairments branch): what it changes in the manifest and the layouts, what it leaves alone, and
- * that it can be undone.
+ * The repair that makes an app follow a right-to-left language, what it changes in the manifest and
+ * layouts, what it leaves alone, and that it can be undone.
  */
 class RtlRepairTest {
 

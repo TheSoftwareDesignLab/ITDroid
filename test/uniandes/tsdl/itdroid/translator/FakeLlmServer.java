@@ -32,9 +32,9 @@ final class FakeLlmServer implements AutoCloseable {
         String user = "";
         /** True when the request asked for a JSON object answer (the batched style). */
         boolean jsonMode;
-        /** Batched style: the texts to translate by key ("0", "1", ...), in key order. */
+        /** In the batched style, the texts to translate by key, in key order. */
         Map<String, String> items = new TreeMap<>();
-        /** One-text style: the text after the last blank line of the prompt. */
+        /** In the one-text style, the text after the last blank line of the prompt. */
         String text = "";
     }
 

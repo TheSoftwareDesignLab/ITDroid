@@ -15,11 +15,8 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 /**
- * Compares the default {@code strings.xml} with the one of each language to tell which languages
- * the app already ships. A language counts as shipped when its file exists and lacks at most
- * {@code alpha} of the default strings; for the others ITDroid translates the resources itself.
- * The strings a language lacks are its non-internationalized strings, kept per language for the
- * report.
+ * Compares the default strings.xml with each language's to tell which languages the app already ships.
+ * A language is shipped when its file exists and lacks at most {@code alpha} default strings.
  */
 public class XMLComparator {
 
@@ -29,9 +26,9 @@ public class XMLComparator {
 		public final String path;
 		/** True when the app has a strings.xml for this language. */
 		public final boolean hasFile;
-		/** Default strings this language does not define, sorted by name (all of them when there is no file). */
+		/** Default strings this language does not define, sorted by name. */
 		public final List<String> missing;
-		/** True when the app is considered translated to this language (file present, missing within alpha). */
+		/** True when the app counts as translated to this language. */
 		public final boolean shipped;
 
 		LanguageStatus(String path, boolean hasFile, List<String> missing, boolean shipped) {
@@ -41,10 +38,7 @@ public class XMLComparator {
 			this.shipped = shipped;
 		}
 
-		/**
-		 * The status as it goes into report.json. The names of the missing strings are listed only
-		 * when the language has a file: without one, every default string is missing.
-		 */
+		/** The status for report.json, with missing names listed only when the language has a file. */
 		@SuppressWarnings("unchecked")
 		public JSONObject toJson() {
 			JSONObject o = new JSONObject();
@@ -67,19 +61,15 @@ public class XMLComparator {
 	private int defaultStrings;
 
 	/**
-	 * @param xmls absolute paths where the strings.xml files are supposed to be: the default one
-	 *        first, then one per language
+	 * @param xmls strings.xml paths, the default one first, then one per language
 	 * @param alpha how many default strings a language may lack and still count as translated
-	 * @param directory settings folder, where the dictionary of not-translatable strings is
+	 * @param directory settings folder holding the dictionary of not translatable strings
 	 */
 	public XMLComparator(String[] xmls, Integer alpha, String directory) {
 		this(xmls, alpha, directory, Set.of());
 	}
 
-	/**
-	 * @param neverMissing names of default strings no language is expected to define: the name of
-	 *        the app, which is not translated
-	 */
+	/** @param neverMissing default strings no language is expected to define, such as the app name */
 	public XMLComparator(String[] xmls, Integer alpha, String directory, Set<String> neverMissing) {
 		if (xmls == null || xmls.length == 0) {
 			return;
@@ -87,8 +77,7 @@ public class XMLComparator {
 		int tolerance = alpha != null ? alpha.intValue() : 0;   // a null alpha means no tolerance
 		try {
 			NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(directory);
-			// An app can have no default strings.xml (all its text hardcoded, or built with Compose
-			// and no resources): then no language is shipped and nothing is missing.
+			// Without a default strings.xml no language is shipped and nothing is missing.
 			File defaultFile = new File(xmls[0]);
 			hasDefault = defaultFile.isFile();
 			Set<String> originalStrings = hasDefault ? names(defaultFile, dictionary, true) : new LinkedHashSet<>();
@@ -116,10 +105,8 @@ public class XMLComparator {
 	}
 
 	/**
-	 * Names of the translatable resources of a strings.xml, in file order. With {@code textOnly}
-	 * (the default file) a {@code <string>} whose value is not text for a person is left out: a
-	 * number, a reference, an identifier such as {@code androidx.startup} that a library adds to
-	 * every app. No language translates those, so they are not strings a language lacks.
+	 * Names of the translatable resources of a strings.xml in file order. With {@code textOnly}, strings
+	 * that are not text for a person, such as numbers or identifiers, are left out.
 	 */
 	private static Set<String> names(File stringsXml, NotTranslatableStringsDictionary dictionary, boolean textOnly) throws Exception {
 		Set<String> out = new LinkedHashSet<>();
@@ -144,7 +131,7 @@ public class XMLComparator {
 		return useful;
 	}
 
-	/** Paths of the languages the app does not ship (ITDroid translates them). */
+	/** Paths of the languages the app does not ship, which ITDroid translates. */
 	public ArrayList<String> getUseLess() {
 		return useless;
 	}
@@ -159,7 +146,7 @@ public class XMLComparator {
 		return hasDefault;
 	}
 
-	/** Translatable strings of the default strings.xml: the reference every language is compared with. */
+	/** Number of translatable default strings, the reference every language is compared with. */
 	public int defaultStrings() {
 		return defaultStrings;
 	}

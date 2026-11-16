@@ -28,8 +28,7 @@ extra/*.jar
 # Avoid ignoring Maven wrapper jar file (.jar files are usually ignored)
 !/.mvn/wrapper/maven-wrapper.jar
 
-# Batch evaluation harness (PowerShell scripts, the APKs and their results). Local only: it is not
-# part of the tool and is not versioned.
+# Local APKs and evaluation results, not versioned
 eval/
 
 # Evaluations written by ITDroid (served by: java -jar target/ITDroid-1.0.0.jar --report)

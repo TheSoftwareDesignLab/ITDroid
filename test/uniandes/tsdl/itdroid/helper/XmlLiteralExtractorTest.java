@@ -44,17 +44,17 @@ class XmlLiteralExtractorTest {
         return out;
     }
 
-    private XmlLiteralExtractor.Extraction extract(Set<String> appNames) {
-        return XmlLiteralExtractor.extract(tmp.toString(), XmlLiteralFinder.find(tmp.toString()), appNames);
+    private XmlLiterals.Extraction extract(Set<String> appNames) {
+        return XmlLiterals.extract(tmp.toString(), XmlLiterals.find(tmp.toString()), appNames);
     }
 
     @Test
     void theLiteralsOfTheHandWrittenLayoutBecomeResources() throws Exception {
         Path app = tmp.resolve("shop");
         FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
-        List<XmlLiteralFinder.Literal> literals = XmlLiteralFinder.find(app.toString());
+        List<XmlLiterals.Literal> literals = XmlLiterals.find(app.toString());
 
-        XmlLiteralExtractor.Extraction extraction = XmlLiteralExtractor.extract(app.toString(), literals, Set.of("Shop"));
+        XmlLiterals.Extraction extraction = XmlLiterals.extract(app.toString(), literals, Set.of("Shop"));
 
         assertEquals(Map.of("Add to cart", "itdroid_hc_1", "Adds the product to the cart", "itdroid_hc_2", "Coupon code", "itdroid_hc_3"),
                 extraction.nameByText);
@@ -66,7 +66,7 @@ class XmlLiteralExtractorTest {
         assertTrue(layout.contains("android:contentDescription=\"@string/itdroid_hc_2\""));
         assertTrue(layout.contains("android:hint=\"@string/itdroid_hc_3\""));
         assertTrue(layout.contains("android:text=\"@string/cart_title\"") && layout.contains("android:id=\"@id/coupon\""), "the rest is untouched");
-        assertTrue(XmlLiteralFinder.find(app.toString()).isEmpty(), "no literal is left");
+        assertTrue(XmlLiterals.find(app.toString()).isEmpty(), "no literal is left");
 
         Map<String, String> strings = strings(app);
         assertEquals("Add to cart", strings.get("itdroid_hc_1"));
@@ -79,8 +79,8 @@ class XmlLiteralExtractorTest {
     void anExtractedLiteralIsTranslatedAsAResource() throws Exception {
         Path app = tmp.resolve("shop");
         FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
-        List<XmlLiteralFinder.Literal> literals = XmlLiteralFinder.find(app.toString());
-        XmlLiteralExtractor.Extraction extraction = XmlLiteralExtractor.extract(app.toString(), literals, Set.of("Shop"));
+        List<XmlLiterals.Literal> literals = XmlLiterals.find(app.toString());
+        XmlLiterals.Extraction extraction = XmlLiterals.extract(app.toString(), literals, Set.of("Shop"));
 
         StringInventory inventory = StringInventory.collect(app.toString(), "com.example.shop.free",
                 new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
@@ -125,7 +125,7 @@ class XmlLiteralExtractorTest {
         write("res/menu/main.xml", "<menu " + ANDROID + ">\n  <item android:id=\"@id/save\" android:title=\"Save\" />\n</menu>\n");
         write("res/values/strings.xml", "<resources>\n    <string name=\"itdroid_hc_1\">taken by the app</string>\n</resources>\n");
 
-        XmlLiteralExtractor.Extraction extraction = extract(Set.of());
+        XmlLiterals.Extraction extraction = extract(Set.of());
 
         assertEquals(Map.of("Save", "itdroid_hc_2", "Cancel", "itdroid_hc_3"), extraction.nameByText, "a name the app already uses is skipped");
         assertEquals(3, extraction.attributes);
@@ -143,7 +143,7 @@ class XmlLiteralExtractorTest {
                 + "  <TextView android:text=\"\\@home\" />\n"
                 + "  <TextView android:text=\"Line one\\nLine two\" />\n</LinearLayout>\n");
 
-        XmlLiteralExtractor.Extraction extraction = extract(Set.of());
+        XmlLiterals.Extraction extraction = extract(Set.of());
 
         String raw = Files.readString(tmp.resolve("res/values/strings.xml"), StandardCharsets.UTF_8);
         assertTrue(raw.contains(">Don\\'t \\\"stop\\\" now<"), raw);
@@ -167,7 +167,7 @@ class XmlLiteralExtractorTest {
         write("res/layout/a.xml", "<LinearLayout " + ANDROID + ">\n  <TextView android:text=\"com.acme.Notes\" />\n</LinearLayout>\n");
 
         StringInventory.AppName name = StringInventory.appName(tmp.toString());
-        XmlLiteralExtractor.Extraction extraction = extract(name.texts);
+        XmlLiterals.Extraction extraction = extract(name.texts);
 
         assertEquals(Set.of("Acme Notes"), name.texts, "a literal label of the application is the app's name");
         assertEquals(Map.of("Settings", "itdroid_hc_1"), extraction.nameByText);
@@ -180,7 +180,7 @@ class XmlLiteralExtractorTest {
 
     @Test
     void withoutLiteralsNothingIsWritten() {
-        XmlLiteralExtractor.Extraction extraction = extract(Set.of());
+        XmlLiterals.Extraction extraction = extract(Set.of());
 
         assertTrue(extraction.names().isEmpty());
         assertEquals(0, extraction.attributes);

@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  const state = { apps: [], dir: null, app: null, report: null, inventory: null, meta: null, files: null, results: {}, tab: 'overview', open: null };
+  const state = { apps: [], dir: null, app: null, report: null, inventory: null, files: null, results: {}, tab: 'overview', open: null };
 
   // ------------------------------------------------------------------ helpers
 
@@ -171,7 +171,7 @@
       const text = [a.appName, a.apkName, a.dir, a.status].join(' ').toLowerCase();
       if (filter && !text.includes(filter)) continue;
       shown++;
-      const status = a.harness && a.harness.status ? a.harness.status : a.status;
+      const status = a.status;
       const item = el('a', { class: 'list-group-item list-group-item-action app-item' + (a.dir === state.dir ? ' active' : ''), href: '#' + encodeURIComponent(a.dir),
         title: a.statusNote || '',
         onclick: ev => { ev.preventDefault(); state.open = null; selectApp(a.dir, 'overview'); } },
@@ -200,14 +200,12 @@
     $('#appHeader').innerHTML = '';
     $('#tabContent').innerHTML = '<p class="text-muted">Loading…</p>';
     try {
-      const [report, inventory, meta, files] = await Promise.all([
+      const [report, inventory, files] = await Promise.all([
         fetchJson(resultsUrl('report.json')),
         fetchJson(resultsUrl('strings_inventory.json'), true),
-        fetchJson(resultsUrl('meta.json'), true),
         fetchJson('/api/files/' + encodeURIComponent(dir), true)]);
       state.report = report;
       state.inventory = inventory;
-      state.meta = meta;
       state.files = files;
     } catch (e) {
       $('#tabContent').innerHTML = '';
@@ -239,7 +237,6 @@
     h.innerHTML = '';
     h.appendChild(el('h3', null, r.appName || state.dir));
     h.appendChild(badge(status, statusKind(status)));
-    if (state.meta && state.meta.status) h.appendChild(badge('harness: ' + state.meta.status, statusKind(state.meta.status)));
     h.appendChild(el('span', { class: 'text-muted small' }, (r.apkName || '') + (it.finishedAt ? ', finished ' + date(it.finishedAt) : '') + (isNum(it.durationSec) ? ', ' + sec(it.durationSec) : '')));
     if (r.error) {
       h.appendChild(el('div', { class: 'alert alert-danger w-100 mt-2 mb-0 py-2' }, el('strong', null, 'Run error: '), r.error));
@@ -362,10 +359,10 @@
     root.appendChild(row);
 
     const totals = el('div', { class: 'row' });
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('IPFs (all languages)', num(total), total > 0 ? 'text-danger' : 'text-success')));
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded strings', num(r.hardcoded), hardcodedBreakdown(inv))));
+    totals.appendChild(el('div', { class: 'col-md-auto' }, stat('IPFs (all languages)', num(total), total > 0 ? 'text-danger' : 'text-success')));
+    totals.appendChild(el('div', { class: 'col-md' }, stat('Hardcoded strings', num(r.hardcoded), hardcodedBreakdown(inv))));
     const explored = lr[dflt] ? lr[dflt].exploration : null;
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Screens explored (' + (dflt || 'source') + ')', num(lr[dflt] ? lr[dflt].amStates : null),
+    totals.appendChild(el('div', { class: 'col-md' }, stat('Screens explored (' + (dflt || 'source') + ')', num(lr[dflt] ? lr[dflt].amStates : null),
       lr[dflt] ? num(lr[dflt].amTrans) + ' transitions' + (explored ? ', ' + explorationEnd(explored) : '') : '')));
     root.appendChild(totals);
     if (explored && explored.stop === 'exhausted') {
@@ -386,14 +383,14 @@
       rows.push([el('span', null, badge(c, 'info'), l.lang || c), l.amStates, l.pairedStates, (l.missingDfltStates || 0) + (l.missingLangStates || 0),
         rep.actions != null ? rep.reproduced + '/' + rep.actions + ' (' + pct(rep.reproduced, rep.actions) + ')' : '–',
         isNum(l.amIPFs) ? l.amIPFs : (l.error ? '–' : 0)]
-        .concat(broken ? [s ? s.nodesChanged : '–', s ? s.nodesAffected : '–', s ? (s.componentsLost + s.componentsAdded) : '–',
+        .concat(broken ? [s && isNum(s.severe) ? s.severe : '–', s ? s.nodesChanged : '–', s ? s.nodesAffected : '–', s ? (s.componentsLost + s.componentsAdded) : '–',
           s && s.mirrorExpected ? (s.byType || {}).missingMirroring : '–'] : [],
           counted ? [sameTextCell(l.screenText)] : [], [outcome]));
     }
     const headers = ['Language', 'Screens', 'Paired', 'Unpaired', 'Replay', 'IPFs'].concat(
-      broken ? ['Moved or resized', 'Neighbour changed', 'Missing or extra', 'Not mirrored'] : [],
+      broken ? ['Severe', 'Moved or resized', 'Neighbour changed', 'Missing or extra', 'Not mirrored'] : [],
       counted ? ['Same text as source'] : [], ['Outcome']);
-    root.appendChild(card('Per language', table(headers, rows, broken ? [1, 2, 3, 5, 6, 7, 8, 9] : [1, 2, 3, 5])));
+    root.appendChild(card('Per language', table(headers, rows, broken ? [1, 2, 3, 5, 6, 7, 8, 9, 10] : [1, 2, 3, 5])));
     if (targets.some(c => lr[c].screenText && lr[c].screenText.sameAsSource)) {
       root.appendChild(el('div', { class: 'alert alert-warning py-2' }, SAME_TEXT_NOTE));
     }
@@ -482,7 +479,7 @@
   /** The kinds of change of the comparison (ipfs[].types), in the order they are shown, and what happened to the element itself (ipfs[].geometry). */
   const IPF_TYPES = { positionLost: 'position lost', positionAdded: 'position gained', alignmentLost: 'alignment lost', alignmentAdded: 'alignment gained',
     overlapAdded: 'overlap', overlapRemoved: 'overlap gone', missingMirroring: 'not mirrored', componentLost: 'missing element', componentAdded: 'extra element',
-    textOverGraphic: 'text over a graphic' };
+    textOverGraphic: 'text over a graphic', outOfFrame: 'out of the frame' };
   const IPF_TYPE_HELP = {
     positionLost: 'The element is no longer left of, right of, above, below or inside another one, as it was in the source.',
     positionAdded: 'The element is now left of, right of, above, below or inside another one, and it was not in the source.',
@@ -493,7 +490,11 @@
     missingMirroring: 'Right-to-left language: the element and a sibling next to it kept their sides instead of swapping them.',
     componentLost: 'The source screen has the element and the translated screen does not.',
     componentAdded: 'The translated screen has the element and the source screen does not.',
-    textOverGraphic: 'The text of the element is drawn over a graphic of the app that is not an element of its own (the arrow of a drop-down list, an icon, a border), which the source text did not touch. Every box is where it was, so only the pixels of the two screenshots show it.' };
+    textOverGraphic: 'The text of the element is drawn over a graphic of the app that is not an element of its own (the arrow of a drop-down list, an icon, a border), which the source text did not touch. Every box is where it was, so only the pixels of the two screenshots show it.',
+    outOfFrame: 'The element reaches past the left or right edge the screen had in the source, such as a menu that grew wider than its window.' };
+  /** Kinds of change that break the screen rather than rearrange it, outlined in yellow. */
+  const SEVERE_TYPES = ['textOverGraphic', 'overlapAdded', 'outOfFrame'];
+  const isSevere = ipf => ipf.severity ? ipf.severity === 'severe' : SEVERE_TYPES.some(t => hasType(ipf, t));
   const IPF_GEOMETRY = { same: 'it stayed in place', mirrored: 'it was mirrored', moved: 'it moved', resized: 'it changed size', 'moved+resized': 'it moved and changed size' };
 
   const hasType = (ipf, type) => Array.isArray(ipf.types) && ipf.types.includes(type);
@@ -515,6 +516,7 @@
       const head = el('div', { class: 'd-flex flex-wrap align-items-center' },
         el('strong', { class: 'mr-2' }, (l.lang || c) + ' (' + c + ')'),
         badge((isNum(l.amIPFs) ? l.amIPFs : 0) + ' IPFs', isNum(l.amIPFs) && l.amIPFs > 0 ? 'danger' : 'success'),
+        l.ipfSummary && l.ipfSummary.severe > 0 ? badge(l.ipfSummary.severe + ' severe', 'warning') : null,
         badge(num(l.amStates) + ' screens', 'secondary'),
         badge(num(l.pairedStates) + ' paired', 'secondary'),
         rep.actions != null ? badge('replay ' + rep.reproduced + '/' + rep.actions, rep.reproduced === rep.actions ? 'success' : 'warning') : null,
@@ -585,8 +587,9 @@
     const screen = (group, status, kind, note) => {
       const det = el('details', { class: 'mb-2' });
       const notMirrored = group.ipfs.filter(i => hasType(i, 'missingMirroring')).length;
+      const severe = group.ipfs.filter(isSevere).length;
       det.appendChild(el('summary', { class: 'state-toggle' }, el('strong', null, 'Screen ' + group.stateId), ', ',
-        kind ? badge(status, kind) : status + ' ', notMirrored ? badge(notMirrored + ' not mirrored', 'danger') : null));
+        kind ? badge(status, kind) : status + ' ', severe ? badge(severe + ' severe', 'warning') : null, notMirrored ? badge(notMirrored + ' not mirrored', 'danger') : null));
       const holder = el('div', { class: 'mt-2' }, el('p', { class: 'text-muted small' }, 'Loading screens…'));
       det.appendChild(holder);
       const load = () => { if (!det.dataset.loaded) { det.dataset.loaded = '1'; renderScreenPair(holder, lang, dflt, group, mirrorExpected, note); } };
@@ -655,6 +658,7 @@
     const share = n => isNum(s.nodesCompared) && s.nodesCompared > 0 ? ' (' + pct(n, s.nodesCompared) + ')' : '';
     box.appendChild(el('div', { class: 'row' },
       el('div', { class: 'col-6 col-md' }, stat('Elements compared', num(s.nodesCompared), '')),
+      isNum(s.severe) ? el('div', { class: 'col-6 col-md' }, stat('Severe', num(s.severe), s.severe > 0 ? 'text-warning' : '')) : null,
       el('div', { class: 'col-6 col-md' }, stat('Moved or resized', num(s.nodesChanged), 'the element itself' + share(s.nodesChanged))),
       el('div', { class: 'col-6 col-md' }, stat('Neighbour changed', num(s.nodesAffected), 'the element stayed as it was' + share(s.nodesAffected))),
       el('div', { class: 'col-6 col-md' }, stat('Missing', num(s.componentsLost), 'only in the source screen')),
@@ -667,8 +671,8 @@
       button.classList.add('active');
       onType(type);
     };
-    const add = (label, type, count, danger) => {
-      const b = el('button', { class: 'btn btn-sm mr-1 mb-1 ' + (danger ? 'btn-outline-danger' : 'btn-outline-secondary'), type: 'button', title: type ? IPF_TYPE_HELP[type] : 'Every finding' },
+    const add = (label, type, count, tone) => {
+      const b = el('button', { class: 'btn btn-sm mr-1 mb-1 btn-outline-' + (tone || 'secondary'), type: 'button', title: type ? IPF_TYPE_HELP[type] : 'Every finding' },
         label + ' ', el('span', { class: 'badge badge-light' }, String(count)));
       b.addEventListener('click', () => press(b, type));
       all.push(b);
@@ -677,17 +681,19 @@
     };
     add('all', null, isNum(l.amIPFs) ? l.amIPFs : 0).classList.add('active');
     for (const type of Object.keys(IPF_TYPES)) {
-      if (by[type] > 0) add(IPF_TYPES[type], type, by[type], type === 'missingMirroring' || type === 'textOverGraphic');
+      if (by[type] > 0) add(IPF_TYPES[type], type, by[type], SEVERE_TYPES.includes(type) ? 'warning' : type === 'missingMirroring' ? 'danger' : null);
     }
     box.appendChild(buttons);
     box.appendChild(el('p', { class: 'small text-muted mb-1' }, 'A finding can carry several kinds of change, so the kinds add up to more than the findings.'));
     if (s.mirrorExpected) {
       const checked = s.siblingPairsChecked, failed = s.siblingPairsNotMirrored;
-      box.appendChild(el('div', { class: 'alert ' + (failed > 0 ? 'alert-warning' : 'alert-success') + ' py-2 mb-0 small' },
+      const none = isNum(checked) && checked === 0;
+      box.appendChild(el('div', { class: 'alert ' + (failed > 0 ? 'alert-warning' : none ? 'alert-info' : 'alert-success') + ' py-2 mb-0 small' },
         el('strong', null, 'Right-to-left language: '),
-        'the layout is expected to be mirrored. Of ' + num(checked) + ' pairs of sibling elements placed side by side in the source, '
-        + (failed > 0 ? num(failed) + ' (' + pct(failed, checked) + ') kept their sides.' : 'all swapped sides.')
-        + (isNum(checked) && checked === 0 ? ' No screen had two siblings side by side to check.' : '')));
+        'the layout is expected to be mirrored. '
+        + (none ? 'No screen had two sibling elements side by side to check.'
+          : 'Of ' + num(checked) + ' pairs of sibling elements placed side by side in the source, '
+            + (failed > 0 ? num(failed) + ' (' + pct(failed, checked) + ') kept their sides.' : 'all swapped sides.'))));
     }
     return box;
   }
@@ -821,7 +827,7 @@
    * elements the other screen does not have; graphics: boxes (x1, y1, x2, y2) of graphics of the app
    * that a translated text is drawn over.
    */
-  function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes, graphics) {
+  function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes, graphics, severeIndexes) {
     if (!st) return el('div', { class: 'shot' }, el('div', { class: 'shot-caption' }, caption + ': screen not captured'));
     const wrap = el('div', { class: 'shot' });
     // The boxes are placed as shares of the screen, over the image alone: the caption is outside.
@@ -851,6 +857,7 @@
       if (n && n.bounds) box(w => mirroredBounds(n.bounds, w), 'mirror', 'Estimated position of #' + i + ' ' + nodeLabel(n) + ' in a mirrored screen');
     }
     for (const i of ipfIndexes) draw(i, 'ipf');
+    for (const i of (severeIndexes || [])) draw(i, 'severe');
     for (const i of (onlyIndexes || [])) draw(i, 'only');
     for (const g of (graphics || [])) box(() => g, 'graphic', 'A graphic of the app the translated text is drawn over');
     const [w, h] = st.screen || [1080, 2400];
@@ -872,7 +879,7 @@
 
   /**
    * The visual difference between two screenshots, drawn on a canvas: the source screen faded to
-   * grey, and in magenta every pixel that is not the same in the translated one. For a language
+   * grey, and in teal every pixel that is not the same in the translated one. For a language
    * written in the other direction the translated screenshot is flipped first, so a layout that
    * mirrored well lines up with the source and what stands out is what did not.
    */
@@ -910,7 +917,7 @@
           const d = Math.max(Math.abs(source[i] - translated[i]), Math.abs(source[i + 1] - translated[i + 1]), Math.abs(source[i + 2] - translated[i + 2]));
           if (d > DIFF_THRESHOLD) {
             different++;
-            out.data[i] = 214; out.data[i + 1] = 36; out.data[i + 2] = 159;
+            out.data[i] = 23; out.data[i + 1] = 162; out.data[i + 2] = 184;
           } else {
             const grey = 0.3 * source[i] + 0.59 * source[i + 1] + 0.11 * source[i + 2];
             out.data[i] = out.data[i + 1] = out.data[i + 2] = 255 - (255 - grey) * 0.35;
@@ -954,8 +961,11 @@
     const tgtPos = i => i.langNodeID != null ? Number(i.langNodeID) : Number(i.nodeID);
     const tgtRelPos = r => r.langRelNode != null ? Number(r.langRelNode) : Number(r.relNode);
     const isLost = i => i.kind === 'componentLost', isAdded = i => i.kind === 'componentAdded';
-    const srcIpf = group.ipfs.filter(i => !isLost(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
-    const tgtIpf = group.ipfs.filter(i => !isAdded(i)).map(tgtPos).filter(n => n >= 0);
+    // severe findings in yellow, the others in red
+    const srcIpf = group.ipfs.filter(i => !isLost(i) && !isSevere(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
+    const tgtIpf = group.ipfs.filter(i => !isAdded(i) && !isSevere(i)).map(tgtPos).filter(n => n >= 0);
+    const srcSevere = group.ipfs.filter(i => !isLost(i) && isSevere(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
+    const tgtSevere = group.ipfs.filter(i => !isAdded(i) && isSevere(i)).map(tgtPos).filter(n => n >= 0);
     // what only one of the two screens has: outlined in that screen, in its own colour
     const srcOnly = group.ipfs.filter(isLost).map(i => Number(i.nodeID)).filter(n => n >= 0);
     const tgtOnly = group.ipfs.filter(isAdded).map(tgtPos).filter(n => n >= 0);
@@ -963,13 +973,13 @@
     const graphics = [].concat(...group.ipfs.map(i => Array.isArray(i.graphics) ? i.graphics : []));
     const srcRel = [], tgtRel = [];
     for (const i of group.ipfs) for (const r of (i.relations || [])) {
-      if (!srcIpf.includes(Number(r.relNode))) srcRel.push(Number(r.relNode));
-      if (!tgtIpf.includes(tgtRelPos(r))) tgtRel.push(tgtRelPos(r));
+      if (!srcIpf.includes(Number(r.relNode)) && !srcSevere.includes(Number(r.relNode))) srcRel.push(Number(r.relNode));
+      if (!tgtIpf.includes(tgtRelPos(r)) && !tgtSevere.includes(tgtRelPos(r))) tgtRel.push(tgtRelPos(r));
     }
     const notMirrored = mirrorExpected ? group.ipfs.filter(i => hasType(i, 'missingMirroring')).map(tgtPos).filter(n => n >= 0) : [];
     const shots = el('div', { class: 'shot-pair mb-2' },
-      shotView(srcState, 'Source (' + dflt + ')', srcIpf, srcRel, null, srcOnly),
-      shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel, null, tgtOnly, graphics));
+      shotView(srcState, 'Source (' + dflt + ')', srcIpf, srcRel, null, srcOnly, null, srcSevere),
+      shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel, null, tgtOnly, graphics, tgtSevere));
     // rtl.repair: the same screen in the build with the layouts repaired, with what still did not mirror
     const repair = languages().lr[lang] ? languages().lr[lang].rtlRepair : null;
     if (repair && repair.resultsFolder) {
@@ -987,8 +997,10 @@
     const hasOnly = srcOnly.length + tgtOnly.length > 0;
     const hasGraphics = graphics.length > 0;
     holder.appendChild(el('p', { class: 'text-muted small mb-1' },
-      group.ipfs.length ? el('span', { class: 'legend ipf' }) : null,
-      group.ipfs.length ? 'the elements with a finding, each outlined where it is in that screen. ' : null,
+      srcSevere.length + tgtSevere.length ? el('span', { class: 'legend severe' }) : null,
+      srcSevere.length + tgtSevere.length ? 'a severe finding, which breaks the screen: text over a graphic, an element that steps on another one, or one that reaches past the sides of the screen. ' : null,
+      srcIpf.length + tgtIpf.length ? el('span', { class: 'legend ipf' }) : null,
+      srcIpf.length + tgtIpf.length ? 'a finding that rearranges the screen without breaking it: an element moved, grew, or gained a line. Each element is outlined where it is in that screen. ' : null,
       srcRel.length + tgtRel.length ? el('span', { class: 'legend rel' }) : null,
       srcRel.length + tgtRel.length ? 'the elements they relate to. ' : null,
       hasOnly ? el('span', { class: 'legend only' }) : null,
@@ -1020,6 +1032,7 @@
           if (r.missing) parts.push('not mirrored, expected ' + list(r.missing));
           return el('div', null, el('span', { class: 'text-muted' }, '→ #' + r.relNode + ' '), el('span', { class: 'node-text', title: nodeLabel(other) }, nodeLabel(other)), ': ' + parts.join('; '));
         }));
+        if (hasType(i, 'outOfFrame')) what.appendChild(el('div', null, 'It reaches past the left or right edge the screen had in the source, as a menu wider than its window does.'));
       }
       const kinds = el('div', null,
         hasType(i, 'missingMirroring') ? badge('Missing mirroring', 'danger') : null,
@@ -1258,10 +1271,26 @@
 
   // ------------------------------------------------------------------ performance
 
+  // The phases in the order ITDroid runs them, each target language with its steps together
+  function runOrder(names, sourceLang) {
+    const FIRST = ['preflight', 'decode', 'inventory'], LAST = ['build:all', 'close'];
+    const STEPS = ['translate', 'build', 'rtlBuild', 'replay', 'compare', 'rtlReplay'];
+    const key = n => {
+      if (FIRST.includes(n)) return [0, '', FIRST.indexOf(n)];
+      if (LAST.includes(n)) return [3, '', LAST.indexOf(n)];
+      const step = n.split(':')[0], lang = n.split(':')[1] || '';
+      if (step === 'explore' || (step === 'build' && lang === sourceLang)) return [1, '', step === 'build' ? 0 : 1];
+      return STEPS.includes(step) ? [2, lang, STEPS.indexOf(step)] : [4, n, 0];
+    };
+    return names.slice().sort((a, b) => {
+      const x = key(a), y = key(b);
+      return x[0] - y[0] || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0) || x[2] - y[2];
+    });
+  }
+
   function renderPerformance(root) {
     const p = state.report.performance;
-    const meta = state.meta;
-    if (!p && !meta) {
+    if (!p) {
       root.appendChild(el('p', { class: 'text-muted' }, runStatus().status === 'interrupted'
         ? 'The run was interrupted before it wrote how long each phase took.'
         : 'This report has no performance section (it was produced by an older ITDroid, or the run has not finished).'));
@@ -1271,7 +1300,7 @@
       'What it cost ITDroid to evaluate this app: how long each phase of the run took and what it used of the machine. Nothing here measures how the app itself performs.'));
     if (p) {
       const phases = p.phases || {};
-      const names = Object.keys(phases);
+      const names = runOrder(Object.keys(phases), state.report.dfltLang);
       const max = Math.max(1, ...names.map(n => phases[n]));
       const rows = names.map(n => [n, el('div', { class: 'phase-bar', style: 'width:' + Math.max(1, 100 * phases[n] / max) + '%' }), sec(phases[n]), pct(phases[n], p.totalSec)]);
       const ph = table(['Phase', '', 'Time', 'Share'], rows, [2, 3]);
@@ -1294,24 +1323,12 @@
       col.appendChild(card('Machine', kvTable([
         ['ITDroid process CPU time', sec(jvm.cpuSeconds)],
         ['ITDroid peak heap', mb(jvm.peakHeapMB)],
-        ['Host CPU load (mean / peak)', isNum(host.cpuLoadMeanPct) ? host.cpuLoadMeanPct + '% / ' + host.cpuLoadPeakPct + '%' : '–'],
-        ['Host memory in use (mean / peak)', mb(host.memoryUsedMeanMB) + ' / ' + mb(host.memoryUsedPeakMB)],
+        ['Host CPU load (peak / mean)', isNum(host.cpuLoadPeakPct) ? host.cpuLoadPeakPct + '% / ' + host.cpuLoadMeanPct + '%' : '–'],
+        ['Host memory in use (peak / mean)', mb(host.memoryUsedPeakMB) + ' / ' + mb(host.memoryUsedMeanMB)],
         ['Samples', isNum(jvm.samples) ? jvm.samples + ' every ' + jvm.sampleIntervalSec + ' s' : '–']])));
       col.appendChild(el('p', { class: 'text-muted small' }, p.note || ''));
       row.appendChild(col);
       root.appendChild(row);
-    }
-    if (meta) {
-      const res = meta.resources || {};
-      const tm = meta.timing || {};
-      root.appendChild(card('Evaluation harness telemetry (meta.json)', kvTable([
-        ['Status', meta.status + (meta.note ? ', ' + meta.note : '')],
-        ['Wall time', sec(meta.wallSec)],
-        ['Process tree RAM (peak / mean)', mb(res.ramPeakMB) + ' / ' + mb(res.ramMeanMB)],
-        ['Process tree CPU (mean cores / peak cores)', isNum(res.cpuCoresMean) ? res.cpuCoresMean + ' / ' + res.cpuCoresPeak : '–'],
-        ['LLM server RAM peak', mb(res.llmRamPeakMB)],
-        ['LLM requests / seconds', isNum(tm.llmRequests) ? tm.llmRequests + ' / ' + sec(tm.llmSecApprox) : '–'],
-        ['Exploration share of the run', isNum(tm.explorationShare) ? Math.round(100 * tm.explorationShare) + '%' : '–']])));
     }
   }
 
@@ -1341,8 +1358,7 @@
     [/^strings_inventory\.json$/, 'every string with its origin and its translations'],
     [/^ipfs\.csv$/, 'one row per IPF'],
     [/^hcs\.txt$/, 'hardcoded strings by class and method'],
-    [/^hardcoded_(.+)\.csv$/, 'what was done with each hardcoded string in $1, place by place'],
-    [/^meta\.json$/, 'telemetry of the evaluation harness']];
+    [/^hardcoded_(.+)\.csv$/, 'what was done with each hardcoded string in $1, place by place']];
 
   function renderArtifacts(root) {
     const r = state.report;

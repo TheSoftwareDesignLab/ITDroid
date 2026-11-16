@@ -15,18 +15,9 @@ import java.util.regex.Pattern;
 import uniandes.tsdl.itdroid.translator.LLMTranslator;
 
 /**
- * Starts (when needed) and stops the local LLM server so a run never fails just because the model
- * server was not up. The optional 8th CLI argument can be:
- * <ul>
- *   <li><b>an Ollama model name</b> (e.g. {@code qwen2.5:3b}) — ITDroid points the translator at
- *       Ollama, starts {@code ollama serve} if needed, and {@code ollama pull}s the model (so it is
- *       downloaded on first use);</li>
- *   <li><b>a launch command</b> (e.g. {@code "ollama serve"} or
- *       {@code "llama-server -m model.gguf --port 8080"}) — ITDroid runs it and waits until the
- *       endpoint from {@code .env} answers;</li>
- *   <li><b>empty</b> — the server must already be running (a pre-flight check fails fast otherwise).</li>
- * </ul>
- * A server ITDroid started is stopped at the end; a server the user already had running is left alone.
+ * Starts the local LLM server when needed and stops it at the end. The optional 8th CLI argument is
+ * an Ollama model name (served and pulled), a launch command (run until the endpoint answers), or
+ * empty (the server must already run). A server the user started is never stopped.
  */
 public class LLMServerManager {
 
@@ -35,16 +26,15 @@ public class LLMServerManager {
 
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final String settingsDir;
-    private String endpoint;         // e.g. http://localhost:8080/v1/chat/completions
-    private String origin;           // e.g. http://localhost:8080
-    private Process serverProcess;   // non-null ONLY if we started it (so stop() never kills a user-run server)
+    private String endpoint;
+    private String origin;
+    private Process serverProcess;   // set only when ITDroid started it, so stop() never kills a user server
     private boolean shutdownHookRegistered;
 
     public LLMServerManager(String settingsDir) {
         this.settingsDir = settingsDir;
     }
 
-    /** Registers the stop() shutdown hook exactly once, even if a start path is reached more than once. */
     private void registerShutdownHook() {
         if (!shutdownHookRegistered) {
             Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
@@ -52,14 +42,11 @@ public class LLMServerManager {
         }
     }
 
-    /**
-     * Guarantees the LLM is reachable before any translation runs, interpreting the optional spec
-     * (the 8th CLI argument) as an Ollama model name, a launch command, or nothing.
-     */
+    /** Makes sure the LLM is reachable before any translation, reading spec as a model, a command or nothing. */
     public void ensureRunning(String spec, String logDir) throws Exception {
         String s = spec == null ? "" : spec.trim();
 
-        // A bare token like "qwen2.5:3b" / "mistral:7b" is treated as an Ollama model (not a command).
+        // a single bare token is an Ollama model name, not a command
         boolean looksLikeModel = !s.isEmpty()
                 && !s.contains(" ") && !s.contains("\t")
                 && !s.contains("/") && !s.contains("\\")
@@ -70,13 +57,10 @@ public class LLMServerManager {
             return;
         }
 
-        // Command mode (or no command): the endpoint comes from .env / system properties.
         this.endpoint = LLMTranslator.resolveEndpoint(settingsDir);
         this.origin = origin(endpoint);
 
-        // If the autostart command pins a port (e.g. "llama-server --port 8080") that differs from the
-        // resolved endpoint's port (which defaults to :11434), probe THAT port. Otherwise the readiness
-        // check hits the wrong port, hangs for the whole startup timeout, and then falsely reports failure.
+        // a --port in the command wins, or the probe would wait the whole timeout on the wrong port
         Integer launchPort = parsePort(s);
         if (launchPort != null) {
             try {
@@ -95,10 +79,8 @@ public class LLMServerManager {
             return;
         }
         if (s.isEmpty()) {
-            // Remote OpenAI-compatible endpoint with an API token (translation.engine=api): a third-party
-            // provider cannot be reliably health-checked (its /v1/models or /health may need auth or not
-            // exist), so trust the configuration. A wrong endpoint/token surfaces as a clear HTTP error on
-            // the first translation request instead of failing the readiness probe here.
+            // a remote API with a token cannot be health-checked reliably, so a wrong one shows up as an
+            // HTTP error on the first translation instead
             String apiKey = LLMTranslator.resolveApiKey(settingsDir);
             if (apiKey != null && !apiKey.isEmpty()) {
                 System.out.println("Using remote translation endpoint " + endpoint + " with an API token.");
@@ -116,11 +98,11 @@ public class LLMServerManager {
         System.out.println("LLM server is ready at " + endpoint);
     }
 
-    /** Ollama path: point the translator at Ollama, ensure the daemon is up, and pull the model if missing. */
+    /** Points the translator at Ollama, starts the daemon if needed and pulls the model. */
     private void ensureOllamaModel(String model, String logDir) throws Exception {
         this.endpoint = OLLAMA_ENDPOINT;
         this.origin = origin(endpoint);
-        // System properties have top precedence in LLMTranslator.resolve(), so this overrides .env.
+        // system properties override .env in LLMTranslator
         System.setProperty("ITDROID_LLM_ENDPOINT", endpoint);
         System.setProperty("ITDROID_LLM_MODEL", model);
         System.out.println("Using Ollama model '" + model + "' at " + endpoint);
@@ -130,7 +112,6 @@ public class LLMServerManager {
                     + "'ollama' is not on PATH. Install Ollama (https://ollama.com) or pass a full launch command "
                     + "instead (e.g. \"llama-server -m model.gguf --port 8080\").");
         }
-        // Start the Ollama daemon only if nothing is serving yet (otherwise reuse it, and don't kill it).
         if (ready()) {
             System.out.println("Ollama already running at " + endpoint);
         } else {
@@ -139,7 +120,7 @@ public class LLMServerManager {
             registerShutdownHook();
             waitUntilReady();
         }
-        // Download the model if it isn't local yet ("up to date" / quick no-op when it already is).
+        // quick no-op when the model is already local
         System.out.println("Ensuring the model is downloaded: ollama pull " + model);
         int code = runToCompletion("ollama", "pull", model);
         if (code != 0) {
@@ -148,7 +129,7 @@ public class LLMServerManager {
         }
     }
 
-    /** Stops the server we started (and its children). No-op when the server was started by the user. */
+    /** Stops the server ITDroid started and its children, never one the user started. */
     public void stop() {
         if (serverProcess == null) {
             return;
@@ -168,7 +149,7 @@ public class LLMServerManager {
         }
     }
 
-    /** True once the server answers 200 on an OpenAI-compatible (or llama.cpp) readiness URL. */
+    /** True once the server answers 200 on an OpenAI-compatible or llama.cpp readiness URL. */
     private boolean ready() {
         for (String url : new String[] { origin + "/v1/models", origin + "/health" }) {
             try {
@@ -202,7 +183,7 @@ public class LLMServerManager {
                 + "s (probing " + origin + ", resolved endpoint " + endpoint + "). Check llm-server.log.");
     }
 
-    /** Runs the command through the OS shell so quoted paths and arguments are parsed as the user typed them. */
+    /** Runs the command through the OS shell so quoted arguments parse as the user typed them. */
     private Process spawn(String command, String logDir) throws IOException {
         boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
         ProcessBuilder pb = windows
@@ -217,13 +198,11 @@ public class LLMServerManager {
         return pb.start();
     }
 
-    /** True if the {@code ollama} CLI is on PATH. */
     private boolean ollamaAvailable() {
         Process p = null;
         try {
             p = new ProcessBuilder("ollama", "--version").redirectErrorStream(true).start();
-            // Bounded wait so a hung 'ollama' cannot block the whole run; drain+close the stream so the
-            // child is not left blocked on a full pipe buffer and the handle is released.
+            // bounded wait so a hung ollama cannot block the run, and the drain frees the pipe
             boolean finished = p.waitFor(30, TimeUnit.SECONDS);
             try (InputStream in = p.getInputStream()) {
                 in.readAllBytes();
@@ -243,11 +222,10 @@ public class LLMServerManager {
         }
     }
 
-    /** Runs a command inheriting console IO (so e.g. download progress is visible) and returns its exit code. */
+    /** Runs a command on the console, so download progress shows, and returns its exit code. */
     private int runToCompletion(String... command) throws Exception {
         Process p = new ProcessBuilder(command).inheritIO().start();
-        // Bounded wait so a stalled child (e.g. a hung 'ollama pull') cannot block forever. Generous,
-        // because a first-time model download can legitimately take several minutes.
+        // generous, since a first model download can take several minutes
         if (!p.waitFor(3600, TimeUnit.SECONDS)) {
             p.destroyForcibly();
             throw new IllegalStateException("Command timed out after 3600s: " + String.join(" ", command));
@@ -255,7 +233,7 @@ public class LLMServerManager {
         return p.exitValue();
     }
 
-    /** Extracts the port from a launch command's {@code --port} flag (e.g. "llama-server --port 8080"), or null. */
+    /** The port of the --port flag of a launch command, or null. */
     private static Integer parsePort(String command) {
         if (command == null || command.isEmpty()) {
             return null;
@@ -265,13 +243,12 @@ public class LLMServerManager {
             try {
                 return Integer.parseInt(m.group(1));
             } catch (NumberFormatException ignored) {
-                // fall through
             }
         }
         return null;
     }
 
-    /** scheme://host[:port] of a URL, used to build readiness probes. */
+    /** The scheme, host and port of a URL, the base of the readiness probes. */
     private static String origin(String url) {
         try {
             URI u = URI.create(url);

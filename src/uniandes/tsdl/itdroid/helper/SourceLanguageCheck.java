@@ -15,22 +15,13 @@ import org.jdom2.input.SAXBuilder;
 import org.json.simple.JSONObject;
 
 /**
- * Do the default strings of the app look like they are written in the source language of the run?
- *
- * <p>The source language is the same for every app ({@code defaultLng} of settings.properties). An
- * app whose default strings are in another language (a dictionary of Esperanto, an app made for one
- * country) is then translated from the wrong language: the model is told the text is English and
- * what comes back is a transliteration. This check does not use the model, which may be one that
- * only translates: it counts, among the sentences of the app, how many have one of the commonest
- * little words of the language (the, and, of, to...). Sentences of that language nearly always do.
- *
- * <p>It warns; it does not change the source language, and it does not say which language the strings
- * are in: related languages share their little words (Esperanto has the "la", "de" and "por" of
- * Spanish), so a guess would be wrong as often as right. It only knows the languages listed here.
+ * Warns when the default strings of the app do not look like the configured source language.
+ * It counts the sentences that hold a common little word of that language, without the model, and
+ * does not guess the real language.
  */
 public final class SourceLanguageCheck {
 
-    /** A sentence, for this check: a text of at least this many words. */
+    /** Fewest words a text needs to count as a sentence. */
     static final int MIN_WORDS = 3;
     /** With fewer sentences than this the share says nothing. */
     static final int MIN_SENTENCES = 8;
@@ -79,7 +70,7 @@ public final class SourceLanguageCheck {
             return o;
         }
 
-        /** One sentence for the console and the report; empty when there is nothing to say. */
+        /** One sentence for the console and the report, empty when there is nothing to say. */
         public String message() {
             if (!mismatch) {
                 return "";
@@ -106,7 +97,7 @@ public final class SourceLanguageCheck {
                 texts.add(e.getValue());
             }
         } catch (Exception e) {
-            // no readable strings.xml: nothing to check
+            // no readable strings.xml, nothing to check
         }
         return of(texts, configured);
     }
