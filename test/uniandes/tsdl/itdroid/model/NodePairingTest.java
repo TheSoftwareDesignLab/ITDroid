@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 class NodePairingTest {
 
     private static NodePairing pair(String source, String translated) throws Exception {
-        return NodePairing.of(state(source), state(translated));
+        return NodePairing.of(state(source), state(translated), false, 0);
     }
 
     @Test
@@ -131,7 +131,7 @@ class NodePairingTest {
         String source = screen(button(0, 50, 100, 450, 200), button(1, 500, 100, 900, 200));
         String translated = screen(button(0, 550, 100, 950, 200), button(1, 100, 100, 500, 200));
 
-        assertArrayEquals(new int[] {0, 1, 2}, NodePairing.of(state(source), state(translated), true).targetOfSource);
+        assertArrayEquals(new int[] {0, 1, 2}, NodePairing.of(state(source), state(translated), true, 0).targetOfSource);
     }
 
     @Test
@@ -141,8 +141,8 @@ class NodePairingTest {
         String source = screen(button(0, 50, 100, 450, 200), button(1, 550, 100, 950, 200));
         String translated = screen(button(0, 550, 100, 950, 200));
 
-        assertArrayEquals(new int[] {0, -1, 1}, NodePairing.of(state(source), state(translated), false).targetOfSource);
-        assertArrayEquals(new int[] {0, 1, -1}, NodePairing.of(state(source), state(translated), true).targetOfSource);
+        assertArrayEquals(new int[] {0, -1, 1}, NodePairing.of(state(source), state(translated), false, 0).targetOfSource);
+        assertArrayEquals(new int[] {0, 1, -1}, NodePairing.of(state(source), state(translated), true, 0).targetOfSource);
     }
 
     @Test

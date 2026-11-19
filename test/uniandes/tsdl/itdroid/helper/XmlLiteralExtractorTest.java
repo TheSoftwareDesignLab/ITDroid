@@ -83,8 +83,9 @@ class XmlLiteralExtractorTest {
         XmlLiterals.Extraction extraction = XmlLiterals.extract(app.toString(), literals, Set.of("Shop"));
 
         StringInventory inventory = StringInventory.collect(app.toString(), "com.example.shop.free",
-                new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
-                HardcodedStringFinder.hits(SmaliScan.scan(app.toString(), "com.example.shop.free")), literals, HardcodedPolicy.UI, extraction);
+                new NotTranslatableStringsDictionary(List.of()),
+                HardcodedStringFinder.hits(Fixtures.scan(app.toString(), "com.example.shop.free")), literals, HardcodedPolicy.UI,
+                extraction, null);
 
         StringInventory.Entry coupon = inventory.entries().stream()
                 .filter(e -> e.kind.equals(StringInventory.KIND_HARDCODED_XML) && e.text.equals("Coupon code")).findFirst().get();
@@ -99,7 +100,7 @@ class XmlLiteralExtractorTest {
         assertEquals(Set.of("itdroid_hc_1", "itdroid_hc_2", "itdroid_hc_3"), inventory.extractedResources());
         assertEquals(3L, inventory.summary().get("hardcodedXmlExtracted"));
         assertEquals(11L, inventory.summary().get("hardcodedTranslatable"), "8 of the code and the 3 of the XML");
-        assertFalse(inventory.hardcodedTexts().contains("Coupon code"), "it is not patched into the smali: it travels as a resource");
+        assertFalse(inventory.notMovedCodeLiterals().containsKey("Coupon code"), "it travels as a resource");
 
         inventory.putTranslation("es", "Coupon code", "C\u00f3digo de cup\u00f3n");
         Path json = tmp.resolve("inventory.json");
@@ -166,7 +167,7 @@ class XmlLiteralExtractorTest {
                 + "    <activity android:name=\"com.acme.Settings\" android:label=\"Settings\" />\n  </application>\n</manifest>\n");
         write("res/layout/a.xml", "<LinearLayout " + ANDROID + ">\n  <TextView android:text=\"com.acme.Notes\" />\n</LinearLayout>\n");
 
-        StringInventory.AppName name = StringInventory.appName(tmp.toString());
+        Translatability.AppName name = Translatability.appName(tmp.toString());
         XmlLiterals.Extraction extraction = extract(name.texts);
 
         assertEquals(Set.of("Acme Notes"), name.texts, "a literal label of the application is the app's name");

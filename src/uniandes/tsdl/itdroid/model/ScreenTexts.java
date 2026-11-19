@@ -86,6 +86,15 @@ public final class ScreenTexts {
 		}
 	}
 
+	/**
+	 * True when the text is one of the app's strings, whole or a format of it, or when they are not
+	 * known. A text of the network or the app's data may change between two captures, so it says
+	 * nothing of a translation, and a short name can be found by chance inside the files of the APK.
+	 */
+	public static boolean isAppString(String text) {
+		return apkTexts == null || apkTexts.isString(text);
+	}
+
 	/** The unchanged texts the APK does not have, empty when its texts are not known. */
 	public Set<String> notInApk() {
 		return notInApk;
@@ -207,6 +216,23 @@ public final class ScreenTexts {
 				}
 			}
 			return true;
+		}
+
+		/** True when the text is one of the strings, or a format of one, not only a part of a longer one. */
+		boolean isString(String shown) {
+			String text = normalize(shown);
+			if (text.isEmpty()) {
+				return false;
+			}
+			if (exact.contains(text)) {
+				return true;
+			}
+			for (Pattern p : formats) {
+				if (p.matcher(text).matches()) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private boolean hasOne(String shown) {

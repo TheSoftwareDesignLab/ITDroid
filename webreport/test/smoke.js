@@ -18,7 +18,8 @@
  * screens explored in English and five languages that between them show every case of the report
  * (see the expectations at the end of this file), plus a run that was killed. Its screens were
  * written by hand; its findings were computed by ITDroid from those screens (--reanalyze) and
- * copied into report.json. If the comparison changes, compute them again the same way.
+ * copied into report.json, except one textCut finding written by hand, since the sample screenshots
+ * are too small to measure a text. If the comparison changes, compute them again the same way.
  */
 'use strict';
 const fs = require('fs');
@@ -321,6 +322,10 @@ async function checkSample(base) {
   check('sample es: the element only the source screen has is outlined there and not in the translated one',
     shots[0].querySelectorAll('div.box.only').length === 1 && shots[1].querySelectorAll('div.box.only').length === 0);
   check('sample es: the pair of screenshots is followed by their visual difference', shots.length === 3 && /Visual difference/.test(text(shots[2])), shots.map(s => short(text(s), 40)).join(' | '));
+  check('sample es: a text that wraps into more lines is a kind of change of its own', !!buttonOf(cards.es, 'more lines'), text(cards.es.querySelector('div.ipf-summary')));
+  const esCart = screensOf(cards.es).find(d => /^Screen 3/.test(text(d.querySelector('summary'))));
+  if (esCart) await openScreen(page, esCart);
+  check('sample es: and its row says how much more height the text takes', !!esCart && /40 px more height than in the source/.test(text(esCart)), esCart ? short(text(esCart), 300) : 'no screen 3');
   buttonOf(cards.es, 'every screen').click();
   await page.settle();
   const esAll = screensOf(cards.es).map(d => text(d.querySelector('summary')));
@@ -345,6 +350,29 @@ async function checkSample(base) {
   check('sample ar: and the findings as the app is and after the repair', repairRows.some(r => /^Findings20$/.test(r)) && repairRows.some(r => /kept their sides1 of 100 of 10$/.test(r)),
     repairRows.join(' | '));
   check('sample es: a language that is not right-to-left has no repair', !cards.es.querySelector('div.rtl-repair'));
+
+  // es: what ITDroid did with the texts of the language beyond translating them whole
+  const block = cards.es.querySelector('div.translation-block');
+  check('sample es: the translation block counts what was left in the source language, translated in pieces and shipped untranslated',
+    !!block && /2 texts left in the source language in Spanish/.test(text(block)) && /1 text translated piece by piece/.test(text(block)) && /1 string the app ships for this language in the source language/.test(text(block)),
+    block ? short(text(block), 300) : 'no block');
+  const texts = block ? block.querySelector('details') : null;
+  if (texts) await openScreen(page, texts);
+  const textRows = texts ? texts.querySelectorAll('tbody tr').map(text) : [];
+  check('sample es: and lists each text with what ITDroid did and why', textRows.length === 4 && textRows.some(r => /Shop.*left in the source language.*the name of the app.*app_name/.test(r))
+    && textRows.some(r => /translated piece by piece.*Compra ahora/.test(r)) && textRows.some(r => /Cart.*shipped untranslated by the app.*Carrito.*title_cart/.test(r)), textRows.join(' | '));
+  check('sample fr: a report without it shows no translation block', !cards.fr.querySelector('div.translation-block'));
+
+  // ru: a title that leaves the bar holding it, and a total cut in its box, both severe
+  check('sample ru: the new kinds of change have their buttons, in the colour of the severe ones',
+    !!buttonOf(cards.ru, 'out of its container') && !!buttonOf(cards.ru, 'text cut') && buttonOf(cards.ru, 'text cut').classList.contains('btn-outline-warning'),
+    text(cards.ru.querySelector('div.ipf-summary')));
+  check('sample ru: two of its findings are severe', /2 severe/.test(text(cards.ru.querySelector('div.card-header'))), text(cards.ru.querySelector('div.card-header')));
+  const ruMain = screensOf(cards.ru)[0];
+  await openScreen(page, ruMain);
+  check('sample ru: the cut text says what it needs and what it gets', /needs about 620 px and is drawn in 556 px/.test(text(ruMain)), short(text(ruMain), 400));
+  check('sample ru: the title says it is drawn past the element that holds it', /passes the side of this element that holds it/.test(text(ruMain)), short(text(ruMain), 400));
+  check('sample ru: both outlined as severe', ruMain.querySelectorAll('div.shot')[1].querySelectorAll('div.box.severe').length === 2);
 
   // ru: an error dialog where the second screen should be, and the third one never reached
   buttonOf(cards.ru, 'every screen').click();
@@ -375,6 +403,11 @@ async function checkSample(base) {
   const perLanguage = overview.$$('#tabContent div.card').find(c => /Per language/.test(text(c.querySelector('div.card-header'))));
   const frRow = perLanguage ? perLanguage.querySelectorAll('tbody tr').map(text).find(r => /French/.test(r)) : '';
   check('sample: the table per language has the texts that stayed the same', !!perLanguage && /Same text as source/.test(text(perLanguage)) && /15\/15/.test(frRow || ''), frRow);
+  const esCells = perLanguage ? (perLanguage.querySelectorAll('tbody tr').find(r => /Spanish/.test(text(r))) || { children: [] }).children.map(text) : [];
+  check('sample: and how many texts ITDroid left in the source language, where the report says it',
+    /Kept in the source language by ITDroid/.test(text(perLanguage)) && esCells[esCells.length - 2] === '2' && /–/.test(frRow || ''), esCells.join(' | '));
+  check('sample: the overview counts the code literals not moved to resources, and says nothing of patching',
+    /Code literals not moved, in the source language1 literal in 1 place/.test(overviewText) && !/patch/i.test(overviewText), short(overviewText, 300));
 
   // an address opens one screen, also one without findings
   const linked = await openPage(base, link(shop, 'languages', 'es', '2'));
@@ -390,13 +423,16 @@ async function checkSample(base) {
     if (c.querySelector('div.card-header span.badge')) groups[text(title)] = c;
   }
   const count = name => (groups[name] ? text(groups[name].querySelector('div.card-header span.badge')) : 'no such group');
-  check('sample: 2 strings extracted from the code, 1 from the XML, 1 patched, 3 not translated',
-    count('Extracted from the code') === '2' && count('Extracted from the XML') === '1' && count('Patched in each language build') === '1' && count('Not translated') === '3',
-    Object.keys(groups).map(g => g + ' ' + count(g)).join(' | '));
+  check('sample: 2 strings extracted from the code, 1 from the XML, 1 not moved to resources, 3 not translated',
+    count('Extracted from the code') === '2' && count('Extracted from the XML') === '1' && count('Not moved to resources') === '1' && count('Not translated') === '3'
+      && !groups['Patched in each language build'], Object.keys(groups).map(g => g + ' ' + count(g)).join(' | '));
+  check('sample: the literal not moved says why and is in the source language', /its dex file has no room for one more string reference/.test(text(groups['Not moved to resources']))
+    && /source language/.test(text(groups['Not moved to resources'])), groups['Not moved to resources'] ? short(text(groups['Not moved to resources']), 300) : 'no group');
+  check('sample: the hardcoded tab says nothing of patching the code of each build', !/patch/i.test(text(hardcoded.$('#tabContent'))), short(text(hardcoded.$('#tabContent')), 200));
   const search = hardcoded.$$('#tabContent input')[0];
   search.value = 'PREMIUM';
   search.dispatch('input');
-  check('sample: the search finds a string by its text, whatever the case', count('Patched in each language build') === '1 of 1' && count('Not translated') === '0 of 3',
+  check('sample: the search finds a string by its text, whatever the case', count('Not moved to resources') === '1 of 1' && count('Not translated') === '0 of 3',
     Object.keys(groups).map(g => g + ' ' + count(g)).join(' | '));
   search.value = 'cartdao';
   search.dispatch('input');
@@ -463,11 +499,14 @@ async function startServer(java, jar, folder) {
     const index = await getJson(server.base + '/api/results');
     console.log('Checking ' + index.apps.length + ' evaluation' + (index.apps.length === 1 ? '' : 's') + ' at ' + server.base + (url ? '' : ' (webreport/test/sample)'));
     // The page separates the parts of a line with commas. Looked for in what the page itself writes,
-    // not in what it shows: a text of an app may well have a middle dot of its own.
+    // not in what it shows: a text of an app may well have a middle dot of its own. A bullet or a
+    // pipe between spaces, in a string of the page, is a separator too.
     for (const file of [path.join('js', 'main.js'), 'index.html']) {
       const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-      const dot = source.indexOf('·');
-      check('the page writes no middle dot (' + file.replace(/\\/g, '/') + ')', dot < 0, dot < 0 ? '' : short(source.substring(Math.max(0, dot - 40)), 90));
+      for (const [name, mark] of [['middle dot', '·'], ['bullet', '•'], ['pipe between spaces', "' | '"], ['pipe between spaces', '" | "']]) {
+        const at = source.indexOf(mark);
+        check('the page writes no ' + name + ' as a separator (' + file.replace(/\\/g, '/') + ')', at < 0, at < 0 ? '' : short(source.substring(Math.max(0, at - 40)), 90));
+      }
     }
     for (const a of index.apps) {
       if (a.status === 'unreadable') { check(a.dir + ': report.json can be read', false, a.error); continue; }

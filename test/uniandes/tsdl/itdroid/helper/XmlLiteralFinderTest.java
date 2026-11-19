@@ -112,8 +112,8 @@ class XmlLiteralFinderTest {
         write("res/layout/broken.xml", "<LinearLayout><TextView android:text=\"unbound prefix\" /></LinearLayout>\n");
 
         assertEquals(List.of("@home"), texts(XmlLiterals.find(tmp.toString())), "only the escaped @ is literal text");
-        assertNull(XmlLiterals.literalOf("@string/x"));
-        assertEquals("Cancel", XmlLiterals.literalOf("Cancel"));
-        assertTrue(XmlLiterals.isLibraryFile("design_bottom_sheet_dialog.xml"));
+        assertNull(Translatability.layoutText("@string/x"));
+        assertEquals("Cancel", Translatability.layoutText("Cancel"));
+        assertTrue(Translatability.isLibraryLayout("design_bottom_sheet_dialog.xml"));
     }
 }

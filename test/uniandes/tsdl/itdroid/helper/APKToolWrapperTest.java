@@ -130,10 +130,12 @@ class APKToolWrapperTest {
     void theUnsignedApkIsRemovedOnceTheSignedOneIsThere() throws Exception {
         Path unsigned = Files.writeString(tmp.resolve("org.foo.apk"), "unsigned");
         Path signed = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk"), "signed");
+        Path signature = Files.writeString(tmp.resolve("org.foo-aligned-debugSigned.apk.idsig"), "its v4 signature");
 
         assertTrue(APKToolWrapper.keepOnlySigned(unsigned.toFile(), signed.toFile()));
 
         assertFalse(Files.exists(unsigned), "the unsigned APK was as large as the signed one and nothing used it again");
+        assertFalse(Files.exists(signature), "only an incremental install reads it");
         assertTrue(Files.exists(signed));
     }
 

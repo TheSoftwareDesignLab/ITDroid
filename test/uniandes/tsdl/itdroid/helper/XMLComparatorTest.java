@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 import org.json.simple.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,10 +39,11 @@ class XMLComparatorTest {
         ar = res.resolve("values-ar").resolve("strings.xml").toString();   // the app has no Arabic
     }
 
+    /** Each language writes its own text, the same text as the default would be a copy of it. */
     private String strings(String folder, String... names) throws IOException {
         StringBuilder sb = new StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n");
         for (String name : names) {
-            sb.append("    <string name=\"").append(name).append("\">text of ").append(name).append("</string>\n");
+            sb.append("    <string name=\"").append(name).append("\">").append(folder).append(" text of ").append(name).append("</string>\n");
         }
         Path file = res.resolve(folder).resolve("strings.xml");
         Files.createDirectories(file.getParent());
@@ -50,7 +52,7 @@ class XMLComparatorTest {
     }
 
     private XMLComparator compare(int alpha) {
-        return new XMLComparator(new String[] {dflt, es, ru, ar}, alpha, Fixtures.settingsDir().toString());
+        return new XMLComparator(new String[] {dflt, es, ru, ar}, alpha, new NotTranslatableStringsDictionary(List.of()), Set.of());
     }
 
     @Test
@@ -122,6 +124,63 @@ class XMLComparatorTest {
         assertEquals(1, c.defaultStrings());
         assertEquals(List.of(), c.status(ru).missing, "ru defines greeting: nothing is missing");
         assertTrue(c.status(ru).shipped);
+        assertEquals(List.of("greeting"), c.status(ar).missing);
+    }
+
+    /**
+     * soundpod ships values-es with following, not_playing and others holding the English text, so they
+     * showed in English on the Spanish screens. Such a copy counts as missing, one word included, while
+     * an acronym, a name or an identifier left as it was does not.
+     */
+    @Test
+    void aStringTheLanguageOnlyCopiesFromTheDefaultCountsAsMissing() throws IOException {
+        Files.writeString(Path.of(dflt), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+                + "    <string name=\"not_playing\">Not playing</string>\n"
+                + "    <string name=\"you_might_also_like\">You might also like</string>\n"
+                + "    <string name=\"following\">Following</string>\n"
+                + "    <string name=\"ok\">OK</string>\n"
+                + "    <string name=\"newpipe\">NewPipe</string>\n"
+                + "    <string name=\"github\">Open GitHub</string>\n"
+                + "    <string name=\"greeting\">Hello %1$s, welcome back</string>\n"
+                + "</resources>\n", StandardCharsets.UTF_8);
+        Files.writeString(Path.of(es), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+                + "    <string name=\"not_playing\">Not playing</string>\n"
+                + "    <string name=\"you_might_also_like\">You might also like.</string>\n"
+                + "    <string name=\"following\">Following</string>\n"
+                + "    <string name=\"ok\">OK</string>\n"
+                + "    <string name=\"newpipe\">NewPipe</string>\n"
+                + "    <string name=\"github\">Abrir GitHub</string>\n"
+                + "    <string name=\"greeting\">Hola %1$s, bienvenido</string>\n"
+                + "</resources>\n", StandardCharsets.UTF_8);
+
+        XMLComparator c = compare(0);
+
+        List<String> copies = List.of("following", "not_playing", "you_might_also_like");
+        assertEquals(copies, c.status(es).copiesOfSource);
+        assertEquals(copies, c.status(es).missing, "they count for alpha");
+        assertFalse(c.status(es).shipped);
+        assertTrue(compare(3).status(es).shipped, "within alpha the language is still shipped, its copies are translated in place");
+        JSONObject json = c.status(es).toJson();
+        assertEquals(copies, json.get("copiesOfSource"));
+        assertEquals(3L, json.get("missing"));
+    }
+
+    /** A default string that is an identifier is not expected in any language. */
+    @Test
+    void identifiersInTheDefaultStringsAreNotCountedAsMissing() throws IOException {
+        Files.writeString(Path.of(dflt), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+                + "    <string name=\"greeting\">Hello</string>\n"
+                + "    <string name=\"pref_autorenameDownloads\">autorenameDownloads</string>\n"
+                + "    <string name=\"language_key\">KEY_LANGUAGE</string>\n"
+                + "    <string name=\"date_format\">yyyy-MM-dd</string>\n"
+                + "    <string name=\"settings_fragment\">SettingsFragment</string>\n"
+                + "    <string name=\"deep_link\">myapp://</string>\n"
+                + "    <string name=\"theme_key\">theme</string>\n"
+                + "</resources>\n", StandardCharsets.UTF_8);
+
+        XMLComparator c = compare(0);
+
+        assertEquals(1, c.defaultStrings());
         assertEquals(List.of("greeting"), c.status(ar).missing);
     }
 

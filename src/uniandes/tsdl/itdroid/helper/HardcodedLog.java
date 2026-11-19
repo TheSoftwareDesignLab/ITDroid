@@ -5,99 +5,82 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * Writes {@code hardcoded_<lang>.csv}, the record of what was done with every hardcoded string for one
+ * Writes {@code hardcoded_<lang>.csv}, the record of what became of every hardcoded string for one
  * language, one row per smali line or XML attribute.
  */
 public final class HardcodedLog {
 
-    /** What happened to a place. */
-    public static final String PATCHED = "patched";
-    public static final String EXTRACTED = "extracted";
-    public static final String REVERTED = "reverted";
+    /** Moved to a resource and translated. */
+    public static final String TRANSLATED = "translated";
+    /** Moved to a resource, but the text stays in the source language for this language. */
+    public static final String KEPT_IN_SOURCE = "kept in source";
+    /** Chosen for translation, but it could not be moved out of the code. */
+    public static final String NOT_MOVED = "not moved";
+    /** Not text for the user, or a use the policy does not translate. */
     public static final String NOT_TRANSLATED = "not translated";
 
-    private static final String HEADER = "kind;text;translation;action;reason;file;line;class;method;use;via";
+    private static final String HEADER = "kind;text;translation;outcome;reason;file;line;class;method;use;via";
     private static final String USE_NOT_KNOWN = "use not known: ";
 
     private HardcodedLog() {
     }
 
     /**
-     * Writes the record and returns the rows written by action.
+     * Writes the record and returns the rows written by outcome.
      *
-     * @param translations source text to translation for the code literals sent to the translator
-     * @param revertReason why the build with translated code literals was discarded, or null
+     * @param keptInSource resource text to the reason it stayed in the source language for this language
+     * @param revertReason why the translations of the code literals were dropped for this language, or null
      */
-    public static Map<String, Integer> write(Path file, StringInventory inventory, String lang, Map<String, String> translations,
-            List<SmaliPatcher.Patch> applied, String revertReason) throws IOException {
-        Set<SmaliScan.Occurrence> patched = new HashSet<>();
-        for (SmaliPatcher.Patch p : applied) {
-            patched.add(p.place);
-        }
+    public static Map<String, Integer> write(Path file, StringInventory inventory, String lang, Map<String, String> keptInSource,
+            String revertReason) throws IOException {
         Map<String, Integer> counts = new java.util.TreeMap<>();
         try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             w.write(HEADER);
             w.newLine();
             for (StringInventory.Entry e : inventory.entries()) {
                 if (StringInventory.KIND_HARDCODED.equals(e.kind)) {
-                    String translation = translations.get(e.text);
-                    String asResource = e.resourceText == null ? null : inventory.translation(lang, e.resourceText);
                     for (SmaliScan.Occurrence p : e.codePlaces) {
-                        String action;
-                        String reason;
+                        String[] outcome;
                         if (e.extractedPlaces.contains(p)) {
-                            // moved to a resource, translated with the resources
-                            action = revertReason == null ? EXTRACTED : REVERTED;
-                            reason = revertReason != null ? revertReason
-                                    : "@string/" + e.extractedTo + (asResource == null ? " (no translation for this language)" : "");
-                            row(w, "code", e.text, asResource == null ? "" : asResource, action, reason, p.file, p.line, p.className,
-                                    p.method, p.consumer.label, p.via);
-                            counts.merge(action, 1, Integer::sum);
-                            continue;
-                        }
-                        if (patched.contains(p)) {
-                            action = revertReason == null ? PATCHED : REVERTED;
-                            reason = revertReason == null ? "" : revertReason;
+                            outcome = revertReason != null ? new String[] {"", KEPT_IN_SOURCE, revertReason}
+                                    : asResource(inventory, lang, e, keptInSource);
+                        } else if (e.notMovedPlaces.contains(p)) {
+                            outcome = new String[] {"", NOT_MOVED, e.notMovedReason};
+                        } else if (!e.translatable) {
+                            // when kept for its use, each row says what its place does
+                            outcome = new String[] {"", NOT_TRANSLATED, keptForItsUse(e.skipReason) ? useReason(p.consumer) : e.skipReason};
                         } else {
-                            action = NOT_TRANSLATED;
-                            if (!e.translatable) {
-                                // when kept for its use, each row says what its place does
-                                reason = keptForItsUse(e.skipReason) ? useReason(p.consumer) : e.skipReason;
-                            } else if (!e.patchPlaces.contains(p)) {
-                                reason = "this place: " + p.consumer.description;
-                            } else if (translation == null) {
-                                reason = "no translation obtained";
-                            } else if (translation.equals(e.text)) {
-                                reason = "the translation equals the source";
-                            } else {
-                                reason = "the line no longer held the literal";
-                            }
+                            outcome = new String[] {"", NOT_TRANSLATED, "this place: " + p.consumer.description};
                         }
-                        row(w, "code", e.text, patched.contains(p) ? translation : "", action, reason, p.file, p.line, p.className,
-                                p.method, p.consumer.label, p.via);
-                        counts.merge(action, 1, Integer::sum);
+                        row(w, "code", e.text, outcome, p.file, p.line, p.className, p.method, p.consumer.label, p.via);
+                        counts.merge(outcome[1], 1, Integer::sum);
                     }
                 } else if (StringInventory.KIND_HARDCODED_XML.equals(e.kind)) {
-                    String translation = e.resourceText == null ? null : inventory.translation(lang, e.resourceText);
                     for (XmlLiterals.Literal p : e.xmlPlaces) {
-                        boolean extracted = e.extractedTo != null;
-                        String action = extracted ? EXTRACTED : NOT_TRANSLATED;
-                        String reason = extracted ? "@string/" + e.extractedTo + (translation == null ? " (no translation for this language)" : "")
-                                : e.skipReason;
-                        row(w, "xml", e.text, extracted && translation != null ? translation : "", action, reason, p.file, p.line,
-                                p.element + (p.id.isEmpty() ? "" : " " + p.id), "", StringInventory.CONSUMER_XML, p.attribute);
-                        counts.merge(action, 1, Integer::sum);
+                        String[] outcome = e.extractedTo != null ? asResource(inventory, lang, e, keptInSource)
+                                : new String[] {"", NOT_TRANSLATED, e.skipReason};
+                        row(w, "xml", e.text, outcome, p.file, p.line, p.element + (p.id.isEmpty() ? "" : " " + p.id), "",
+                                StringInventory.CONSUMER_XML, p.attribute);
+                        counts.merge(outcome[1], 1, Integer::sum);
                     }
                 }
             }
         }
         return counts;
+    }
+
+    /** Translation, outcome and reason of a literal moved to a resource, from the translation that resource got. */
+    private static String[] asResource(StringInventory inventory, String lang, StringInventory.Entry e, Map<String, String> keptInSource) {
+        String key = e.resourceText != null ? e.resourceText : e.text;
+        String translation = inventory.translation(lang, key);
+        if (translation != null) {
+            return new String[] {translation, TRANSLATED, "@string/" + e.extractedTo};
+        }
+        String why = keptInSource == null ? null : keptInSource.get(key);
+        return new String[] {"", KEPT_IN_SOURCE, "@string/" + e.extractedTo + ": " + (why != null ? why : "no translation for this language")};
     }
 
     /** True when a literal is kept because of what the code does with it, not because of what it is. */
@@ -120,10 +103,10 @@ public final class HardcodedLog {
         return consumer.neverShown() ? consumer.description : USE_NOT_KNOWN + consumer.description;
     }
 
-    private static void row(BufferedWriter w, String kind, String text, String translation, String action, String reason, String file,
-            int line, String className, String method, String use, String via) throws IOException {
-        w.write(String.join(";", kind, csv(text), csv(translation == null ? "" : translation), action, csv(reason == null ? "" : reason),
-                csv(file), String.valueOf(line), csv(className), csv(method), use, csv(via)));
+    private static void row(BufferedWriter w, String kind, String text, String[] outcome, String file, int line, String className,
+            String method, String use, String via) throws IOException {
+        w.write(String.join(";", kind, csv(text), csv(outcome[0] == null ? "" : outcome[0]), outcome[1],
+                csv(outcome[2] == null ? "" : outcome[2]), csv(file), String.valueOf(line), csv(className), csv(method), use, csv(via)));
         w.newLine();
     }
 

@@ -46,7 +46,7 @@ public final class SmaliScan {
 
         /** True for the uses that never put the text in front of the user. */
         public boolean neverShown() {
-            return this == LOG || this == EXCEPTION || this == DATA || this == COMPILER;
+            return Translatability.neverShown(this);
         }
     }
 
@@ -103,10 +103,6 @@ public final class SmaliScan {
     private SmaliScan(List<String> packageRoots, List<File> files) {
         this.packageRoots = packageRoots;
         this.files = files;
-    }
-
-    public static SmaliScan scan(String decodedPath, String applicationId) {
-        return scan(decodedPath, applicationId, ConsumerRules.defaults());
     }
 
     public static SmaliScan scan(String decodedPath, String applicationId, ConsumerRules rules) {
@@ -238,11 +234,15 @@ public final class SmaliScan {
                     }
                     continue;
                 }
+                String owner = callee.startsWith("L") && callee.contains(";") ? callee.substring(1, callee.indexOf(';')) : callee;
+                boolean appClass = AppCode.isUnder(packageRoots, owner);
+                if (kind == ConsumerRules.Kind.SETTER) {
+                    return use(Translatability.setterShowsText(appClass, callee) ? Consumer.UI : Consumer.APP_CALL, callee);
+                }
                 if (kind != null) {
                     return use(Consumer.valueOf(kind.name()), callee);
                 }
-                String owner = callee.startsWith("L") && callee.contains(";") ? callee.substring(1, callee.indexOf(';')) : callee;
-                return use(AppCode.isUnder(packageRoots, owner) ? Consumer.APP_CALL : Consumer.LIBRARY_CALL, callee);
+                return use(appClass ? Consumer.APP_CALL : Consumer.LIBRARY_CALL, callee);
             }
             Matcher filled = FILLED_ARRAY.matcher(t);
             if (filled.find()) {
@@ -377,8 +377,6 @@ public final class SmaliScan {
 
     // ------------------------------------------------------------------ escaping of literals
 
-
-
     /** Decodes the body of a smali string literal, without its quotes. */
     public static String unescape(String s) {
         StringBuilder sb = new StringBuilder(s.length());
@@ -405,38 +403,6 @@ public final class SmaliScan {
                 }
             }
             sb.append(c);
-        }
-        return sb.toString();
-    }
-
-    /** Encodes a text as the body of a smali string literal, escaping quotes, backslashes, controls and non-ASCII. */
-    public static String escape(String s) {
-        StringBuilder sb = new StringBuilder(s.length() + 8);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"':
-                    sb.append("\\\"");
-                    break;
-                case '\\':
-                    sb.append("\\\\");
-                    break;
-                case '\n':
-                    sb.append("\\n");
-                    break;
-                case '\r':
-                    sb.append("\\r");
-                    break;
-                case '\t':
-                    sb.append("\\t");
-                    break;
-                default:
-                    if (c < 0x20 || c > 0x7e) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-            }
         }
         return sb.toString();
     }

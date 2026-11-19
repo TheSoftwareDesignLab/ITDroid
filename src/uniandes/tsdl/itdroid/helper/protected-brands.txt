@@ -1,0 +1,58 @@
+# Names that keep their spelling in every language, masked like the names of translation.protectedTerms.
+#
+# One name per line, matched as a whole word and with this exact case. Only names that are never an
+# ordinary word go here, so "Signal", "Matrix" or "Zoom" are left out. A name with an inner capital
+# such as YouTube or GitHub needs no line, ITDroid keeps every such token as written.
+
+Android
+Google
+Google Drive
+Google Play
+Google Maps
+Google Photos
+Google Calendar
+Gmail
+Chromecast
+Firebase
+Dropbox
+OneDrive
+iCloud
+Nextcloud
+ownCloud
+Facebook
+Instagram
+Telegram
+Discord
+Reddit
+Mastodon
+Twitter
+Spotify
+Netflix
+Twitch
+Wikipedia
+OpenStreetMap
+Bluetooth
+Wi-Fi
+NFC
+Microsoft
+Linux
+Firefox
+Amazon
+Alexa
+Samsung
+Xiaomi
+Huawei
+Bitcoin
+Ethereum
+Monero
+Patreon
+Ko-fi
+Liberapay
+F-Droid
+Codeberg
+Weblate
+Crowdin
+Transifex
+Tasker
+Kotlin
+Unicode

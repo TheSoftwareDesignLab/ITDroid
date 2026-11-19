@@ -33,7 +33,6 @@ class RunConfigTest {
         assertEquals("", cfg.getCodePackages());
         assertTrue(cfg.isLaunchTest());
         assertTrue(cfg.isReuseInventory());
-        assertEquals(false, cfg.isGraphDumps());
         assertTrue(cfg.isKeepLanguageApks());
         assertEquals(0.5, cfg.getMinSimilarity());
         assertEquals(5, cfg.getMaxStates());
@@ -42,6 +41,49 @@ class RunConfigTest {
         assertEquals("", cfg.getSetupFile());
         assertEquals(false, cfg.isRtlRepair());
         assertTrue(cfg.isTextOverGraphic());
+        assertTrue(cfg.isTextCut());
+        assertEquals(false, cfg.isGrantPermissions(), "the app asks for its permissions as it does with a new user");
+    }
+
+    @Test
+    void onlyTheApkIsRequiredAndThePackageAndTheDeviceAreOptional() throws Exception {
+        RunConfig cfg = config("apkPath=app.apk");
+
+        assertEquals("app.apk", cfg.getApkPath());
+        assertEquals("", cfg.getAppPackage(), "empty takes the package of the APK");
+        assertEquals("", cfg.getEmulator(), "empty uses the only device connected");
+        assertEquals("results", cfg.getResultsDir());
+        assertEquals("en", cfg.getSourceLanguage());
+        assertEquals(java.util.List.of("es", "ru", "ar"), cfg.getLanguages());
+        assertEquals(java.util.List.of(), cfg.getKeepResources());
+        assertEquals("", cfg.getExtraRules());
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class, () -> config("apkPath=").getApkPath());
+        assertTrue(missing.getMessage().contains("apkPath"), missing.getMessage());
+    }
+
+    @Test
+    void theLanguagesAreOneLineOfAndroidCodes() throws Exception {
+        assertEquals(java.util.List.of("fr", "zh-rCN", "hi"), config("languages = fr, zh-rCN ,hi,fr").getLanguages());
+        assertEquals("", config("sourceLanguage=").getSourceLanguage(), "empty asks the model");
+        assertThrows(IllegalArgumentException.class, () -> config("languages=Spanish").getLanguages());
+        assertEquals("Spanish", LanguageBundle.name("es"));
+        assertEquals("Chinese (China)", LanguageBundle.name("zh-rCN"));
+    }
+
+    @Test
+    void autoStartTrueStartsTheModelOfTheConfigAndAnotherModelNameIsRefused() throws Exception {
+        String plamo = "hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M";
+        assertEquals("", config("apkPath=a.apk").getAutoStart(), "by default nothing is started, the server must be running");
+        assertEquals(RunConfig.DEFAULT_MODEL, config("translation.autoStart=true").getAutoStart(), "Ollama with the default model");
+        assertEquals("mistral:7b", config("translation.model=mistral:7b", "translation.autoStart=true").getAutoStart());
+        assertEquals("", config("translation.autoStart=false").getAutoStart());
+        assertEquals("", config("translation.engine=api", "translation.autoStart=true").getAutoStart(), "nothing to start for a remote API");
+        assertEquals(plamo, config("translation.model=" + plamo, "translation.autoStart=" + plamo).getAutoStart(), "the same model written twice is fine");
+        assertEquals("llama-server -m m.gguf --port 8080", config("translation.engine=llamacpp",
+                "translation.autoStart=llama-server -m m.gguf --port 8080").getAutoStart());
+        IllegalArgumentException other = assertThrows(IllegalArgumentException.class,
+                () -> config("translation.model=" + plamo, "translation.autoStart=mistral:7b").getAutoStart());
+        assertTrue(other.getMessage().contains("mistral:7b") && other.getMessage().contains("autoStart=true"), other.getMessage());
     }
 
     @Test

@@ -8,6 +8,8 @@
 #
 # Categories
 #   ui           shown or spoken to the user
+#   setter       shown to the user, except by a method of the app that takes more than the one text,
+#                such as JsonUtils.setText(node, key, value), which is a call of the app
 #   composable   passed to an unknown composable, a bare identifier is not taken for text
 #   log          goes to a log
 #   exception    the message of an exception
@@ -16,7 +18,7 @@
 #   builder      appended to the first argument object, which is followed to its toString()
 #   passthrough  the call returns a text derived from this one, which is followed
 #
-# A hardcoded-consumers.txt file in the settings folder adds rules tried before these.
+# The file named by hardcoded.extraRules in itdroid.config.properties adds rules tried before these.
 
 # ---------------------------------------------------------------- compiler plumbing
 data        ^Lkotlin/jvm/internal/Intrinsics;->areEqual\(
@@ -139,7 +141,7 @@ ui          ^Landroid/app/ProgressDialog;->show\(
 ui          ^Landroid/text/(SpannableString|SpannedString|AnnotatedString)
 ui          ^Landroidx/compose/ui/text/AnnotatedString
 ui          ^Landroidx/compose/(material3?|foundation/text|ui/semantics)/
-ui          ;->set(Text|Hint|Error|Title|Subtitle|Message|Summary|SummaryOn|SummaryOff|ContentDescription|TooltipText|Label|PositiveButton|NegativeButton|NeutralButton|ContentTitle|ContentText|ContentInfo|Ticker|SubText|BigContentTitle|SummaryText|QueryHint|TextOn|TextOff|HelperText|PlaceholderText|PrefixText|SuffixText|DialogTitle|DialogMessage|PositiveButtonText|NegativeButtonText|Description|Header|Footer|EmptyText|StateDescription|PaneTitle|AccessibilityPaneTitle|ShortLabel|LongLabel|DisabledMessage)\(
+setter      ;->set(Text|Hint|Error|Title|Subtitle|Message|Summary|SummaryOn|SummaryOff|ContentDescription|TooltipText|Label|PositiveButton|NegativeButton|NeutralButton|ContentTitle|ContentText|ContentInfo|Ticker|SubText|BigContentTitle|SummaryText|QueryHint|TextOn|TextOff|HelperText|PlaceholderText|PrefixText|SuffixText|DialogTitle|DialogMessage|PositiveButtonText|NegativeButtonText|Description|Header|Footer|EmptyText|StateDescription|PaneTitle|AccessibilityPaneTitle|ShortLabel|LongLabel|DisabledMessage)\(
 ui          ;->(bigText|setBigContentTitle|addAction|addLine|showText|showMessage|showToast|showSnackbar|showError|showDialog|toast|snackbar)\(
 # any other composable that receives the text, it draws it or passes it down
 composable  \([^)]*Landroidx/compose/runtime/Composer;[^)]*\)

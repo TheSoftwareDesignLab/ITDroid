@@ -10,11 +10,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import uniandes.tsdl.itdroid.helper.CodeLiteralExtractor;
+import uniandes.tsdl.itdroid.helper.HardcodedPolicy;
+import uniandes.tsdl.itdroid.helper.StringInventory;
 
 /** What report.json says about the run itself, how it ended and no path of the machine it ran on. */
 class ITDroidReportTest {
@@ -73,6 +78,24 @@ class ITDroidReportTest {
         ITDroid.markInterrupted();
 
         assertFalse(Files.exists(out.resolve("report.json")));
+    }
+
+    /** codeExtraction.notMoved lists each code literal that stays in the source language once, with the reason. */
+    @Test
+    void theCodeLiteralsThatStayInTheCodeAreListedWithTheirReason() throws Exception {
+        StringInventory inventory = Fixtures.inventory(Fixtures.decodedApp().toString(), "com.example.shop.free", HardcodedPolicy.UI, null,
+                CodeLiteralExtractor.none("moving code literals to resources is turned off (hardcoded.extractCode=false)"));
+        JSONObject info = new JSONObject();
+
+        ITDroid.putNotMoved(info, inventory, false);
+
+        assertEquals(8L, info.get("notMovedCount"));
+        JSONArray list = (JSONArray) info.get("notMoved");
+        assertEquals(8, list.size());
+        JSONObject first = (JSONObject) list.get(0);
+        assertEquals("Premium", first.get("text"));
+        assertEquals("moving code literals to resources is turned off (hardcoded.extractCode=false)", first.get("reason"));
+        assertEquals(8L, inventory.summary().get("hardcodedPlacesNotMoved"));
     }
 
     @Test

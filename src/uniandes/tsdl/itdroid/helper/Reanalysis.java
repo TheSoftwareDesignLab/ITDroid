@@ -23,7 +23,7 @@ import uniandes.tsdl.itdroid.model.ScreenTexts;
 
 /**
  * The --reanalyze mode, which recomputes the layout comparison of stored evaluations without a device
- * or an LLM. It only reads the input and writes a reanalysis.json and an ipfs.csv per evaluation plus
+ * or an LLM. It only reads the input and writes a reanalysis.json per evaluation plus
  * a summary.csv to the output folder.
  */
 public class Reanalysis {
@@ -178,8 +178,6 @@ public class Reanalysis {
         }
         ScreenTexts.setApkTexts(texts, files);
         Files.createDirectories(evalOut);
-        Path ipfsCsv = evalOut.resolve("ipfs.csv");
-        Files.writeString(ipfsCsv, "language;state;nodePos;ipfScore;langNodePos;kind" + System.lineSeparator(), StandardCharsets.UTF_8);
 
         LayoutGraph sourceGraph = null;
         String sourceNote = "";
@@ -188,7 +186,7 @@ public class Reanalysis {
             sourceNote = "no result.json for the source language " + source;
         } else {
             try {
-                sourceGraph = new LayoutGraph(source, sourceFolder.toString(), false);
+                sourceGraph = new LayoutGraph(sourceFolder.toString());
             } catch (Exception e) {
                 sourceNote = "source graph unreadable: " + describe(e);
             }
@@ -219,11 +217,10 @@ public class Reanalysis {
                     row.note = "no result.json for " + code;
                 } else {
                     try {
-                        LayoutGraph langGraph = new LayoutGraph(code, langFolder.toString(), false);
+                        LayoutGraph langGraph = new LayoutGraph(langFolder.toString());
                         recomputed.put("amStates", (long) langGraph.getStates().size());
-                        recomputed.put("amTrans", (long) langGraph.getTransitions().size());
-                        new LayoutGraphComparision(source, sourceGraph, display, code, langGraph, langFolder.toString(),
-                                evalOut.toString(), recomputed);
+                        recomputed.put("amTrans", (long) langGraph.getTransitionCount());
+                        new LayoutGraphComparision(source, sourceGraph, display, code, langGraph, recomputed);
                         row.recomputedIpfs = asLong(recomputed.get("amIPFs"));
                         row.recomputedPaired = asLong(recomputed.get("pairedStates"));
                         row.summary = recomputed.get("ipfSummary") instanceof JSONObject ? (JSONObject) recomputed.get("ipfSummary") : null;
@@ -285,12 +282,13 @@ public class Reanalysis {
 
     /** The kinds of change, in the column order of summary.csv. */
     private static final String[] TYPES = {"positionLost", "positionAdded", "alignmentLost", "alignmentAdded", "overlapAdded",
-            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded", "textOverGraphic", "outOfFrame"};
+            "overlapRemoved", "missingMirroring", "componentLost", "componentAdded", "textOverGraphic", "outOfFrame",
+            "linesAdded", "linesRemoved", "moreOnScreen", "lessOnScreen", "outOfContainer", "textCut"};
 
     private static void writeSummaryCsv(List<Row> rows, Path file) throws IOException {
         try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             w.write("evaluation;language;reportedIPFs;recomputedIPFs;same;reportedPaired;recomputedPaired;note"
-                    + ";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;textOverGraphicOnly;" + String.join(";", TYPES)
+                    + ";nodesCompared;nodesChanged;nodesAffected;componentsLost;componentsAdded;textOverGraphicOnly;textCutOnly;" + String.join(";", TYPES)
                     + ";siblingPairsChecked;siblingPairsNotMirrored;sourceTexts;unchangedTexts;sameTextAsSource;unchangedNotInApk");
             w.newLine();
             for (Row r : rows) {
@@ -300,7 +298,7 @@ public class Reanalysis {
                         .append(';').append(cell(r.reportedPaired)).append(';').append(cell(r.recomputedPaired)).append(';')
                         .append(r.note.replace(';', ',').replace('\n', ' '));
                 // empty for a row that could not be recomputed
-                for (String key : new String[] {"nodesCompared", "nodesChanged", "nodesAffected", "componentsLost", "componentsAdded", "textOverGraphic"}) {
+                for (String key : new String[] {"nodesCompared", "nodesChanged", "nodesAffected", "componentsLost", "componentsAdded", "textOverGraphic", "textCut"}) {
                     line.append(';').append(r.summary == null ? "" : String.valueOf(r.summary.get(key)));
                 }
                 Object byType = r.summary == null ? null : r.summary.get("byType");

@@ -1,6 +1,7 @@
 package uniandes.tsdl.itdroid.helper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,7 +42,7 @@ class SmaliScanTest {
         Path file = tmp.resolve("smali/com/acme/app/Screen.smali");
         Files.createDirectories(file.getParent());
         Files.writeString(file, ".class public Lcom/acme/app/Screen;\n.super Landroid/app/Activity;\n\n" + methods, StandardCharsets.UTF_8);
-        return SmaliScan.scan(tmp.toString(), "com.acme.app");
+        return Fixtures.scan(tmp.toString(), "com.acme.app");
     }
 
     private static String method(String name, String... instructions) {
@@ -52,7 +53,7 @@ class SmaliScanTest {
 
     @Test
     void recordsWhereEachLiteralIs() {
-        SmaliScan scan = SmaliScan.scan(Fixtures.decodedApp().toString(), "com.example.shop.free");
+        SmaliScan scan = Fixtures.scan(Fixtures.decodedApp().toString(), "com.example.shop.free");
 
         assertEquals(List.of("com.example.shop"), scan.packageRoots());
         assertEquals(4, scan.files().size());
@@ -76,7 +77,7 @@ class SmaliScanTest {
 
     @Test
     void classifiesEachLiteralOfTheHandWrittenApp() {
-        SmaliScan scan = SmaliScan.scan(Fixtures.decodedApp().toString(), "com.example.shop.free");
+        SmaliScan scan = Fixtures.scan(Fixtures.decodedApp().toString(), "com.example.shop.free");
 
         assertConsumer(scan, "Welcome back", Consumer.UI, "Landroid/widget/TextView;->setText");
         assertConsumer(scan, "Saved", Consumer.UI, "Landroid/widget/Toast;->makeText");
@@ -228,7 +229,7 @@ class SmaliScanTest {
         assertEquals(List.of("Back to the list"), hits.stream().map(h -> h.text).toList(), "the icon names are not strings for a person");
         assertEquals(Consumer.COMPOSABLE, hits.get(0).consumer());
         assertTrue(HardcodedPolicy.UI.translates(Consumer.COMPOSABLE));
-        assertNull(StringInventory.codeSkipReason(hits.get(0), java.util.Set.of(), HardcodedPolicy.UI));
+        assertNull(Translatability.codeSkip(hits.get(0), java.util.Set.of(), HardcodedPolicy.UI));
     }
 
     // ------------------------------------------------------------------ the rule table
@@ -271,10 +272,10 @@ class SmaliScanTest {
         assertEquals(Consumer.DATA, of(scan, "guest pass").consumer);
         assertEquals(Consumer.UI, of(scan, "Your password").consumer, "the hint of the field is shown");
         assertEquals(Consumer.APP_CALL, of(scan, "Password rules").consumer, "only the exact setters are credentials");
-        assertEquals("key or token", StringInventory.textSkipReason("AIzaSyD4xk29fQpL0b7mN3vW8zR1tY6uH5cE2jA"));
-        assertEquals("key or token", StringInventory.textSkipReason("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));
-        assertNull(StringInventory.textSkipReason("Internationalization"), "a long word is still a word");
-        assertNull(StringInventory.textSkipReason("Enter the 24 digits of your activation code"));
+        assertEquals("key or token", Translatability.textSkip("AIzaSyD4xk29fQpL0b7mN3vW8zR1tY6uH5cE2jA"));
+        assertEquals("key or token", Translatability.textSkip("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));
+        assertNull(Translatability.textSkip("Internationalization"), "a long word is still a word");
+        assertNull(Translatability.textSkip("Enter the 24 digits of your activation code"));
     }
 
     @Test
@@ -295,20 +296,44 @@ class SmaliScanTest {
     }
 
     @Test
-    void aRuleFileInTheSettingsFolderIsTriedBeforeTheBuiltInRules() throws IOException {
-        Path settings = Files.createDirectories(tmp.resolve("settings"));
-        Files.writeString(settings.resolve(ConsumerRules.FILE_NAME),
+    void theRuleFileOfTheConfigIsTriedBeforeTheBuiltInRules() throws IOException {
+        Path file = tmp.resolve("my-rules.txt");
+        Files.writeString(file,
                 "# the charting library of this app draws its labels\n"
                 + "ui   ^Lorg/thirdparty/Chart;->axis\\(\n"
                 + "data ^Landroid/widget/Toast;->makeText\\(\n"
                 + "nonsense ^Lfoo;\n", StandardCharsets.UTF_8);
-        ConsumerRules rules = ConsumerRules.load(settings.toString());
+        ConsumerRules rules = ConsumerRules.load(file.toString());
 
         assertEquals(ConsumerRules.Kind.UI, rules.classify("Lorg/thirdparty/Chart;->axis(Ljava/lang/String;)V"));
         assertEquals(ConsumerRules.Kind.DATA, rules.classify("Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;"));
         assertEquals(ConsumerRules.Kind.LOG, rules.classify("Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I"), "the built-in rules still apply");
         assertNull(rules.classify("Lfoo;->bar()V"), "a line with an unknown category is ignored");
-        assertEquals(ConsumerRules.defaults().size() + 2, rules.size());
-        assertTrue(ConsumerRules.defaults().size() > 80);
+        assertEquals(ConsumerRules.Kind.SETTER, rules.classify("Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V"));
+    }
+
+    /**
+     * A setter of a framework or library class shows its text, a method of the app named like one only
+     * when the text is its one argument. cgeo's JsonUtils.setText(node, key, value) took JSON keys.
+     */
+    @Test
+    void anAppMethodNamedLikeASetterShowsTextOnlyWhenTheTextIsItsOneArgument() throws IOException {
+        SmaliScan scan = scanMethods(method("fill(Lorg/json/JSONObject;Lcom/acme/app/Badge;Lorg/thirdparty/Card;)V",
+                "const-string v0, \"coord\"",
+                "const-string v1, \"Some value\"",
+                "invoke-static {p1, v0, v1}, Lcom/acme/app/JsonUtils;->setText(Lorg/json/JSONObject;Ljava/lang/String;Ljava/lang/String;)V",
+                "const-string v2, \"New badge\"",
+                "invoke-virtual {p2, v2}, Lcom/acme/app/Badge;->setText(Ljava/lang/CharSequence;)V",
+                "const-string v3, \"Card title\"",
+                "const/4 v4, 0x1",
+                "invoke-virtual {p3, v3, v4}, Lorg/thirdparty/Card;->setTitle(Ljava/lang/String;Z)V",
+                "return-void"));
+
+        assertEquals(Consumer.APP_CALL, of(scan, "coord").consumer, "a key of the JSON, not text");
+        assertEquals(Consumer.APP_CALL, of(scan, "Some value").consumer);
+        assertEquals("Lcom/acme/app/JsonUtils;->setText", of(scan, "Some value").via);
+        assertEquals(Consumer.UI, of(scan, "New badge").consumer, "the app's own view with one text argument");
+        assertEquals(Consumer.UI, of(scan, "Card title").consumer, "a library setter whatever its other arguments");
+        assertFalse(HardcodedPolicy.UI.translates(Consumer.APP_CALL), "so the default policy leaves the JSON keys alone");
     }
 }

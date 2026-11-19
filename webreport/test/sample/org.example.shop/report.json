@@ -20,7 +20,6 @@
   "hardcodedPolicy": "ui",
   "hardcodedCodeExtracted": 2,
   "hardcodedPlacesExtracted": 3,
-  "hardcodedPlacesToPatch": 1,
   "hardcodedXmlExtracted": 1,
   "hardcodedByConsumer": {
    "ui": 3,
@@ -33,7 +32,8 @@
    "es": 10,
    "ru": 10,
    "fr": 10
-  }
+  },
+  "hardcodedPlacesNotMoved": 1
  },
  "codePackages": [
   "org.example.shop"
@@ -41,7 +41,13 @@
  "codeExtraction": {
   "enabled": true,
   "literals": 2,
-  "places": 3
+  "places": 3,
+  "notMoved": [
+   {
+    "text": "Premium",
+    "reason": "its dex file has no room for one more string reference"
+   }
+  ]
  },
  "internationalizedApk": {
   "built": true,
@@ -289,28 +295,34 @@
     "divergences": [],
     "crashes": []
    },
-   "patchedHardcoded": 1,
    "extractedCodeLiterals": 2,
    "extractedXmlLiterals": 1,
-   "amIPFs": 5,
+   "amIPFs": 4,
    "pairedStates": 3,
    "ipfSummary": {
-    "nodesAffected": 2,
-    "severe": 2,
+    "nodesAffected": 0,
+    "severe": 1,
     "componentsAdded": 0,
-    "nodesChanged": 2,
+    "textCut": 0,
+    "nodesChanged": 3,
     "nodesCompared": 32,
     "byType": {
+     "linesRemoved": 0,
      "alignmentAdded": 0,
-     "componentLost": 1,
-     "overlapAdded": 2,
-     "positionLost": 4,
+     "linesAdded": 1,
+     "outOfContainer": 0,
+     "textCut": 0,
+     "positionLost": 3,
      "positionAdded": 2,
-     "outOfFrame": 0,
      "missingMirroring": 0,
-     "componentAdded": 0,
      "alignmentLost": 0,
      "overlapRemoved": 0,
+     "componentLost": 1,
+     "moreOnScreen": 0,
+     "overlapAdded": 1,
+     "lessOnScreen": 0,
+     "outOfFrame": 0,
+     "componentAdded": 0,
      "textOverGraphic": 0
     },
     "mirrorExpected": false,
@@ -322,70 +334,19 @@
    "pairing": "replay",
    "ipfs": [
     {
-     "severity": "severe",
-     "score": 1,
-     "types": [
-      "positionLost",
-      "overlapAdded"
-     ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 5,
-     "geometry": "resized",
-     "relations": [
-      {
-       "langRelNode": 6,
-       "removed": "LEFT;",
-       "added": "INTERSECTS;",
-       "relNode": 6
-      }
-     ],
-     "nodeID": 5
-    },
-    {
-     "severity": "severe",
-     "score": 1,
-     "types": [
-      "positionLost",
-      "overlapAdded"
-     ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 6,
-     "geometry": "same",
-     "relations": [
-      {
-       "langRelNode": 5,
-       "removed": "RIGHT;",
-       "added": "INTERSECTS;",
-       "relNode": 5
-      }
-     ],
-     "nodeID": 6
-    },
-    {
-     "severity": "moderate",
-     "score": 1,
-     "types": [
-      "componentLost"
-     ],
-     "kind": "componentLost",
-     "stateID": 1,
-     "langNodeID": -1,
-     "relations": [],
-     "nodeID": 8
-    },
-    {
-     "severity": "moderate",
-     "score": 1,
-     "types": [
-      "positionLost",
-      "positionAdded"
-     ],
-     "kind": "relations",
      "stateID": 3,
+     "nodeID": 12,
      "langNodeID": 12,
-     "geometry": "same",
+     "kind": "relations",
+     "severity": "moderate",
+     "types": [
+      "positionLost",
+      "positionAdded",
+      "linesAdded"
+     ],
+     "geometry": "resized",
+     "heightChange": 40,
+     "score": 2,
      "relations": [
       {
        "langRelNode": 13,
@@ -393,20 +354,53 @@
        "added": "ABOVE;",
        "relNode": 13
       }
-     ],
-     "nodeID": 12
+     ]
     },
     {
-     "severity": "moderate",
+     "stateID": 1,
+     "nodeID": 5,
+     "langNodeID": 5,
+     "kind": "relations",
+     "severity": "severe",
+     "types": [
+      "positionLost",
+      "overlapAdded"
+     ],
+     "geometry": "resized",
      "score": 1,
+     "relations": [
+      {
+       "langRelNode": 6,
+       "removed": "LEFT;",
+       "added": "INTERSECTS;",
+       "relNode": 6
+      }
+     ]
+    },
+    {
+     "stateID": 1,
+     "nodeID": 8,
+     "langNodeID": -1,
+     "kind": "componentLost",
+     "severity": "moderate",
+     "types": [
+      "componentLost"
+     ],
+     "score": 1,
+     "relations": []
+    },
+    {
+     "stateID": 3,
+     "nodeID": 13,
+     "langNodeID": 13,
+     "kind": "relations",
+     "severity": "moderate",
      "types": [
       "positionLost",
       "positionAdded"
      ],
-     "kind": "relations",
-     "stateID": 3,
-     "langNodeID": 13,
      "geometry": "moved+resized",
+     "score": 1,
      "relations": [
       {
        "langRelNode": 12,
@@ -414,8 +408,7 @@
        "added": "BELOW;",
        "relNode": 12
       }
-     ],
-     "nodeID": 13
+     ]
     }
    ],
    "missingLangStates": 0,
@@ -427,6 +420,38 @@
     "sourceTexts": 15,
     "share": 0.0,
     "sameAsSource": false
+   },
+   "translation": {
+    "keptInSource": [
+     {
+      "text": "Shop",
+      "reason": "the name of the app",
+      "names": [
+       "app_name"
+      ]
+     },
+     {
+      "text": "PRO",
+      "reason": "an acronym the translation did not keep",
+      "names": [
+       "badge_pro",
+       "label_pro"
+      ]
+     }
+    ],
+    "byParts": [
+     {
+      "text": "Buy now and save 10% on your first order",
+      "translation": "Compra ahora y ahorra un 10% en tu primer pedido"
+     }
+    ],
+    "appCopies": [
+     {
+      "name": "title_cart",
+      "text": "Cart",
+      "translation": "Carrito"
+     }
+    ]
    }
   },
   "ar": {
@@ -440,34 +465,40 @@
     "divergences": [],
     "crashes": []
    },
-   "patchedHardcoded": 1,
    "extractedCodeLiterals": 2,
    "extractedXmlLiterals": 1,
    "amIPFs": 2,
    "pairedStates": 3,
    "ipfSummary": {
+    "siblingPairsChecked": 10,
+    "textCut": 0,
+    "nodesCompared": 33,
+    "componentsLost": 0,
     "nodesAffected": 2,
     "siblingPairsNotMirrored": 1,
-    "siblingPairsChecked": 10,
     "severe": 0,
     "componentsAdded": 0,
     "nodesChanged": 0,
-    "nodesCompared": 33,
     "byType": {
+     "linesRemoved": 0,
      "alignmentAdded": 0,
-     "componentLost": 0,
-     "overlapAdded": 0,
+     "linesAdded": 0,
+     "outOfContainer": 0,
+     "textCut": 0,
      "positionLost": 0,
      "positionAdded": 0,
-     "outOfFrame": 0,
      "missingMirroring": 2,
-     "componentAdded": 0,
      "alignmentLost": 0,
      "overlapRemoved": 0,
+     "componentLost": 0,
+     "moreOnScreen": 0,
+     "overlapAdded": 0,
+     "lessOnScreen": 0,
+     "outOfFrame": 0,
+     "componentAdded": 0,
      "textOverGraphic": 0
     },
     "mirrorExpected": true,
-    "componentsLost": 0,
     "textOverGraphic": 0,
     "moderate": 2
    },
@@ -475,46 +506,46 @@
    "pairing": "replay",
    "ipfs": [
     {
+     "stateID": 1,
+     "nodeID": 5,
+     "langNodeID": 5,
+     "kind": "relations",
      "severity": "moderate",
-     "score": 1,
      "types": [
       "missingMirroring"
      ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 5,
      "geometry": "same",
+     "score": 1,
      "relations": [
       {
+       "missing": "RIGHT;",
        "langRelNode": 6,
        "removed": "",
        "added": "",
-       "missing": "RIGHT;",
        "relNode": 6
       }
-     ],
-     "nodeID": 5
+     ]
     },
     {
+     "stateID": 1,
+     "nodeID": 6,
+     "langNodeID": 6,
+     "kind": "relations",
      "severity": "moderate",
-     "score": 1,
      "types": [
       "missingMirroring"
      ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 6,
      "geometry": "same",
+     "score": 1,
      "relations": [
       {
+       "missing": "LEFT;",
        "langRelNode": 5,
        "removed": "",
        "added": "",
-       "missing": "LEFT;",
        "relNode": 5
       }
-     ],
-     "nodeID": 6
+     ]
     }
    ],
    "missingLangStates": 0,
@@ -594,226 +625,122 @@
     ],
     "crashes": []
    },
-   "patchedHardcoded": 1,
    "extractedCodeLiterals": 2,
    "extractedXmlLiterals": 1,
-   "amIPFs": 7,
+   "amIPFs": 4,
    "pairedStates": 1,
    "ipfSummary": {
-    "nodesAffected": 5,
-    "severe": 0,
+    "nodesAffected": 0,
+    "severe": 2,
     "componentsAdded": 0,
-    "nodesChanged": 2,
+    "textCut": 1,
+    "nodesChanged": 3,
     "nodesCompared": 13,
     "byType": {
-     "alignmentAdded": 4,
-     "componentLost": 0,
-     "overlapAdded": 0,
-     "positionLost": 6,
+     "linesRemoved": 0,
+     "alignmentAdded": 0,
+     "linesAdded": 1,
+     "outOfContainer": 1,
+     "textCut": 1,
+     "positionLost": 2,
      "positionAdded": 2,
-     "outOfFrame": 0,
      "missingMirroring": 0,
-     "componentAdded": 0,
-     "alignmentLost": 2,
+     "alignmentLost": 0,
      "overlapRemoved": 0,
+     "componentLost": 0,
+     "moreOnScreen": 0,
+     "overlapAdded": 0,
+     "lessOnScreen": 0,
+     "outOfFrame": 0,
+     "componentAdded": 0,
      "textOverGraphic": 0
     },
     "mirrorExpected": false,
     "componentsLost": 0,
     "textOverGraphic": 0,
-    "moderate": 7
+    "moderate": 2
    },
    "amStates": 2,
    "pairing": "replay",
    "ipfs": [
     {
-     "severity": "moderate",
-     "score": 4,
-     "types": [
-      "positionLost",
-      "positionAdded",
-      "alignmentLost",
-      "alignmentAdded"
-     ],
-     "kind": "relations",
      "stateID": 1,
-     "langNodeID": 5,
-     "geometry": "resized",
-     "relations": [
-      {
-       "langRelNode": 3,
-       "removed": "LEFT;",
-       "added": "RIGHT_ALIGNED;",
-       "relNode": 3
-      },
-      {
-       "langRelNode": 6,
-       "removed": "LEFT;TOP_ALIGNED;BOTTOM_ALIGNED;",
-       "added": "ABOVE;RIGHT_ALIGNED;LEFT_ALIGNED;",
-       "relNode": 6
-      },
-      {
-       "langRelNode": 8,
-       "removed": "",
-       "added": "RIGHT_ALIGNED;",
-       "relNode": 8
-      },
-      {
-       "langRelNode": 12,
-       "removed": "LEFT;",
-       "added": "",
-       "relNode": 12
-      }
-     ],
-     "nodeID": 5
-    },
-    {
-     "severity": "moderate",
-     "score": 4,
-     "types": [
-      "positionLost",
-      "positionAdded",
-      "alignmentLost",
-      "alignmentAdded"
-     ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 6,
-     "geometry": "moved+resized",
-     "relations": [
-      {
-       "langRelNode": 2,
-       "removed": "RIGHT;",
-       "added": "",
-       "relNode": 2
-      },
-      {
-       "langRelNode": 5,
-       "removed": "RIGHT;TOP_ALIGNED;BOTTOM_ALIGNED;",
-       "added": "BELOW;RIGHT_ALIGNED;LEFT_ALIGNED;",
-       "relNode": 5
-      },
-      {
-       "langRelNode": 8,
-       "removed": "",
-       "added": "LEFT_ALIGNED;",
-       "relNode": 8
-      },
-      {
-       "langRelNode": 10,
-       "removed": "RIGHT;",
-       "added": "",
-       "relNode": 10
-      }
-     ],
-     "nodeID": 6
-    },
-    {
-     "severity": "moderate",
-     "score": 2,
-     "types": [
-      "alignmentAdded"
-     ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 8,
-     "geometry": "same",
-     "relations": [
-      {
-       "langRelNode": 5,
-       "removed": "",
-       "added": "RIGHT_ALIGNED;",
-       "relNode": 5
-      },
-      {
-       "langRelNode": 6,
-       "removed": "",
-       "added": "LEFT_ALIGNED;",
-       "relNode": 6
-      }
-     ],
-     "nodeID": 8
-    },
-    {
-     "severity": "moderate",
-     "score": 1,
-     "types": [
-      "positionLost"
-     ],
-     "kind": "relations",
-     "stateID": 1,
+     "nodeID": 2,
      "langNodeID": 2,
-     "geometry": "same",
+     "kind": "relations",
+     "severity": "severe",
+     "types": [
+      "linesAdded",
+      "outOfContainer"
+     ],
+     "geometry": "resized",
+     "heightChange": 60,
+     "score": 2,
      "relations": [
       {
-       "langRelNode": 6,
-       "removed": "LEFT;",
+       "langRelNode": 1,
+       "removed": "CONTAINED;",
        "added": "",
-       "relNode": 6
+       "relNode": 1
       }
-     ],
-     "nodeID": 2
+     ]
     },
     {
+     "stateID": 1,
+     "nodeID": 5,
+     "langNodeID": 5,
+     "kind": "relations",
      "severity": "moderate",
-     "score": 1,
      "types": [
       "positionLost",
-      "alignmentAdded"
+      "positionAdded"
      ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 3,
-     "geometry": "same",
-     "relations": [
-      {
-       "langRelNode": 5,
-       "removed": "RIGHT;",
-       "added": "RIGHT_ALIGNED;",
-       "relNode": 5
-      }
-     ],
-     "nodeID": 3
-    },
-    {
-     "severity": "moderate",
+     "geometry": "resized",
      "score": 1,
-     "types": [
-      "positionLost"
-     ],
-     "kind": "relations",
-     "stateID": 1,
-     "langNodeID": 10,
-     "geometry": "same",
      "relations": [
       {
        "langRelNode": 6,
        "removed": "LEFT;",
-       "added": "",
+       "added": "ABOVE;",
        "relNode": 6
       }
-     ],
-     "nodeID": 10
+     ]
     },
     {
-     "severity": "moderate",
-     "score": 1,
-     "types": [
-      "positionLost"
-     ],
-     "kind": "relations",
      "stateID": 1,
-     "langNodeID": 12,
-     "geometry": "same",
+     "nodeID": 6,
+     "langNodeID": 6,
+     "kind": "relations",
+     "severity": "moderate",
+     "types": [
+      "positionLost",
+      "positionAdded"
+     ],
+     "geometry": "moved+resized",
+     "score": 1,
      "relations": [
       {
        "langRelNode": 5,
        "removed": "RIGHT;",
-       "added": "",
+       "added": "BELOW;",
        "relNode": 5
       }
+     ]
+    },
+    {
+     "stateID": 1,
+     "nodeID": 7,
+     "langNodeID": 7,
+     "kind": "textCut",
+     "severity": "severe",
+     "types": [
+      "textCut"
      ],
-     "nodeID": 12
+     "geometry": "same",
+     "neededWidth": 620,
+     "drawnWidth": 556,
+     "score": 1,
+     "relations": []
     }
    ],
    "missingLangStates": 1,
@@ -836,7 +763,6 @@
    "lang": "French",
    "shippedByApp": false,
    "resultsFolder": "noTrnsResults",
-   "patchedHardcoded": 1,
    "extractedCodeLiterals": 2,
    "extractedXmlLiterals": 1,
    "amIPFs": 0,
@@ -863,19 +789,26 @@
     "nodesAffected": 0,
     "severe": 0,
     "componentsAdded": 0,
+    "textCut": 0,
     "nodesChanged": 0,
     "nodesCompared": 33,
     "byType": {
+     "linesRemoved": 0,
      "alignmentAdded": 0,
-     "componentLost": 0,
-     "overlapAdded": 0,
+     "linesAdded": 0,
+     "outOfContainer": 0,
+     "textCut": 0,
      "positionLost": 0,
      "positionAdded": 0,
-     "outOfFrame": 0,
      "missingMirroring": 0,
-     "componentAdded": 0,
      "alignmentLost": 0,
      "overlapRemoved": 0,
+     "componentLost": 0,
+     "moreOnScreen": 0,
+     "overlapAdded": 0,
+     "lessOnScreen": 0,
+     "outOfFrame": 0,
+     "componentAdded": 0,
      "textOverGraphic": 0
     },
     "mirrorExpected": false,
@@ -883,7 +816,8 @@
     "textOverGraphic": 0,
     "moderate": 0
    },
-   "statesNotCompared": []
+   "statesNotCompared": [],
+   "ipfs": []
   },
   "pt": {
    "lang": "Portuguese",

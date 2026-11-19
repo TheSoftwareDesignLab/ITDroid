@@ -1,87 +1,52 @@
 package uniandes.tsdl.itdroid.helper;
 
-import java.io.File;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLClassLoader;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
-import java.util.ResourceBundle;
-import java.util.Set;
 
+/** The languages of a run, by their Android codes (es, ar, zh-rCN), with their English names. */
 public class LanguageBundle {
 
-	private static final String PROPERTY_FILE_NAME = "settings";
-	private ResourceBundle bundle;
+	private final List<String> codes;
 
-
-	public LanguageBundle(String propertyDir) {
-		init(propertyDir);
+	public LanguageBundle(List<String> codes) {
+		this.codes = new ArrayList<>(codes);
 	}
-
-	
-	public boolean isLanguageSelected(String id) {
-		return bundle.containsKey(id);
-	}
-
-	public ResourceBundle getBundle() {
-		return bundle;
-	}
-	
-	public String printSelectedLanguages() {
-		
-		Set<String> ids = bundle.keySet();
-		String selectedLanguages = "Selected Languages: "+(ids.size()-1)+"\n";
-
-		for (String id : ids) {
-			if(!id.equals("defaultLng")) {
-				selectedLanguages += bundle.getString(id)+"\n";				
-			}
-		}
-		selectedLanguages += "------------\n";
-		
-		return selectedLanguages;
-	}
-
-
-
-	private void init(String propertyDir) {
-		File file = new File(propertyDir);
-		URL url = null;
-
-		try {
-			url = file.toURI().toURL();
-		} catch (MalformedURLException e) {
-			// Fail fast, a null url would only fail later with a confusing error.
-			throw new RuntimeException("Could not resolve the settings directory to a URL: " + propertyDir, e);
-		}
-
-		URL[] urls = {url};
-		ClassLoader loader = new URLClassLoader(urls);
-		bundle = ResourceBundle.getBundle(PROPERTY_FILE_NAME, Locale.getDefault(), loader);
-	}
-
 
 	public String[] getSelectedLanguagesAsArray() {
-		
-		Set<String> ids = bundle.keySet();
-		// Counted because the defaultLng key is optional.
-		int count = 0;
-		for (String id : ids) {
-			if(!id.equals("defaultLng")) {
-				count++;
-			}
-		}
-		String[] response = new String[count];
-		int i =0;
-		for (String id : ids) {
-			if(!id.equals("defaultLng")) {
-				response[i] = id;
-				i++;
-			}
-		}
-
-		return response;
-		
+		return codes.toArray(new String[0]);
 	}
 
+	/** The English name of a code with its region or script, Chinese (Taiwan) for zh-rTW, or the code itself. */
+	public static String name(String code) {
+		if (code == null || code.isEmpty()) {
+			return "";
+		}
+		String name = locale(code).getDisplayName(Locale.ENGLISH);
+		return name.isEmpty() ? code : name;
+	}
+
+	/** The BCP 47 tag of an Android folder code, zh-TW for zh-rTW and sr-Latn for b+sr+Latn. */
+	public static String tag(String code) {
+		if (code == null) {
+			return "";
+		}
+		if (code.startsWith("b+")) {
+			return code.substring(2).replace('+', '-');
+		}
+		return code.replace("-r", "-").replace('_', '-');
+	}
+
+	/** The locale of an Android folder code. */
+	public static Locale locale(String code) {
+		return Locale.forLanguageTag(tag(code));
+	}
+
+	public String printSelectedLanguages() {
+		StringBuilder out = new StringBuilder("Selected Languages: " + codes.size() + "\n");
+		for (String code : codes) {
+			out.append(name(code)).append("\n");
+		}
+		return out.append("------------\n").toString();
+	}
 }

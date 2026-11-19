@@ -108,17 +108,20 @@ class RtlComparisonTest {
         JSONObject report = compareWith("ar", "Arabic", ROW, translated);
 
         assertEquals(2, count(report, "amIPFs"));
-        assertEquals(Set.of("TOP_ALIGNED", "BOTTOM_ALIGNED"), relations(report, 1, 2, "removed"));
-        assertEquals(Set.of("ABOVE"), relations(report, 1, 2, "added"));
+        // the move is the second button's, the first one sits where a mirrored row puts it
+        assertEquals(Set.of("TOP_ALIGNED", "BOTTOM_ALIGNED"), relations(report, 2, 1, "removed"));
+        assertEquals(Set.of("BELOW"), relations(report, 2, 1, "added"));
+        assertEquals(List.of("positionAdded", "alignmentLost", "missingMirroring"), types(report, 2));
+        // the pair did not swap, which is said of both
         assertEquals(Set.of("RIGHT"), relations(report, 1, 2, "missing"));
-        assertEquals(List.of("positionAdded", "alignmentLost", "missingMirroring"), types(report, 1));
+        assertEquals(List.of("missingMirroring"), types(report, 1));
     }
 
     @Test
     void aTextIsNotAskedToMirrorItsAlignment() throws Exception {
         // a label above a wider button, both at the left edge and unchanged in Arabic. The width of a
         // text says nothing about the side it is aligned to.
-        String withText = screen(textView(0, 50, 100, 450, 200), button(1, 50, 300, 600, 400));
+        String withText = screen(TestGraphs.label(0, "Name", 50, 100, 450, 200), button(1, 50, 300, 600, 400));
         String withoutText = screen(button(0, 50, 100, 450, 200), button(1, 50, 300, 600, 400));
 
         assertEquals(0, count(compareWith("ar", "Arabic", withText, withText), "amIPFs"));
@@ -160,9 +163,38 @@ class RtlComparisonTest {
                 writeResult(tmp.resolve("ar"), true, ".Main", mainInArabic, arabicDialog), tmp.resolve("out"), "ar", "Arabic");
 
         assertEquals(2, count(report, "pairedStates"));
-        // the buttons have a finding because of the text, but they sit where a mirrored screen puts them
-        assertEquals("mirrored", finding(report, 1).get("geometry"));
-        assertEquals("mirrored", finding(report, 2).get("geometry"));
+        // the buttons sit where a mirrored screen puts them, so the change is the text's that moved
+        // above them and they are only what it relates to, which a mirror across the dialog would not give
+        assertEquals(Set.of(3L), ipfNodes(report));
+        assertEquals("moved+resized", finding(report, 3).get("geometry"));
         assertEquals(0, summary(report, "siblingPairsNotMirrored"));
+    }
+
+    /**
+     * Two circles that touch in the source share one pixel once the layout is mirrored and rounded
+     * again. A sliver like that is not an overlap, so the mirrored row has no finding.
+     */
+    @Test
+    void aMirroredRowThatSharesOnePixelDoesNotOverlap() throws Exception {
+        String source = screen(button(0, 41, 555, 142, 681), button(1, 143, 546, 288, 689));
+        String translated = screen(button(0, 858, 555, 959, 681), button(1, 714, 546, 859, 689));
+
+        JSONObject report = compareWith("ar", "Arabic", source, translated);
+
+        assertEquals(0, count(report, "amIPFs"));
+        assertEquals(0, summary(report, "severe"));
+    }
+
+    /**
+     * Two stacked boxes that span the width in the source, one of them narrower in Arabic, keep their
+     * start edge on the right as they should. Only the start edge says whether they mirrored, the
+     * other one moves with the width.
+     */
+    @Test
+    void aStackedElementThatGetsNarrowerIsStillMirrored() throws Exception {
+        String source = screen(button(0, 50, 100, 950, 200), button(1, 50, 300, 950, 400));
+        String translated = screen(button(0, 300, 100, 950, 200), button(1, 50, 300, 950, 400));
+
+        assertEquals(0, ofType(compareWith("ar", "Arabic", source, translated), "missingMirroring"));
     }
 }

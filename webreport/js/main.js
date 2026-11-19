@@ -376,21 +376,26 @@
     const broken = targets.some(c => lr[c].ipfSummary);
     // Whether each language reached the screen exists in reports that counted the texts.
     const counted = targets.some(c => lr[c].screenText);
+    // What ITDroid kept in the source language for each language exists in reports that say it.
+    const translated = targets.some(c => lr[c].translation);
     const rows = [];
     for (const c of targets) {
       const l = lr[c], rep = l.replay || {}, s = l.ipfSummary;
-      const outcome = l.error ? el('span', { class: 'text-danger' }, l.error) : (l.hardcodedFallback ? el('span', { class: 'text-warning' }, 'rebuilt without hardcoded patches') : 'ok');
+      const outcome = l.error ? el('span', { class: 'text-danger' }, l.error) : (l.hardcodedFallback ? el('span', { class: 'text-warning' }, 'code literals back in the source language') : 'ok');
       rows.push([el('span', null, badge(c, 'info'), l.lang || c), l.amStates, l.pairedStates, (l.missingDfltStates || 0) + (l.missingLangStates || 0),
         rep.actions != null ? rep.reproduced + '/' + rep.actions + ' (' + pct(rep.reproduced, rep.actions) + ')' : '–',
         isNum(l.amIPFs) ? l.amIPFs : (l.error ? '–' : 0)]
         .concat(broken ? [s && isNum(s.severe) ? s.severe : '–', s ? s.nodesChanged : '–', s ? s.nodesAffected : '–', s ? (s.componentsLost + s.componentsAdded) : '–',
           s && s.mirrorExpected ? (s.byType || {}).missingMirroring : '–'] : [],
-          counted ? [sameTextCell(l.screenText)] : [], [outcome]));
+          counted ? [sameTextCell(l.screenText)] : [],
+          translated ? [l.translation ? listOf(l.translation.keptInSource).length : '–'] : [], [outcome]));
     }
     const headers = ['Language', 'Screens', 'Paired', 'Unpaired', 'Replay', 'IPFs'].concat(
-      broken ? ['Severe', 'Moved or resized', 'Neighbour changed', 'Missing or extra', 'Not mirrored'] : [],
-      counted ? ['Same text as source'] : [], ['Outcome']);
-    root.appendChild(card('Per language', table(headers, rows, broken ? [1, 2, 3, 5, 6, 7, 8, 9, 10] : [1, 2, 3, 5])));
+      broken ? ['Severe', 'Moved or resized', 'Stayed in place', 'Missing or extra', 'Not mirrored'] : [],
+      counted ? ['Same text as source'] : [], translated ? ['Kept in the source language by ITDroid'] : [], ['Outcome']);
+    const numeric = (broken ? [1, 2, 3, 5, 6, 7, 8, 9, 10] : [1, 2, 3, 5]);
+    if (translated) numeric.push(headers.length - 2);
+    root.appendChild(card('Per language', table(headers, rows, numeric)));
     if (targets.some(c => lr[c].screenText && lr[c].screenText.sameAsSource)) {
       root.appendChild(el('div', { class: 'alert alert-warning py-2' }, SAME_TEXT_NOTE));
     }
@@ -401,7 +406,7 @@
         ['Hardcoded strings by use', hardcodedByUse(inv)],
         ['Hardcoded translation policy', inv.hardcodedPolicy],
         ['Code literals moved to resources', isNum(inv.hardcodedCodeExtracted) ? num(inv.hardcodedCodeExtracted) + ' (' + num(inv.hardcodedPlacesExtracted) + ' places)' + (r.codeExtraction && r.codeExtraction.reverted ? ', put back: ' + r.codeExtraction.reverted : '') : null],
-        ['Code literals patched per language', isNum(inv.hardcodedPlacesToPatch) ? num(inv.hardcodedPlacesToPatch) + ' places' : null],
+        ['Code literals not moved, in the source language', notMovedCount(r)],
         ['XML literals moved to resources', isNum(inv.hardcodedXmlExtracted) ? num(inv.hardcodedXmlExtracted) : null],
         ['Unique texts sent to the translator', num(inv.uniqueTranslatableTexts)]])));
     }
@@ -461,6 +466,21 @@
     return isNum(inv.hardcodedTranslatable) ? inv.hardcodedTranslatable + ' look like UI text' : '';
   }
 
+  /** An array of the report, or an empty one when an older report does not have it. */
+  const listOf = v => (Array.isArray(v) ? v : []);
+
+  /**
+   * The code literals ITDroid could not move to a string resource, which stay in the source language
+   * in every language (codeExtraction.notMoved, inventory.hardcodedPlacesNotMoved). Null when the
+   * report does not say.
+   */
+  function notMovedCount(r) {
+    const inv = r.inventory || {};
+    const listed = r.codeExtraction && Array.isArray(r.codeExtraction.notMoved) ? r.codeExtraction.notMoved.length : null;
+    if (listed == null && !isNum(inv.hardcodedPlacesNotMoved)) return null;
+    return (listed != null ? plural(listed, 'literal') : '') + (isNum(inv.hardcodedPlacesNotMoved) ? (listed != null ? ' in ' : '') + plural(inv.hardcodedPlacesNotMoved, 'place') : '');
+  }
+
   function hardcodedByUse(inv) {
     const by = inv && inv.hardcodedByConsumer;
     if (!by) return null;
@@ -479,22 +499,32 @@
   /** The kinds of change of the comparison (ipfs[].types), in the order they are shown, and what happened to the element itself (ipfs[].geometry). */
   const IPF_TYPES = { positionLost: 'position lost', positionAdded: 'position gained', alignmentLost: 'alignment lost', alignmentAdded: 'alignment gained',
     overlapAdded: 'overlap', overlapRemoved: 'overlap gone', missingMirroring: 'not mirrored', componentLost: 'missing element', componentAdded: 'extra element',
-    textOverGraphic: 'text over a graphic', outOfFrame: 'out of the frame' };
+    textOverGraphic: 'text over a graphic', outOfFrame: 'out of the frame', linesAdded: 'more lines', linesRemoved: 'fewer lines',
+    moreOnScreen: 'more of it shown', lessOnScreen: 'less of it shown', outOfContainer: 'out of its container', textCut: 'text cut' };
   const IPF_TYPE_HELP = {
     positionLost: 'The element is no longer left of, right of, above, below or inside another one, as it was in the source.',
     positionAdded: 'The element is now left of, right of, above, below or inside another one, and it was not in the source.',
     alignmentLost: 'The element shared an edge with another one in the source and no longer does. Not counted when either is a text.',
-    alignmentAdded: 'The element shares an edge with another one and did not in the source. Not counted when either is a text.',
-    overlapAdded: 'The element steps on another one and did not in the source.',
+    alignmentAdded: 'The element now shares an edge with an element that holds it or that it holds, and did not in the source. Not counted when either is a text, nor between two elements apart, whose edges meet by chance.',
+    overlapAdded: 'What the element draws now meets what another one draws, a text over an icon or over another text, and did not in the source. Two boxes that overlap where nothing is drawn are no finding.',
     overlapRemoved: 'The element stepped on another one in the source and no longer does.',
     missingMirroring: 'Right-to-left language: the element and a sibling next to it kept their sides instead of swapping them.',
     componentLost: 'The source screen has the element and the translated screen does not.',
     componentAdded: 'The translated screen has the element and the source screen does not.',
     textOverGraphic: 'The text of the element is drawn over a graphic of the app that is not an element of its own (the arrow of a drop-down list, an icon, a border), which the source text did not touch. Every box is where it was, so only the pixels of the two screenshots show it.',
-    outOfFrame: 'The element reaches past the left or right edge the screen had in the source, such as a menu that grew wider than its window.' };
+    outOfFrame: 'The element reaches past the left or right side of the window that holds it, or a window such as a menu reaches past the side of the app. A menu that grows within the app to fit its text is not out of it.',
+    linesAdded: 'The text of the element takes more height than in the source, it wraps into more lines. What follows it moves down, and the element it pushed is outlined in blue.',
+    linesRemoved: 'The text of the element takes less height than in the source, it fits in fewer lines. What follows it moves up, and the element it pulled is outlined in blue.',
+    moreOnScreen: 'The element is cut by the bottom of the scrolling area it is in, and the translated screen shows more of it than the source. Outlined in orange in both screens.',
+    lessOnScreen: 'The translated screen shows less of the element than the source, the rest is pushed past the bottom of the scrolling area it is in, or scrolls under an element drawn over that area (a bar, a floating button). Scrolling shows it. Outlined in orange in both screens.',
+    outOfContainer: 'What the element draws reaches past the side of an element that holds it, or the element is cut by that side and what it draws touches it, as an icon a longer label pushes onto the border of its button. It did not in the source. Its empty box passing that side is no finding.',
+    textCut: 'The translated text does not fit in its box, which kept its size or grew until the side of the element holding it: the end of it is cut off, ended with an ellipsis, or on a line the box hides. Found in the pixels: the width the text needs, from how wide the texts of this language are on these screens, against the width it is drawn in.' };
   /** Kinds of change that break the screen rather than rearrange it, outlined in yellow. */
-  const SEVERE_TYPES = ['textOverGraphic', 'overlapAdded', 'outOfFrame'];
+  const SEVERE_TYPES = ['textOverGraphic', 'overlapAdded', 'outOfFrame', 'outOfContainer', 'textCut'];
   const isSevere = ipf => ipf.severity ? ipf.severity === 'severe' : SEVERE_TYPES.some(t => hasType(ipf, t));
+  /** An element cut by the bottom of its scrolling area that one screen shows more of, outlined in orange like what only one screen has. */
+  const ON_SCREEN_TYPES = ['moreOnScreen', 'lessOnScreen'];
+  const isPartlyShown = ipf => !isSevere(ipf) && ON_SCREEN_TYPES.some(t => hasType(ipf, t));
   const IPF_GEOMETRY = { same: 'it stayed in place', mirrored: 'it was mirrored', moved: 'it moved', resized: 'it changed size', 'moved+resized': 'it moved and changed size' };
 
   const hasType = (ipf, type) => Array.isArray(ipf.types) && ipf.types.includes(type);
@@ -520,7 +550,6 @@
         badge(num(l.amStates) + ' screens', 'secondary'),
         badge(num(l.pairedStates) + ' paired', 'secondary'),
         rep.actions != null ? badge('replay ' + rep.reproduced + '/' + rep.actions, rep.reproduced === rep.actions ? 'success' : 'warning') : null,
-        l.patchedHardcoded != null ? badge(l.patchedHardcoded + ' hardcoded patched', 'secondary') : null,
         l.extractedCodeLiterals ? badge(l.extractedCodeLiterals + ' hardcoded read from resources', 'secondary') : null,
         shippedByApp(c) ? badge('shipped by the app', 'info') : null,
         l.screenText && l.screenText.sameAsSource ? badge('same text as source', 'warning') : null,
@@ -536,8 +565,10 @@
           : el('p', { class: 'small text-muted mb-2' }, counts + ' (' + pct(t.unchanged, t.sourceTexts) + ').'));
         if (isNum(t.unchangedNotInApk) && t.unchangedNotInApk > 0) body.appendChild(notInApkNote(t));
       }
-      if (l.hardcodedFallback) body.appendChild(el('div', { class: 'alert alert-warning py-2' }, l.hardcodedFallback + (isNum(l.revertedHardcoded) ? ' (' + l.revertedHardcoded + ' patched places reverted)' : '')));
-      if (Array.isArray(l.crashes) && l.crashes.length) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, 'The app crashed during the replay: ' + l.crashes.join(' | ')));
+      if (l.hardcodedFallback) body.appendChild(el('div', { class: 'alert alert-warning py-2' }, l.hardcodedFallback + (isNum(l.revertedHardcoded)
+        ? ' (' + plural(l.revertedHardcoded, 'code literal') + ' moved to resources had their translation dropped for this language and show the source text)' : '')));
+      if (Array.isArray(l.crashes) && l.crashes.length) body.appendChild(el('div', { class: 'alert alert-danger py-2' }, 'The app crashed during the replay: ' + l.crashes.join(', ')));
+      if (l.translation) body.appendChild(translationView(l, c));
       if (rep.divergences && rep.divergences.length) {
         const ul = el('ul', { class: 'small mb-2' });
         for (const d of rep.divergences.slice(0, 12)) ul.appendChild(el('li', null, d));
@@ -660,10 +691,11 @@
       el('div', { class: 'col-6 col-md' }, stat('Elements compared', num(s.nodesCompared), '')),
       isNum(s.severe) ? el('div', { class: 'col-6 col-md' }, stat('Severe', num(s.severe), s.severe > 0 ? 'text-warning' : '')) : null,
       el('div', { class: 'col-6 col-md' }, stat('Moved or resized', num(s.nodesChanged), 'the element itself' + share(s.nodesChanged))),
-      el('div', { class: 'col-6 col-md' }, stat('Neighbour changed', num(s.nodesAffected), 'the element stayed as it was' + share(s.nodesAffected))),
+      el('div', { class: 'col-6 col-md' }, stat('Stayed in place', num(s.nodesAffected), 'the element itself did not move' + share(s.nodesAffected))),
       el('div', { class: 'col-6 col-md' }, stat('Missing', num(s.componentsLost), 'only in the source screen')),
       el('div', { class: 'col-6 col-md' }, stat('Extra', num(s.componentsAdded), 'only in the translated screen')),
-      isNum(s.textOverGraphic) ? el('div', { class: 'col-6 col-md' }, stat('Text over a graphic', num(s.textOverGraphic), 'found in the pixels of the screenshots')) : null));
+      isNum(s.textOverGraphic) ? el('div', { class: 'col-6 col-md' }, stat('Text over a graphic', num(s.textOverGraphic), 'found in the pixels of the screenshots')) : null,
+      isNum(s.textCut) ? el('div', { class: 'col-6 col-md' }, stat('Text cut', num(s.textCut), 'and nothing else changed, found in the pixels')) : null));
     const buttons = el('div', { class: 'd-flex flex-wrap align-items-center mb-2' }, el('span', { class: 'small text-muted mr-2' }, 'Findings by kind of change:'));
     const all = [];
     const press = (button, type) => {
@@ -695,6 +727,43 @@
           : 'Of ' + num(checked) + ' pairs of sibling elements placed side by side in the source, '
             + (failed > 0 ? num(failed) + ' (' + pct(failed, checked) + ') kept their sides.' : 'all swapped sides.'))));
     }
+    return box;
+  }
+
+  /**
+   * What ITDroid did with the texts of one language beyond translating each one whole
+   * (langsReport.<lang>.translation): the texts it left in the source language and why, the ones it
+   * translated piece by piece once the whole text failed, and the strings the app ships for this
+   * language still in the source language, which ITDroid translated. Older reports do not have it.
+   */
+  function translationView(l, code) {
+    const t = l.translation;
+    const kept = listOf(t.keptInSource), parts = listOf(t.byParts), copies = listOf(t.appCopies);
+    const WHAT = { kept: ['left in the source language', 'secondary'], parts: ['translated piece by piece', 'info'], copy: ['shipped untranslated by the app', 'dark'] };
+    const items = kept.map(k => ({ kind: 'kept', text: k.text, detail: k.reason, names: listOf(k.names) }))
+      .concat(parts.map(p => ({ kind: 'parts', text: p.text, detail: p.translation, names: [] })))
+      .concat(copies.map(a => ({ kind: 'copy', text: a.text, detail: a.translation, names: a.name ? [a.name] : [] })));
+    const box = el('div', { class: 'translation-block mb-3' });
+    box.appendChild(el('p', { class: 'small mb-1' }, el('strong', null, 'Translation by ITDroid. '),
+      plural(kept.length, 'text') + ' left in the source language in ' + (l.lang || code) + ', ' +
+      plural(parts.length, 'text') + ' translated piece by piece after the whole text failed, ' +
+      plural(copies.length, 'string') + ' the app ships for this language in the source language, translated by ITDroid.'));
+    if (!items.length) return box;
+    const det = el('details', { class: 'mb-1 translation-texts' });
+    det.appendChild(el('summary', { class: 'small text-muted state-toggle' }, 'The ' + plural(items.length, 'text') + ' and what ITDroid did with each'));
+    const holder = el('div', { class: 'mt-2' });
+    det.appendChild(holder);
+    det.addEventListener('toggle', () => {
+      if (!det.open || det.dataset.loaded) return;
+      det.dataset.loaded = '1';
+      holder.appendChild(pagedTable(items, [
+        { title: 'Text', cell: i => el('span', { class: 'node-text', dir: 'auto', title: i.text || '' }, i.text || '') },
+        { title: 'What ITDroid did', cell: i => badge(WHAT[i.kind][0], WHAT[i.kind][1]) },
+        { title: 'Why, or the translation', cell: i => el('span', { class: 'small why', dir: 'auto' }, i.detail || '') },
+        { title: 'String resources', cell: i => i.names.length ? el('code', { class: 'small' }, i.names.join(', ')) : '' }],
+        'Nothing to show.', 20).node);
+    });
+    box.appendChild(det);
     return box;
   }
 
@@ -827,7 +896,7 @@
    * elements the other screen does not have; graphics: boxes (x1, y1, x2, y2) of graphics of the app
    * that a translated text is drawn over.
    */
-  function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes, graphics, severeIndexes) {
+  function shotView(st, caption, ipfIndexes, relIndexes, mirrorIndexes, onlyIndexes, graphics, severeIndexes, whereIndexes) {
     if (!st) return el('div', { class: 'shot' }, el('div', { class: 'shot-caption' }, caption + ': screen not captured'));
     const wrap = el('div', { class: 'shot' });
     // The boxes are placed as shares of the screen, over the image alone: the caption is outside.
@@ -852,6 +921,7 @@
       if (n && n.bounds) box(() => n.bounds, cls, '#' + idx + ' ' + nodeLabel(n));
     };
     for (const i of relIndexes) draw(i, 'rel');
+    for (const i of (whereIndexes || [])) draw(i, 'where');
     for (const i of (mirrorIndexes || [])) {
       const n = st.nodes[i];
       if (n && n.bounds) box(w => mirroredBounds(n.bounds, w), 'mirror', 'Estimated position of #' + i + ' ' + nodeLabel(n) + ' in a mirrored screen');
@@ -879,7 +949,7 @@
 
   /**
    * The visual difference between two screenshots, drawn on a canvas: the source screen faded to
-   * grey, and in teal every pixel that is not the same in the translated one. For a language
+   * grey, and in magenta every pixel that is not the same in the translated one. For a language
    * written in the other direction the translated screenshot is flipped first, so a layout that
    * mirrored well lines up with the source and what stands out is what did not.
    */
@@ -917,7 +987,7 @@
           const d = Math.max(Math.abs(source[i] - translated[i]), Math.abs(source[i + 1] - translated[i + 1]), Math.abs(source[i + 2] - translated[i + 2]));
           if (d > DIFF_THRESHOLD) {
             different++;
-            out.data[i] = 23; out.data[i + 1] = 162; out.data[i + 2] = 184;
+            out.data[i] = 214; out.data[i + 1] = 36; out.data[i + 2] = 159;
           } else {
             const grey = 0.3 * source[i] + 0.59 * source[i + 1] + 0.11 * source[i + 2];
             out.data[i] = out.data[i + 1] = out.data[i + 2] = 255 - (255 - grey) * 0.35;
@@ -961,24 +1031,24 @@
     const tgtPos = i => i.langNodeID != null ? Number(i.langNodeID) : Number(i.nodeID);
     const tgtRelPos = r => r.langRelNode != null ? Number(r.langRelNode) : Number(r.relNode);
     const isLost = i => i.kind === 'componentLost', isAdded = i => i.kind === 'componentAdded';
-    // severe findings in yellow, the others in red
-    const srcIpf = group.ipfs.filter(i => !isLost(i) && !isSevere(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
-    const tgtIpf = group.ipfs.filter(i => !isAdded(i) && !isSevere(i)).map(tgtPos).filter(n => n >= 0);
-    const srcSevere = group.ipfs.filter(i => !isLost(i) && isSevere(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
+    // in the translated screen severe findings in yellow and the others in red, in the source screen,
+    // which shows the element as it should be, only where it is, in grey
+    const srcWhere = group.ipfs.filter(i => !isLost(i) && !isPartlyShown(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
+    const tgtIpf = group.ipfs.filter(i => !isAdded(i) && !isSevere(i) && !isPartlyShown(i)).map(tgtPos).filter(n => n >= 0);
     const tgtSevere = group.ipfs.filter(i => !isAdded(i) && isSevere(i)).map(tgtPos).filter(n => n >= 0);
-    // what only one of the two screens has: outlined in that screen, in its own colour
-    const srcOnly = group.ipfs.filter(isLost).map(i => Number(i.nodeID)).filter(n => n >= 0);
-    const tgtOnly = group.ipfs.filter(isAdded).map(tgtPos).filter(n => n >= 0);
+    // what only one of the two screens has, outlined in that screen in its own colour, and what one shows more of, in both
+    const srcOnly = group.ipfs.filter(i => isLost(i) || isPartlyShown(i)).map(i => Number(i.nodeID)).filter(n => n >= 0);
+    const tgtOnly = group.ipfs.filter(i => isAdded(i) || isPartlyShown(i)).map(tgtPos).filter(n => n >= 0);
     // graphics of the app that a translated text is drawn over (in the translated screen)
     const graphics = [].concat(...group.ipfs.map(i => Array.isArray(i.graphics) ? i.graphics : []));
     const srcRel = [], tgtRel = [];
     for (const i of group.ipfs) for (const r of (i.relations || [])) {
-      if (!srcIpf.includes(Number(r.relNode)) && !srcSevere.includes(Number(r.relNode))) srcRel.push(Number(r.relNode));
+      if (!srcWhere.includes(Number(r.relNode))) srcRel.push(Number(r.relNode));
       if (!tgtIpf.includes(tgtRelPos(r)) && !tgtSevere.includes(tgtRelPos(r))) tgtRel.push(tgtRelPos(r));
     }
     const notMirrored = mirrorExpected ? group.ipfs.filter(i => hasType(i, 'missingMirroring')).map(tgtPos).filter(n => n >= 0) : [];
     const shots = el('div', { class: 'shot-pair mb-2' },
-      shotView(srcState, 'Source (' + dflt + ')', srcIpf, srcRel, null, srcOnly, null, srcSevere),
+      shotView(srcState, 'Source (' + dflt + ')', [], srcRel, null, srcOnly, null, [], srcWhere),
       shotView(tgtState, 'Translated (' + lang + ')', tgtIpf, tgtRel, null, tgtOnly, graphics, tgtSevere));
     // rtl.repair: the same screen in the build with the layouts repaired, with what still did not mirror
     const repair = languages().lr[lang] ? languages().lr[lang].rtlRepair : null;
@@ -997,14 +1067,16 @@
     const hasOnly = srcOnly.length + tgtOnly.length > 0;
     const hasGraphics = graphics.length > 0;
     holder.appendChild(el('p', { class: 'text-muted small mb-1' },
-      srcSevere.length + tgtSevere.length ? el('span', { class: 'legend severe' }) : null,
-      srcSevere.length + tgtSevere.length ? 'a severe finding, which breaks the screen: text over a graphic, an element that steps on another one, or one that reaches past the sides of the screen. ' : null,
-      srcIpf.length + tgtIpf.length ? el('span', { class: 'legend ipf' }) : null,
-      srcIpf.length + tgtIpf.length ? 'a finding that rearranges the screen without breaking it: an element moved, grew, or gained a line. Each element is outlined where it is in that screen. ' : null,
+      tgtSevere.length ? el('span', { class: 'legend severe' }) : null,
+      tgtSevere.length ? 'a severe finding, which a person sees broken: a text cut in its box or drawn over a graphic or over another element, an element drawn past the side of the one that holds it, or one that reaches past the sides of the screen. ' : null,
+      tgtIpf.length ? el('span', { class: 'legend ipf' }) : null,
+      tgtIpf.length ? 'a finding that rearranges the screen without breaking it: an element moved, grew, or gained a line. ' : null,
+      srcWhere.length ? el('span', { class: 'legend where' }) : null,
+      srcWhere.length ? 'in the source screen, where each element with a finding is, as it should look. The finding is in the translated screen. ' : null,
       srcRel.length + tgtRel.length ? el('span', { class: 'legend rel' }) : null,
       srcRel.length + tgtRel.length ? 'the elements they relate to. ' : null,
       hasOnly ? el('span', { class: 'legend only' }) : null,
-      hasOnly ? 'an element only that screen has: missing in the translated screen when it is outlined in the source, extra when it is outlined in the translated one. ' : null,
+      hasOnly ? 'an element only that screen has (missing in the translated screen when it is outlined in the source, extra when it is outlined in the translated one), or one cut by the bottom of its scrolling area that the translated screen shows more or less of (outlined in both). ' : null,
       hasGraphics ? el('span', { class: 'legend graphic' }) : null,
       hasGraphics ? 'a graphic of the app (an arrow, an icon, a border) that the translated text is drawn over, found from the pixels. ' : null,
       notMirrored.length ? el('span', { class: 'legend mirror' }) : null,
@@ -1023,16 +1095,27 @@
       if (lost) what = 'The translated screen does not have it' + inside + '.';
       else if (added) what = 'The source screen does not have it' + inside + '.';
       else if (i.kind === 'textOverGraphic') what = 'Its box is where it was, give or take a few pixels, and its text is drawn over ' + plural((i.graphics || []).length, 'graphic') + ' of the app (in yellow) that the source text did not touch.';
+      else if (i.kind === 'textCut') what = textCutDetail(i);
       else {
         what = el('div', null, ...(i.relations || []).map(r => {
           const other = srcState ? srcState.nodes[Number(r.relNode)] : null;
           const parts = [];
-          if (r.removed) parts.push('lost ' + list(r.removed));
+          if (r.under) parts.push('it scrolls under it, which is drawn over its scrolling area');
+          else if (hasType(i, 'outOfContainer') && /CONTAINED/.test(r.removed || '') && !r.added) parts.push('what it draws passes the side of this element that holds it');
+          if (r.cut) parts.push('it is cut by the ' + r.cut + ' side of this element that holds it, and what it draws reaches that side');
+          else if (r.removed) parts.push('lost ' + list(r.removed));
           if (r.added) parts.push('gained ' + list(r.added));
           if (r.missing) parts.push('not mirrored, expected ' + list(r.missing));
+          if (r.moved != null) parts.push('moved ' + Math.abs(r.moved) + ' px ' + (r.moved > 0 ? 'down' : 'up') + ' with it');
           return el('div', null, el('span', { class: 'text-muted' }, '→ #' + r.relNode + ' '), el('span', { class: 'node-text', title: nodeLabel(other) }, nodeLabel(other)), ': ' + parts.join('; '));
         }));
-        if (hasType(i, 'outOfFrame')) what.appendChild(el('div', null, 'It reaches past the left or right edge the screen had in the source, as a menu wider than its window does.'));
+        if (hasType(i, 'textCut')) what.appendChild(textCutDetail(i));
+        if (hasType(i, 'outOfFrame')) what.appendChild(el('div', null, 'It reaches past the left or right side of its window, or, being a window, past the side of the app.'));
+        const px = Math.abs(Number(i.heightChange) || 0);
+        if (hasType(i, 'linesAdded')) what.appendChild(el('div', null, 'Its text takes ' + px + ' px more height than in the source, it wraps into more lines.'));
+        if (hasType(i, 'linesRemoved')) what.appendChild(el('div', null, 'Its text takes ' + px + ' px less height than in the source, it fits in fewer lines.'));
+        if (hasType(i, 'moreOnScreen')) what.appendChild(el('div', null, 'It is cut by the bottom of its scrolling area, and the translated screen shows ' + px + ' px more of it.'));
+        if (hasType(i, 'lessOnScreen')) what.appendChild(el('div', null, 'The translated screen shows ' + px + ' px less of it, the rest is past the bottom of its scrolling area or under what is drawn over it. Scrolling shows it.'));
       }
       const kinds = el('div', null,
         hasType(i, 'missingMirroring') ? badge('Missing mirroring', 'danger') : null,
@@ -1044,38 +1127,61 @@
     holder.appendChild(table(['Node', 'Element', 'What changed', 'Detail'], rows));
   }
 
+  /** What a cut text needs and gets, from ipfs[].neededWidth and drawnWidth when the report has them. */
+  function textCutDetail(i) {
+    const sizes = isNum(i.neededWidth) && isNum(i.drawnWidth) ? ' It needs about ' + i.neededWidth + ' px and is drawn in ' + i.drawnWidth + ' px.' : '';
+    return el('div', null, 'Its translated text does not fit in its box, which kept its size or grew until the side of the element holding it: the end of it is cut off or on a line the box hides.' + sizes);
+  }
+
   // ------------------------------------------------------------------ hardcoded strings
 
   /**
-   * The hardcoded strings in the groups of the original report: taken out of the code into a
-   * resource, taken out of the XML into a resource, and left where they were. This version adds
-   * the ones translated by patching the code of each language build, for the places a resource
-   * could not serve. Every string is in one group, so the groups add up to the total.
-   * Inventories written before each place was recorded only say whether a string was translated.
+   * The hardcoded strings in groups: taken out of the code into a resource, taken out of the XML into
+   * a resource, literals of the code ITDroid could not move to a resource (codeExtraction.notMoved),
+   * which stay in the source language, and the ones left as they are. Reports of runs that still
+   * translated those literals by patching the code of each language build have no list of them, and
+   * they are shown in a group of their own. Every string is in one group, so the groups add up to the
+   * total. Inventories written before each place was recorded only say whether a string was translated.
    */
-  function hardcodedGroups(hc) {
+  function hardcodedGroups(hc, notMoved) {
     const detailed = hc.some(e => Array.isArray(e.places));
-    const groups = { code: [], xml: [], patched: [], kept: [] };
+    const groups = { code: [], xml: [], notMoved: [], patched: [], kept: [] };
     for (const e of hc) {
       const places = e.places || [];
+      const shown = detailed ? places.some(p => p.translated) : e.translatable;
       if (e.kind === 'hardcoded-xml') (e.extractedTo ? groups.xml : groups.kept).push(e);
       else if (places.some(p => p.extracted)) groups.code.push(e);
-      else if (detailed ? places.some(p => p.translated) : e.translatable) groups.patched.push(e);
+      else if (notMoved && (notMoved.has(e.text) || shown)) groups.notMoved.push(e);
+      else if (!notMoved && shown) groups.patched.push(e);
       else groups.kept.push(e);
     }
     return { groups, detailed };
   }
 
+  /** The literals of the code not moved to a resource, text to reason, or null for a report that does not list them. */
+  function notMovedReasons(r) {
+    const list = r.codeExtraction && Array.isArray(r.codeExtraction.notMoved) ? r.codeExtraction.notMoved : null;
+    if (!list) return null;
+    const reasons = new Map();
+    for (const n of list) if (n && n.text != null && !reasons.has(n.text)) reasons.set(n.text, n.reason || '');
+    return reasons;
+  }
+
   const shortClass = name => name ? String(name).split('.').pop() : '';
 
-  /** Where a string is: its first place, and the rest behind a toggle. With marks, each place says what was done there. */
-  function placesCell(e, marks) {
+  /**
+   * Where a string is: its first place, and the rest behind a toggle. With marks, each place says
+   * what was done there. Older runs patched the code of some places, newer ones leave them in the
+   * source language.
+   */
+  function placesCell(e, marks, legacy) {
     const places = e.places || [];
     if (!places.length) return el('span', { class: 'small text-muted' }, e.origin || '');
     const line = p => {
       const where = p.class ? shortClass(p.class) + (p.method ? '.' + p.method : '')
         : (p.element ? '<' + p.element + '> ' + (p.attribute || '') + (p.id ? ' ' + p.id : '') : '');
-      const mark = !marks ? null : p.extracted ? badge('resource', 'success') : p.translated ? badge('patched', 'info') : badge('kept', 'secondary');
+      const mark = !marks ? null : p.extracted ? badge('resource', 'success') : p.translated && legacy ? badge('patched', 'info')
+        : p.translated ? badge('source language', 'warning') : badge('kept', 'secondary');
       return el('div', { class: 'small', title: [p.class, p.origin, p.via ? 'handed to ' + p.via : ''].filter(Boolean).join('\n') },
         mark, where, el('span', { class: 'text-muted' }, (where ? ', ' : '') + (p.origin || '') + (p.consumer && p.consumer !== e.consumer ? ', ' + p.consumer : '')));
     };
@@ -1099,22 +1205,30 @@
     const inv = state.inventory;
     const r = state.report;
     const { lr, targets } = languages();
+    const reasons = notMovedReasons(r);
     root.appendChild(el('p', { class: 'text-muted small' },
       'Text written in the app instead of in its string resources: literals of the code (const-string in the smali) and of the XML (layouts, menus, preferences, manifest). ' +
-      'ITDroid translates the ones the app shows. Where it can, it moves the text to a string resource, so one build serves every language; ' +
-      'where it cannot, it patches the translation into the build of each language. Logs, exception messages and data (keys, SQL, identifiers, formats) are kept verbatim.'));
+      'ITDroid translates the ones the app shows by moving the text to a string resource, so one build serves every language. ' +
+      'A literal of the code it cannot move stays in the source language in every language, with the reason. Logs, exception messages and data (keys, SQL, identifiers, formats) are kept verbatim.'));
     if (!inv || !Array.isArray(inv.entries)) {
       root.appendChild(el('p', null, 'Hardcoded strings detected: ' + num(r.hardcoded) + '. The inventory file (strings_inventory.json) is not available, see hcs.txt in the artifacts.'));
+      if (reasons && reasons.size) {
+        const items = [...reasons.entries()].map(([text, reason]) => ({ text, reason }));
+        root.appendChild(card(el('span', null, el('strong', null, 'Not moved to resources'), el('span', { class: 'badge badge-secondary ml-2' }, String(items.length))),
+          pagedTable(items, [{ title: 'Text', cell: i => el('span', { class: 'node-text', title: i.text }, i.text) },
+            { title: 'Why ITDroid could not move it', cell: i => el('span', { class: 'small why' }, i.reason) }], 'Nothing to show.').node));
+      }
       return;
     }
     const hc = inv.entries.filter(e => e.kind === 'hardcoded' || e.kind === 'hardcoded-xml');
     const inXml = hc.filter(e => e.kind === 'hardcoded-xml').length;
-    const { groups, detailed } = hardcodedGroups(hc);
+    const { groups, detailed } = hardcodedGroups(hc, reasons);
+    const legacy = !reasons;
     const translated = groups.code.length + groups.xml.length + groups.patched.length;
     const langsWith = targets.filter(c => hc.some(e => e.translations && e.translations[c] != null));
 
     // What each language build really carries. A language whose build failed with the translated
-    // strings was rebuilt without them: there the strings of the code are back in the source text.
+    // strings had the translation of its code literals dropped: there they are back in the source text.
     const applied = targets.map(c => {
       const l = lr[c];
       if (l.error) return { code: c, lang: l.lang || c, error: l.error };
@@ -1122,8 +1236,7 @@
       return { code: c, lang: l.lang || c, reverted, why: l.hardcodedFallback,
         fromCode: reverted ? 0 : (isNum(l.extractedCodeLiterals) ? l.extractedCodeLiterals : (detailed ? groups.code.length : null)),
         fromXml: isNum(l.extractedXmlLiterals) ? l.extractedXmlLiterals : (detailed ? groups.xml.length : null),
-        patched: isNum(l.patchedHardcoded) ? l.patchedHardcoded : null,
-        revertedPlaces: isNum(l.revertedHardcoded) ? l.revertedHardcoded : null };
+        revertedLiterals: isNum(l.revertedHardcoded) ? l.revertedHardcoded : null };
     });
     const evaluated = applied.filter(a => !a.error);
     const anyReverted = evaluated.some(a => a.reverted);
@@ -1132,10 +1245,12 @@
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Hardcoded strings', num(hc.length), (hc.length - inXml) + ' in code, ' + inXml + ' in XML'
       + (inv.counts && isNum(inv.counts.hardcodedOccurrences) ? ', in ' + inv.counts.hardcodedOccurrences + ' places' : ''))));
     totals.appendChild(el('div', { class: 'col-md-4' }, stat('Translated', num(translated),
-      detailed ? groups.code.length + ' read from resources (code), ' + groups.xml.length + ' from XML, ' + groups.patched.length + ' patched in each build'
+      detailed ? groups.code.length + ' read from resources (code), ' + groups.xml.length + ' from XML'
+        + (groups.patched.length ? ', ' + groups.patched.length + ' patched in each build by this older run' : '')
         + (anyReverted ? ', not in every language, see below' : '')
-        : 'patched into the build of each language')));
-    totals.appendChild(el('div', { class: 'col-md-4' }, stat('Kept verbatim', num(groups.kept.length), hardcodedByUse(inv.counts) || '')));
+        : 'translated in each language build')));
+    totals.appendChild(el('div', { class: 'col-md-4' }, stat('In the source language', num(groups.kept.length + groups.notMoved.length),
+      (reasons ? groups.notMoved.length + ' not moved to resources, ' : '') + groups.kept.length + ' kept verbatim' + (hardcodedByUse(inv.counts) ? ' (' + hardcodedByUse(inv.counts) + ')' : ''))));
     root.appendChild(totals);
 
     if (r.codeExtraction && r.codeExtraction.reverted) {
@@ -1143,15 +1258,15 @@
     }
     if (applied.length) {
       const rows = applied.map(a => a.error
-        ? [el('span', null, badge(a.code, 'info'), a.lang), '–', '–', '–', el('span', { class: 'text-danger small' }, 'not evaluated: ' + a.error)]
-        : [el('span', null, badge(a.code, 'info'), a.lang), a.fromCode, a.fromXml, a.patched,
-          a.reverted ? el('span', { class: 'text-warning small' }, (a.revertedPlaces != null ? plural(a.revertedPlaces, 'place') + ' of the code reverted: ' : '') + a.why) : 'as planned']);
+        ? [el('span', null, badge(a.code, 'info'), a.lang), '–', '–', el('span', { class: 'text-danger small' }, 'not evaluated: ' + a.error)]
+        : [el('span', null, badge(a.code, 'info'), a.lang), a.fromCode, a.fromXml,
+          a.reverted ? el('span', { class: 'text-warning small' }, (a.revertedLiterals != null ? plural(a.revertedLiterals, 'code literal') + ' back in the source language: ' : '') + a.why) : 'as planned']);
       root.appendChild(card('Applied in each language build', el('div', null,
-        table(['Language', 'Code strings read from resources', 'XML strings read from resources', 'Places patched in the code', 'Outcome'], rows, [1, 2, 3]),
-        el('p', { class: 'text-muted small mb-0 mt-2' }, 'A build that did not start, or crashed where the original app did not, is rebuilt with the translated resources only; its hardcoded strings of the code stay in the source language.'))));
+        table(['Language', 'Code strings read from resources', 'XML strings read from resources', 'Outcome'], rows, [1, 2]),
+        el('p', { class: 'text-muted small mb-0 mt-2' }, 'A build that did not start, or crashed where the original app did not, is built again without the translation of the code literals moved to resources: there they stay in the source language.'))));
     }
 
-    // One search box and one filter for the four groups; each group has its own pages.
+    // One search box and one filter for every group; each group has its own pages.
     const uses = {};
     for (const e of hc) if (e.consumer) uses[e.consumer] = (uses[e.consumer] || 0) + 1;
     const search = el('input', { class: 'form-control form-control-sm', type: 'search', placeholder: 'Search text, class, method, file, resource or translation', 'aria-label': 'Search hardcoded strings' });
@@ -1166,23 +1281,26 @@
     const use = e => el('span', { class: 'small text-nowrap' }, e.consumer || '');
     const translations = langsWith.map(c => ({ title: c, cell: e => (e.translations && e.translations[c] != null) ? el('span', { dir: 'auto' }, e.translations[c]) : '' }));
     const why = e => el('span', { class: 'small why' }, e.skipReason || (e.consumer ? 'the app does not show it there (use: ' + e.consumer + ')' : 'not translated'));
+    const whyNotMoved = e => el('span', { class: 'small why' }, (reasons && reasons.get(e.text)) || e.skipReason || 'not given');
     const sections = [
       ['code', 'Extracted from the code', 'Literals of the code that the app shows. The literal stays in the code and is handed to a small class ITDroid adds to the app, which returns the string resource of that text in the language the app runs in. One build serves every language.',
-        [{ title: 'Text', cell: text }, { title: 'Resource', cell: resource }, { title: 'Class and method', cell: e => placesCell(e, true) }, { title: 'Use', cell: use }].concat(translations)],
+        [{ title: 'Text', cell: text }, { title: 'Resource', cell: resource }, { title: 'Class and method', cell: e => placesCell(e, true, legacy) }, { title: 'Use', cell: use }].concat(translations)],
       ['xml', 'Extracted from the XML', 'Text written in an attribute of a layout, a menu, a preference screen or the manifest (android:text, hint, title...). The attribute now points to a string resource, translated like the rest.',
-        [{ title: 'Text', cell: text }, { title: 'Resource', cell: resource }, { title: 'File and attribute', cell: e => placesCell(e, false) }].concat(translations)],
+        [{ title: 'Text', cell: text }, { title: 'Resource', cell: resource }, { title: 'File and attribute', cell: e => placesCell(e, false, legacy) }].concat(translations)],
+      ['notMoved', 'Not moved to resources', 'Literals of the code that the app shows and that ITDroid could not move to a string resource, with the reason. They stay in the source language in every language build.',
+        [{ title: 'Text', cell: text }, { title: 'Class and method', cell: e => placesCell(e, true, legacy) }, { title: 'Use', cell: use }, { title: 'Why ITDroid could not move it', cell: whyNotMoved }]],
       ['patched', detailed ? 'Patched in each language build' : 'Translated in each language build',
-        detailed ? 'Literals the app shows that could not be read from a resource (their dex file has no room for one more reference). The translation is written into the code of the build of each language; the internationalized build keeps the source text.'
-          : 'Literals that look like text of the interface, translated and written into the code of the build of each language. This report does not record where each one is used.',
-        [{ title: 'Text', cell: text }, { title: 'Class and method', cell: e => placesCell(e, detailed) }].concat(detailed ? [{ title: 'Use', cell: use }] : [], translations)],
+        (detailed ? 'Literals the app shows that could not be read from a resource. This older run wrote their translation into the code of the build of each language, which ITDroid no longer does.'
+          : 'Literals that look like text of the interface, translated in each language build by this older run. This report does not record where each one is used.'),
+        [{ title: 'Text', cell: text }, { title: 'Class and method', cell: e => placesCell(e, detailed, legacy) }].concat(detailed ? [{ title: 'Use', cell: use }] : [], translations)],
       ['kept', 'Not translated', 'Kept exactly as written, with the reason: what the code does with the text (a log, an exception, a key, a query), or what the text is (an identifier, a format, a constant).',
-        [{ title: 'Text', cell: text }, { title: 'Class and method, or file', cell: e => placesCell(e, false) }].concat(detailed ? [{ title: 'Use', cell: use }] : [], [{ title: 'Why not', cell: why }])]];
+        [{ title: 'Text', cell: text }, { title: 'Class and method, or file', cell: e => placesCell(e, false, legacy) }].concat(detailed ? [{ title: 'Use', cell: use }] : [], [{ title: 'Why not', cell: why }])]];
     const tables = [];
     for (const [key, title, help, columns] of sections) {
       const items = groups[key];
-      // No empty group for what does not apply: nothing is patched when every string is read from
-      // a resource, and an inventory without places cannot tell the extracted ones apart.
-      if (!items.length && (key === 'patched' || !detailed)) continue;
+      // No empty group for what does not apply: the older patched group, nothing left unmoved, and an
+      // inventory without places cannot tell the extracted ones apart.
+      if (!items.length && (key === 'patched' || key === 'notMoved' || !detailed)) continue;
       const count = el('span', { class: 'badge badge-secondary ml-2' }, String(items.length));
       const paged = pagedTable(items, columns, 'No string in this group' + (items.length ? ' matches the search.' : '.'));
       tables.push({ items, paged, count });
@@ -1368,7 +1486,7 @@
       root.appendChild(el('div', { class: 'alert alert-warning py-2' }, 'The server did not list the files of this evaluation' + (state.files && state.files.error ? ' (' + state.files.error + ')' : '') + '. The links below are the usual ones and some may not exist.'));
     }
     // With the listing, only what is on the disk is linked. Without it, the names a run usually writes.
-    const usual = ['report.json', 'strings_inventory.json', 'ipfs.csv', 'hcs.txt'].concat(codes.filter(c => c !== dflt).map(c => 'hardcoded_' + c + '.csv'),
+    const usual = ['report.json', 'strings_inventory.json', 'hcs.txt'].concat(codes.filter(c => c !== dflt).map(c => 'hardcoded_' + c + '.csv'),
       [r.appName + '-aligned-debugSigned.apk'], codes.map(c => r.appName + '-' + c + '-aligned-debugSigned.apk'));
     for (const c of codes) {
       const folder = resultsFolder(c);

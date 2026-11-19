@@ -35,7 +35,9 @@ public class ReportServer {
     public static final int DEFAULT_PORT = 8585;
 
     public static void run(String[] args) throws Exception {
-        String root = "results";
+        // the resultsDir of the config of this folder, where the evaluations are written
+        RunConfig config = RunConfig.loadDefault();
+        String root = config != null ? config.getResultsDir() : "results";
         int port = DEFAULT_PORT;
         boolean openBrowser = true;
         for (int i = 0; i < args.length; i++) {

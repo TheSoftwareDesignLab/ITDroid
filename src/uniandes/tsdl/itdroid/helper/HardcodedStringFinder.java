@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -84,14 +83,14 @@ public class HardcodedStringFinder {
 	public static List<Hit> hits(SmaliScan scan) {
 		LinkedHashMap<String, Hit> byText = new LinkedHashMap<>();
 		for (SmaliScan.Occurrence o : scan.occurrences()) {
-			if (isNoise(o.text)) {
+			if (Translatability.isNoise(o.text)) {
 				continue;
 			}
 			byText.computeIfAbsent(o.text, Hit::new).places.add(o);
 		}
 		List<Hit> out = new ArrayList<>();
 		for (Hit h : byText.values()) {
-			if (h.shown() || !isIdentifier(h.text)) {
+			if (h.shown() || !Translatability.isBareIdentifier(h.text)) {
 				out.add(h);
 			}
 		}
@@ -105,13 +104,6 @@ public class HardcodedStringFinder {
 			out.computeIfAbsent(l.text, k -> new ArrayList<>()).add(l);
 		}
 		return out;
-	}
-
-	/** Scans the app, writes {@code hcs.txt} and returns the number of distinct hardcoded strings. */
-	public static int findHardCodedStrings(String decodedFolderPath, String packageName, String outputPath) throws IOException {
-		List<Hit> hits = hits(SmaliScan.scan(decodedFolderPath, packageName));
-		List<XmlLiterals.Literal> xml = XmlLiterals.find(decodedFolderPath);
-		return writeHcs(Paths.get(outputPath, "hcs.txt"), hits, xml);
 	}
 
 	/**
@@ -172,51 +164,5 @@ public class HardcodedStringFinder {
 	/** A literal on one line, with line breaks and tabs escaped. */
 	private static String visible(String text) {
 		return text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
-	}
-
-	/** Framework and compiler noise such as Compose keys, descriptors, URLs, paths and formats. */
-	static boolean isNoise(String s) {
-		String t = s.trim();
-		if (t.length() < 2) {
-			return true;                                   // single chars
-		}
-		if (!t.matches("(?s).*\\p{L}.*")) {
-			return true;                                   // no letter
-		}
-		if (t.contains(".kt#") || t.contains(".java#") || t.contains(".kt:") || t.contains(".java:")
-				|| t.matches("(?s).*@\\d+L\\d+.*") || t.contains("<anonymous>")) {
-			return true;                                   // Compose keys and trace strings
-		}
-		if (t.startsWith("$")) {
-			return true;                                   // Kotlin synthetic names
-		}
-		if (t.startsWith(", ") || t.endsWith("=")) {
-			return true;                                   // generated toString() fragments
-		}
-		if (t.contains("://")) {
-			return true;                                   // URLs
-		}
-		if (t.startsWith("L") && t.endsWith(";")) {
-			return true;                                   // type descriptors
-		}
-		if (t.contains("/") && !t.contains(" ")) {
-			return true;                                   // class or file paths
-		}
-		if (t.contains("(...)")) {
-			return true;                                   // method references
-		}
-		if (t.contains("yyyy") || t.contains("HH:mm") || t.matches("(?s).*\\bMMM?\\b.*dd.*")) {
-			return true;                                   // date and time format patterns
-		}
-		return false;
-	}
-
-	/** A bare identifier, text only when the code is seen showing it. */
-	static boolean isIdentifier(String s) {
-		String t = s.trim();
-		if (!t.contains(" ") && t.matches("[a-z][a-zA-Z0-9]*")) {
-			return true;                                   // camelCase identifier
-		}
-		return t.matches("[a-z0-9]+(_[a-z0-9]+)+");        // snake_case identifiers and routes
 	}
 }

@@ -17,7 +17,7 @@ import java.util.zip.ZipFile;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-import uniandes.tsdl.itdroid.explorer.AdbExplorer;
+import uniandes.tsdl.itdroid.explorer.Device;
 
 /**
  * Decides whether the app can be processed at all before translation and exploration start. Each
@@ -37,8 +37,8 @@ public class Preflight {
     /** Checks the Android version of the device and describes it for the report. */
     @SuppressWarnings("unchecked")
     public static JSONObject checkDevice(String serial) throws Exception {
-        int sdk = AdbExplorer.deviceSdk(serial);
-        List<String> abis = AdbExplorer.deviceAbis(serial);
+        int sdk = Device.deviceSdk(serial);
+        List<String> abis = Device.deviceAbis(serial);
         System.out.println("PREFLIGHT: device " + serial + ", API " + sdk + ", ABIs " + abis);
         if (sdk < MIN_DEVICE_SDK) {
             throw new ITDroidException("PREFLIGHT: the device runs API " + sdk + "; ITDroid needs Android 13 (API "
@@ -50,9 +50,9 @@ public class Preflight {
         JSONArray a = new JSONArray();
         a.addAll(abis);
         o.put("abis", a);
-        o.put("model", AdbExplorer.deviceProp(serial, "ro.product.model"));
-        o.put("manufacturer", AdbExplorer.deviceProp(serial, "ro.product.manufacturer"));
-        o.put("androidVersion", AdbExplorer.deviceProp(serial, "ro.build.version.release"));
+        o.put("model", Device.deviceProp(serial, "ro.product.model"));
+        o.put("manufacturer", Device.deviceProp(serial, "ro.product.manufacturer"));
+        o.put("androidVersion", Device.deviceProp(serial, "ro.build.version.release"));
         return o;
     }
 

@@ -16,15 +16,15 @@ import java.util.regex.PatternSyntaxException;
 
 /**
  * Rules saying what a method does with a string it receives, read from {@code hardcoded-consumers.txt}.
- * A file with that name in the settings folder adds rules that are tried first.
+ * The file named by hardcoded.extraRules adds rules that are tried first.
  */
 public final class ConsumerRules {
 
     public static final String FILE_NAME = "hardcoded-consumers.txt";
 
-    /** What a rule says about a callee. */
+    /** What a rule says about a callee. A setter shows the text unless it is a method of the app with other arguments. */
     public enum Kind {
-        UI, COMPOSABLE, LOG, EXCEPTION, DATA, COMPILER, BUILDER, PASSTHROUGH
+        UI, SETTER, COMPOSABLE, LOG, EXCEPTION, DATA, COMPILER, BUILDER, PASSTHROUGH
     }
 
     private static final class Rule {
@@ -42,22 +42,18 @@ public final class ConsumerRules {
     private ConsumerRules() {
     }
 
-    /** The packaged rules alone. */
-    public static ConsumerRules defaults() {
-        return load(null);
-    }
-
-    /** The rules of the settings folder file when it exists, then the packaged ones. */
-    public static ConsumerRules load(String settingsDir) {
+    /** The rules of the hardcoded.extraRules file when one is given, then the packaged ones. */
+    public static ConsumerRules load(String extraRulesFile) {
         ConsumerRules r = new ConsumerRules();
-        if (settingsDir != null && !settingsDir.isEmpty()) {
-            Path custom = Paths.get(settingsDir, FILE_NAME);
-            if (Files.isRegularFile(custom)) {
-                try (Reader in = Files.newBufferedReader(custom, StandardCharsets.UTF_8)) {
-                    r.read(in, custom.toString());
-                } catch (IOException e) {
-                    System.out.println("WARNING: could not read " + custom + " (" + e.getMessage() + "); using the built-in rules only");
-                }
+        if (extraRulesFile != null && !extraRulesFile.isEmpty()) {
+            Path custom = Paths.get(extraRulesFile);
+            if (!Files.isRegularFile(custom)) {
+                throw new IllegalArgumentException("hardcoded.extraRules names a file that does not exist: " + custom.toAbsolutePath());
+            }
+            try (Reader in = Files.newBufferedReader(custom, StandardCharsets.UTF_8)) {
+                r.read(in, custom.toString());
+            } catch (IOException e) {
+                System.out.println("WARNING: could not read " + custom + " (" + e.getMessage() + "); using the built-in rules only");
             }
         }
         try (InputStream in = ConsumerRules.class.getResourceAsStream(FILE_NAME)) {
@@ -104,9 +100,5 @@ public final class ConsumerRules {
             }
         }
         return null;
-    }
-
-    public int size() {
-        return rules.size();
     }
 }

@@ -36,50 +36,21 @@ These are not committed. Download them and save them in the `extra/` folder with
 
 Translation uses a local LLM behind an OpenAI-compatible HTTP endpoint. It runs on the host (CPU is enough, no GPU, no cloud key). Any OpenAI-compatible runtime works; pick one.
 
-Option A, Ollama (recommended, easiest):
+Option A, Ollama (recommended, easiest): install it from https://ollama.com/download (0.40 or later). Nothing else is needed: with the default configuration ITDroid starts Ollama if it is down and downloads the model the first time. To download it beforehand:
 
 ```
-# Install: https://ollama.com/download
-ollama pull hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M   # PLaMo Translate (~0.6 GB), the model ITDroid was validated with; needs Ollama 0.40+
-ollama pull qwen2.5:3b          # or a general multilingual chat model (~2 GB)
-# Ollama serves the endpoint automatically at http://localhost:11434
+ollama pull hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M   # PLaMo Translate (~0.6 GB), the model ITDroid was validated with
 ```
 
-Option B, llama.cpp (llama-server):
+Option B, llama.cpp (llama-server): get a build from https://github.com/ggml-org/llama.cpp/releases and a GGUF model, set `translation.engine=llamacpp`, and either start `llama-server -m <model>.gguf --port 8080` yourself or write that command in `translation.autoStart`.
 
-```
-# Get a build from https://github.com/ggml-org/llama.cpp/releases and a GGUF model, then:
-llama-server -m <model>.gguf --port 8080
-# Endpoint: http://localhost:8080/v1/chat/completions
-```
+LM Studio or any other OpenAI-compatible server also works (`translation.engine=api` with its `translation.endpoint`). Ollama runs llama.cpp under the hood and adds model management; ITDroid talks to either through the same endpoint, so it is engine-agnostic.
 
-LM Studio or any other OpenAI-compatible server also works. Ollama runs llama.cpp under the hood and adds model management; ITDroid talks to either through the same endpoint, so it is engine-agnostic. If the user has no Ollama, llama.cpp alone is enough.
-
-Two kinds of model work. A general chat model (`qwen2.5:3b`, `mistral:7b`) receives the texts in batches, with instructions. A model trained only to translate (Google's TranslateGemma, Tencent's Hy-MT2, PFN's PLaMo Translate) receives one text per request in the prompt it was trained with; ITDroid picks the way from the name of the model (`translation.style`, below). The final validation of this version (REFACTOR.md, section 12) used PLaMo Translate, which Ollama 0.40 or later serves straight from Hugging Face: `translation.model=hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M`.
-
-# Configure the LLM
-
-With the config file of Option A (below) this step is not needed: its `translation.*` keys set the same values and win over `.env`. For the positional arguments of Option B, copy `.env.example` to `.env` (in the folder you pass as `settingsDir`, or the working directory) and set the endpoint/model for the runtime you chose. Each value can also be a JVM system property (`-Dkey=value`) or an environment variable; precedence is system property, then env var, then `.env`.
-
-- `ITDROID_LLM_ENDPOINT`: chat-completions endpoint. Default `http://localhost:11434/v1/chat/completions` (use `:8080` for llama.cpp).
-- `ITDROID_LLM_MODEL`: model name as known by the runtime. Default `qwen2.5:3b` (e.g. `mistral:7b`).
-- `ITDROID_LLM_API_KEY`: optional bearer token. Empty by default; Ollama ignores it.
-- `ITDROID_LLM_TIMEOUT`: per-request timeout in seconds. Default `180`.
-- `ITDROID_LLM_TEMPERATURE`: sampling temperature. Default `0` (most faithful).
-
-# Not-translatable strings dictionary (strings.xml)
-
-The folder you pass as `settingsDir` must also contain a `strings.xml` file listing the resource strings that must not be translated: framework/AppCompat entries such as `abc_action_bar_home_description`, plus any app string you want kept verbatim. ITDroid loads it as a dictionary; every `name` found there is skipped by the resource translator and by the translated-vs-not-translated language check. A ready-to-use `strings.xml` with the standard AppCompat entries ships in the repo root, so pointing `settingsDir` at the repo root works out of the box. If this file is missing the run fails.
-
-# Protected terms (protected-terms.txt)
-
-Names of people, places, products and brands must come out of a translation as they went in. List them, one per line, in a `protected-terms.txt` file in the `settingsDir` folder (the repository has a commented template). Each term is replaced by a token before the text reaches the model and put back afterwards, so no model can translate, transliterate or inflect it; a translation that comes back without one is discarded and the source text is kept. Matching is case-sensitive and by whole words, so do not list ordinary words.
-
-Protected without being listed: e-mail addresses and URLs inside a text, and the name of the app when it is recognisably a name (several words, or a capital, digit or symbol inside, such as `ShiftSwift`). The name of the app on its own, as a resource or as a literal, is never translated. A name that is in neither place is translated like any other word: a translation model does not know it is a name.
+Two kinds of model work. A general chat model (`qwen2.5:3b`, `mistral:7b`) receives the texts in batches, with instructions. A model trained only to translate (Google's TranslateGemma, Tencent's Hy-MT2, PFN's PLaMo Translate) receives one text per request in the prompt it was trained with; ITDroid picks the way from the name of the model (`translation.style`, below). A model of Hugging Face is named `hf.co/<user>/<repository>:<file>`, as Ollama 0.40 or later pulls it straight from there; the final validation of this version (REFACTOR.md, section 12) used `hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M`.
 
 # Recommended host resources
 
-16 GB RAM or more (emulator ~2-4 GB plus the LLM: a 3B model ~3-4 GB, a 7B model ~6-8 GB on CPU).
+16 GB RAM or more (emulator ~2-4 GB plus the LLM: PLaMo Translate under 1 GB, a 3B chat model ~3-4 GB, a 7B one ~6-8 GB on CPU).
 
 # Compile
 
@@ -91,44 +62,60 @@ The runnable jar is `target/ITDroid-1.0.0.jar`. The build runs the unit tests fi
 
 # Usage
 
-The jar has four modes:
+Everything is set in one file, `itdroid.config.properties`, at the root of the repository. Write the path of the APK in `apkPath`, start the emulator, and run from the ITDroid folder:
 
 ```
-java -jar target/ITDroid-1.0.0.jar itdroid.config.properties             # evaluate an app: needs the device and the LLM
-java -jar target/ITDroid-1.0.0.jar --static itdroid.config.properties    # static analysis only: no device, no LLM
-java -jar target/ITDroid-1.0.0.jar --report                              # browse the evaluations in the web report
-java -jar target/ITDroid-1.0.0.jar --reanalyze results/                  # recompute the comparison of stored evaluations
+java -jar target/ITDroid-1.0.0.jar                # evaluate the app of itdroid.config.properties: needs the device and the LLM
+java -jar target/ITDroid-1.0.0.jar --static       # static analysis only: no device, no LLM
+java -jar target/ITDroid-1.0.0.jar --report       # browse the evaluations in the web report
+java -jar target/ITDroid-1.0.0.jar --reanalyze results/   # recompute the comparison of stored evaluations
 ```
 
-The last three have their own sections below. There are two ways to give an evaluation its parameters: a single config file (recommended) or the classic positional arguments.
+The first two also take another config file after the mode (`java -jar target/ITDroid-1.0.0.jar other.properties`). The last three have their own sections below.
 
-# Option A, config file (recommended)
+# Configuration (itdroid.config.properties)
 
-Copy the template, edit it, and pass it as the only argument:
+The file is the only place a run is configured and every key is commented in it. Only `apkPath` is required; the rest have the default written there. In a path write `/` or `\\` (the format reads a single `\` as an escape and drops it).
 
-```
-cp itdroid.config.example.properties itdroid.config.properties   # then edit it
-java -jar target/ITDroid-1.0.0.jar itdroid.config.properties
-```
+The app and the device:
 
-The file holds every run parameter (APK, package, folders, emulator) and the translation-engine choice, so nobody has to remember the argument order. In its `translation.*` block you pick one engine:
+- `apkPath`: the APK to evaluate. This exact file is reinstalled on the device at the end, so the device is always left on the original app.
+- `appPackage` (empty): the package of the app. Empty takes it from the manifest of the APK, read without decoding it; if it is written and it is not the package of the APK, ITDroid stops and names the right one.
+- `emulator` (empty): the AVD name (`Test4`) or the serial (`emulator-5554`, or that of a phone) of the device to use. Empty uses the only device connected; with several and none named, it takes the first one and warns. A device named here that is not connected stops the run with the list of the connected ones.
+- `resultsDir` (results): the folder of the results, one sub-folder per app (`results/<package>/`). It is created if missing, and it is the folder `--report` shows.
+- `extraFolder` (extra): the folder with `apktool.jar` and `uber-apk-signer.jar`.
 
-- `ollama`: local Ollama. Set `model`, and `autoStart=<model>` to auto `serve`+`pull`.
-- `llamacpp`: local llama.cpp server. Set `endpoint` (its port) plus optional `autoStart` launch command.
-- `api`: remote OpenAI-compatible endpoint. Set `endpoint`, `model`, `apiKey` (your token).
+Languages:
 
-Values set here take precedence over `.env` and environment variables. The real `itdroid.config.properties` is git-ignored (it may contain a token), so only the `.example` is committed. See itdroid.config.example.properties for the documented template.
+- `sourceLanguage` (en): the language the texts of the app are written in. Empty asks the model to detect it.
+- `languages` (es,ar,ru): the languages to evaluate, comma separated, with the codes Android uses for its folders (`es`, `ar`, `ru`, `fr`, `hi`, `zh-rCN`...). Each one adds a build and a replay of the app. A language the model does not handle (PLaMo Translate has a closed list of 53; Portuguese is not in it) is skipped with the reason.
+- `alpha` (0): default strings a language may lack and still count as shipped by the app.
 
-Optional keys, all with sensible defaults:
+Translation model:
 
-- `preflight.launchTest` (true): install and launch the original app once before processing it; set false to skip.
+- `translation.engine` (ollama): `ollama` (local Ollama), `llamacpp` (local llama.cpp server) or `api` (a remote OpenAI-compatible endpoint).
+- `translation.model` (PLaMo Translate): the model as the engine knows it.
+- `translation.autoStart` (true): `true` starts Ollama if it is down and pulls `translation.model` if it is missing; `false` starts nothing, the server must be running; anything else is a command run to start the server (`llama-server -m model.gguf --port 8080`), whose output goes to `llm-server.log` in the folder of the app. A model name is accepted only when it is the one of `translation.model`, so the two lines cannot name different models. A server ITDroid started is stopped at the end; one that was already running is reused and left alone.
+- `translation.endpoint` (empty): the chat-completions endpoint. Empty uses the one of the engine (`http://localhost:11434/v1/chat/completions` for Ollama, `:8080` for llama.cpp); required for `api`.
+- `translation.apiKey` (empty): the bearer token for `api`. It can also be given in the environment variable `ITDROID_LLM_API_KEY`, which keeps it out of the file. Every `translation.*` value can be given that way (`ITDROID_LLM_ENDPOINT`, `ITDROID_LLM_MODEL`...); the file wins.
+- `translation.timeoutSeconds` (180) and `translation.temperature` (0, the most faithful).
+- `translation.style` (auto): how texts are sent to the model. `json` batches 25 texts in a JSON object (general chat models); `translategemma`, `template` and `plamo` send one text per request in the model's own prompt (Google's TranslateGemma prompt; `translation.promptTemplate` with `{source}`, `{target}` and `{text}`, by default Tencent Hy-MT2's prompt; or, for PFN's PLaMo Translate, the language codes in the system message and the bare text as the user message). `auto` picks by model name. PLaMo Translate needs a recent Ollama (0.40 or later; 0.34 cannot load its tokenizer).
+- `translation.maskPlaceholders` (true for the one-text styles): replace `%1$s`, `{name}`, tags and entities with `<phN>` tokens around each request and restore them afterwards, so translation-only models cannot alter them.
+- `translation.context` (a sentence saying the text is a label of an app): what PLaMo Translate is told about a text of up to three words, which on its own is ambiguous (`Open` gives `Abrir` with it and `Abierto` without). `none` turns it off. Other styles ignore it.
+- `translation.protectedTerms` (empty): names that are never translated, see "Protected terms".
+- `translation.keepResources` (empty): resource names of the app that are never translated nor counted as missing, comma separated. ITDroid already knows the ones of the Android libraries (`abc_action_bar_home_description`...), packaged in the jar.
+- `translation.reuseInventory` (true): reuse the translations of a previous `strings_inventory.json` found in the folder of the app, so a re-run only asks the LLM for new texts.
+
+Hardcoded strings:
+
 - `hardcoded.translate` (ui): which hardcoded literals of the code are translated, by what the code does with them. `ui` translates only the places where the text is handed to the interface (a framework call that shows it, or a composable function). `ui+unknown` adds the places the scan cannot decide (the text goes to a method of the app, a field, an array, a returned value): it reaches text shown indirectly, such as the labels of a list built from data objects, and also translates some data. `all` translates every use, logs and data included, as ITDroid did before; it is there to compare. The name of the app is never translated.
 - `hardcoded.extractCode` (true): move the translated literals of the code to string resources. The literal stays in the code and is handed to a small class ITDroid adds to the app (`itdroid.hc.Strings`), which returns the resource for that text in the language the app runs in, or the text itself when there is none. With false, they are only patched into the per-language APKs.
 - `hardcoded.codePackages` (empty): extra package roots of the app's own code, comma separated. ITDroid finds the code from the manifest and the `BuildConfig` class, so this is only needed for an app split in modules that neither mentions.
-- `translation.reuseInventory` (true): reuse the translations of a previous `strings_inventory.json` found in the output folder, so a re-run only asks the LLM for new texts.
-- `translation.style` (auto): how texts are sent to the model. `json` batches 25 texts in a JSON object (general chat models); `translategemma`, `template` and `plamo` send one text per request in the model's own prompt (Google's TranslateGemma prompt; `translation.promptTemplate` with `{source}`, `{target}` and `{text}`, by default Tencent Hy-MT2's prompt; or, for PFN's PLaMo Translate, the language codes in the system message and the bare text as the user message). `auto` picks by model name. PLaMo Translate needs a recent Ollama (0.40 or later; 0.34 cannot load its tokenizer): `translation.model=hf.co/pfnet/plamo-3-translate-0.8b-GGUF:Q4_K_M`.
-- `translation.maskPlaceholders` (true for the one-text styles): replace `%1$s`, `{name}`, tags and entities with `<phN>` tokens around each request and restore them afterwards, so translation-only models cannot alter them.
-- `translation.context` (a sentence saying the text is a label of an app): what PLaMo Translate is told about a text of up to three words, which on its own is ambiguous (`Open` gives `Abrir` with it and `Abierto` without). `none` turns it off. Other styles ignore it.
+- `hardcoded.extraRules` (empty): a file of extra rules saying what a call does with a text, tried before the built-in ones (`src/uniandes/tsdl/itdroid/helper/hardcoded-consumers.txt` has the format and the rules ITDroid ships).
+
+Exploration, comparison and output:
+
+- `preflight.launchTest` (true): install and launch the original app once before processing it; set false to skip.
 - `exploration.maxStates` (5) and `exploration.maxClickables` (8): size of the source-language exploration; the translated versions replay it. 0 means no limit.
 - `exploration.maxMinutes` (0, no limit): minutes the source-language exploration may take; what it found until then is kept. Set it when `exploration.maxStates` is 0.
 - `exploration.settleSeconds` (3): extra wait after each launch before the first capture, on top of the automatic "UI stopped changing" check.
@@ -139,57 +126,12 @@ Optional keys, all with sensible defaults:
 - `comparison.textOverGraphic` (true): also look at the screenshots of every compared screen for translated text drawn over a graphic of the app that is not an element of the dump (the arrow of a drop-down list, an icon, a border). In such a case every box is where it was, so only the pixels show it; it is reported as `textOverGraphic` (see "What is reported as an IPF"). It is a heuristic: false leaves it out.
 - `output.keepLanguageApks` (true): keep the APK built for each target language in the results folder. With false each one is removed once its language is evaluated, and the folder keeps the source build and the internationalized APK; APKs are most of the size of a results folder.
 - `debug.graphDumps` (false): also write `graph.txt` and `graph.json` next to every `result.json`, with every relation between every two elements of every screen. Large; only to debug the comparison by hand.
-- `alpha` (0): untranslatable strings tolerated before a language is considered not translated.
 
-# Option B, positional arguments
+# Protected terms
 
-```
-java -jar target/ITDroid-1.0.0.jar <APKPath> <AppPackage> <ExtraCompFolder> <settingsDir> <alpha> <Output> <EmulatorName> [LLM]
-```
+Names of people, places, products and brands must come out of a translation as they went in. List them in `translation.protectedTerms`, comma separated, written as the app writes them (`translation.protectedTerms=Juan Pérez, New York, Beanbook Cloud`). Each term is replaced by a token before the text reaches the model and put back afterwards, so no model can translate, transliterate or inflect it; a translation that comes back without one is discarded and the source text is kept. Matching is case-sensitive and by whole words, so do not list ordinary words.
 
-1. `APKPath`: path of the APK to internationalize. This exact file is reinstalled on the device at the end, so the device is always left on the original app, never on a translation.
-2. `AppPackage`: app main package name (must match the APK's real package; see `aapt dump badging`).
-3. `ExtraCompFolder`: path of the `extra/` folder.
-4. `settingsDir`: folder containing `settings.properties`, the not-translatable `strings.xml` dictionary, and, if used, `.env`. The repo root satisfies all three.
-5. `alpha`: untranslatable strings tolerated when deciding if a language is translated.
-6. `Output`: folder where results and intermediate steps are stored.
-7. `EmulatorName`: name of the AVD (physical devices connected via `adb` also work).
-8. `LLM` (optional): how to provide the local LLM. Accepts either form:
-   - An Ollama model name, a bare token like `qwen2.5:3b` or `mistral:7b`. ITDroid points the translator at Ollama, starts `ollama serve` if it isn't running, and `ollama pull`s the model (downloading it if you don't have it yet), then uses it.
-   - A launch command, anything with spaces, e.g. `"ollama serve"` or `"llama-server -m C:\models\qwen2.5-3b-instruct.gguf --port 8080"`. ITDroid runs it and waits until the endpoint from `.env` answers.
-
-   If omitted, the server must already be running (ITDroid checks first and aborts with a clear message if it isn't). A server ITDroid started is stopped at the end; a server you already had running is reused and left alone.
-
-Languages are selected/deselected in `settings.properties` (comment a line with `#` to skip it). The LLM endpoint/model are configured in `.env`; the `LLM` argument's model form overrides them to point at Ollama. Make sure `adb devices` shows a single device before running.
-
-# Example
-
-```
-java -jar target/ITDroid-1.0.0.jar foo.apk org.foo.app ./extra/ ./ 2 ./results/ Pixel_API_34
-```
-
-Concrete example (Windows / PowerShell), the actual command used to validate the pipeline (MiniWallet app, package `com.example.dictoapp`, AVD `Test4`, Ollama with `mistral:7b`):
-
-```powershell
-java -jar target\ITDroid-1.0.0.jar "..\APKs\Original\app-debug.apk" "com.example.dictoapp" "extra" "." "0" "..\APKs\Traducciones" "Test4" "mistral:7b"
-```
-
-Quote each argument with spaces. The 8th argument `"mistral:7b"` makes ITDroid start Ollama if needed and download the model if you don't have it. Swap it for `"qwen2.5:3b"` for better multilingual quality.
-
-Letting ITDroid manage the LLM (8th argument, quoted as one argument):
-
-```
-# Ollama model, pulls qwen2.5:3b if you don't have it, then uses it:
-java -jar target/ITDroid-1.0.0.jar foo.apk org.foo.app ./extra/ ./ 2 ./results/ Pixel_API_34 "qwen2.5:3b"
-
-# Explicit "ollama serve" command (uses the model from .env, already downloaded):
-java -jar target/ITDroid-1.0.0.jar foo.apk org.foo.app ./extra/ ./ 2 ./results/ Pixel_API_34 "ollama serve"
-
-# llama.cpp (no Ollama needed), endpoint http://localhost:8080 must be set in .env:
-java -jar target/ITDroid-1.0.0.jar foo.apk org.foo.app ./extra/ ./ 2 ./results/ Pixel_API_34 "llama-server -m C:\models\qwen2.5-3b-instruct-q4_k_m.gguf --port 8080 --ctx-size 4096"
-```
-
-For the command form the `--port` (llama.cpp) must match `ITDROID_LLM_ENDPOINT`. The server's console output is written to `<Output>/llm-server.log`.
+Protected without being listed: e-mail addresses and URLs inside a text, and the name of the app when it is recognisably a name (several words, or a capital, digit or symbol inside, such as `ShiftSwift`). The name of the app on its own, as a resource or as a literal, is never translated. A name that is in neither place is translated like any other word: a translation model does not know it is a name.
 
 # Devices: emulator and physical
 
@@ -236,10 +178,10 @@ A results folder can be moved to another place or published. Nothing in it names
 
 # Web report
 
-Every evaluation goes to `results/<package>/` unless the config sets `output=`. To browse them, start the local report server from the ITDroid folder; it prints the address and opens your browser:
+Every evaluation goes to `<resultsDir>/<package>/`, `results/<package>/` by default. To browse them, start the local report server from the ITDroid folder; it prints the address and opens your browser:
 
 ```
-java -jar target/ITDroid-1.0.0.jar --report                        # serves results/
+java -jar target/ITDroid-1.0.0.jar --report                        # serves the resultsDir of itdroid.config.properties
 java -jar target/ITDroid-1.0.0.jar --report path/to/folder         # any folder whose sub-folders hold a report.json
 java -jar target/ITDroid-1.0.0.jar --report --port 9000 --no-browser
 ```
@@ -247,7 +189,7 @@ java -jar target/ITDroid-1.0.0.jar --report --port 9000 --no-browser
 The page (`webreport/`) lists the evaluated apps, each with the status of its run (a run still going shows as `running`, one that was killed as `interrupted`), and shows the selected one in tabs:
 
 - Overview: the app, the run, and one row per language with its findings and the share of the source texts it still shows. It says what the app is built with, and warns when it is a cross-platform framework, when the default strings do not read like the source language, and when the exploration ran out of things to tap.
-- Languages & IPFs: a language whose screens show the text of the source is marked "same text as source", with the count, and a note says how many of the texts that did not change are not in the APK, with examples. With `rtl.repair=true` a right-to-left language shows what the repair changed and the findings before and after it, and each screen has the screenshot of the repaired app next to the others. For each language, how many elements were compared, how many moved or changed size, how many only have a neighbour that changed, and what is missing or extra, with one button per kind of change that narrows the screens to it. Each screen opens with the source and the translated screenshots side by side and the affected elements outlined, outlined by severity. Yellow is a severe finding, one that breaks the screen (a text over a graphic, an element that now steps on another one, an element that reaches past the sides of the screen, such as a menu wider than its window). Translucent red is a finding that rearranges the screen without breaking it (an element moved, grew or gained a line). Orange is an element only one of the two screens has. Blue, purple and teal are information (the elements a finding relates to, the estimated mirrored position, the visual difference). Each language shows its count of severe findings, and so does the table of the overview. Each outline is placed from the position the element has in the dump, as a share of the screen. For a right-to-left language a third image draws where each element that was not mirrored would be in a mirrored screen. The last image is the visual difference between the two screenshots: the source in grey and, in teal, every pixel that is not the same (for a right-to-left language the translated screenshot is flipped first, so a layout that mirrored well lines up). The list opens on "every screen": all the screens of the source exploration, also the ones compared without findings, the ones reached but not compared, with the reason, and the ones the replay did not reach; "with findings" narrows it to the screens with findings. `#<evaluation>/languages/<language>/<screen>` in the address opens that screen.
+- Languages & IPFs: a language whose screens show the text of the source is marked "same text as source", with the count, and a note says how many of the texts that did not change are not in the APK, with examples. With `rtl.repair=true` a right-to-left language shows what the repair changed and the findings before and after it, and each screen has the screenshot of the repaired app next to the others. For each language, how many elements were compared, how many moved or changed size, how many only have a neighbour that changed, and what is missing or extra, with one button per kind of change that narrows the screens to it. Each screen opens with the source and the translated screenshots side by side and the affected elements outlined, outlined by severity. Yellow is a severe finding, one that breaks the screen (a text over a graphic, an element that now steps on another one, an element that reaches past the sides of the screen, such as a menu wider than its window). Translucent red is a finding that rearranges the screen without breaking it (an element moved, grew, or its text takes more or fewer lines). Orange is an element only one of the two screens has, or one cut by the bottom of its scrolling area that the translated screen shows more or less of (outlined in both). Blue, purple and magenta are information (the elements a finding relates to, such as the element a longer text pushed down, the estimated mirrored position, the visual difference). Each language shows its count of severe findings, and so does the table of the overview. Each outline is placed from the position the element has in the dump, as a share of the screen. For a right-to-left language a third image draws where each element that was not mirrored would be in a mirrored screen. The last image is the visual difference between the two screenshots: the source in grey and, in magenta, every pixel that is not the same (for a right-to-left language the translated screenshot is flipped first, so a layout that mirrored well lines up). The list opens on "every screen": all the screens of the source exploration, also the ones compared without findings, the ones reached but not compared, with the reason, and the ones the replay did not reach; "with findings" narrows it to the screens with findings. `#<evaluation>/languages/<language>/<screen>` in the address opens that screen.
 - Hardcoded strings: the ones extracted from the code into resources, the ones extracted from the XML, the ones patched in each language build and the ones not translated with the reason, each with its class, method, use and resource; what was applied in each language build; a search box, a filter by use and pages of 50 rows.
 - Non-internationalized strings: per language, whether the app shipped it and which default strings it lacks, with their text and ITDroid's translation.
 - ITDroid performance and Environment: how long each phase of the run took and what ITDroid used of the machine (it is the cost of the evaluation, not a measure of how the app performs), and the static facts of the run (device, Android API, translation model, configuration).
@@ -295,17 +237,19 @@ Each translated screen is compared with the source screen it reproduces (the sam
 
 4. A failure that moves no box is looked for in the screenshots (`comparison.textOverGraphic`): a translated text drawn over a graphic of the app that is not an element of the dump. The arrow of a drop-down list is part of its background image; when the text grows or is aligned to the other side (Arabic text aligns right by itself in a layout that is not mirrored), it runs over the arrow and every box is still where it was. For each element with text that stayed in place, the box of its parent is looked at in both screenshots: what the source draws there that stays the same in the translation and stands alone (a letter has others beside it) is a graphic, and translated text drawn over a good part of it, which the source text did not touch, is a finding of the element. A graphic that is an element, or part of an element that moved, is left to the boxes.
 
-5. An element that reaches past the left or right edge the screen had in the source (the edges of its root elements) is a finding of its own kind, `outOfFrame`. Only the highest such element is reported, so a drop-down list that grows wider than its window is one finding with all its rows inside.
+5. An element that reaches past the left or right side of the window that holds it is a finding of its own kind, `outOfFrame`, and so is a window that reaches past the side of the app. A menu or a dialog is dumped alone, so its own box is the window; the app is the widest of the top-level boxes of the source screens. A menu that grows within the app to fit its text is not out of anything, while a list that grows past an app shown as a window, up to the edge of the screen where its text is cut, is. Only the highest such element is reported, so that list is one finding with all its rows inside.
+6. A translated text that takes more or less height, so that it wraps into more lines or fits in fewer, pushes what follows down or up without changing any relation, and is a finding of its own, `linesAdded` or `linesRemoved`, with the element it pushed as the related one (`moved`, how many pixels it moved). It counts when the height changes by at least 1 % of the height of the screen and a fifth of the height of the element: a line is two to three hundredths of the screen, while a script with taller letters (Arabic, Devanagari) adds less than one, which is not reported. Only elements with a text or with no children count, since a container grows with what it holds.
+7. An element cut by the bottom of the scroll view or list it is in (it touches its bottom edge) that the translated screen shows more or less of is `moreOnScreen` or `lessOnScreen`, outlined in orange: the translated screen shows content the source did not, or hides some it showed. `heightChange` in the finding says by how many pixels, for these four kinds.
 
 A container does not take the finding of what it holds: when a child is pushed to the edge of its container, the child changed and the container did not, so only the child is reported.
 
-Two rules keep out what is not a failure. A change of alignment is ignored when either element is a text, because a translated text gets wider or narrower and that moves its edges. And between a left-to-right and a right-to-left language the layout is expected to be mirrored: who is left of whom and which side is aligned are expected to swap, so that is not reported; what is reported is two elements of the same container that did not swap (`missingMirroring`).
+Five rules keep out what is not a failure. A change of alignment is ignored when either element is a text, because a translated text gets wider or narrower and that moves its edges. Left and right are compared only between two elements of one row (their boxes share part of their height, in the source or in the translation): between two rows a text that gets wider, a title for instance, stops being left of something three rows below, which says nothing of the layout. Two boxes that cross by a sliver, at most 2 pixels and less than half of the smaller one, are side by side and do not overlap: the layout rounds every edge, and a mirrored layout rounds them again (two colour circles that touch in English share a pixel in Arabic). A change of a few pixels is no change: an element is still inside the one that holds it, or its window, if it passes its side by no more than a hundredth of the width of the screen (at least 6 px, about 4 dp on a phone); it is over another one only if it reaches into it deeper than that plus the 2-pixel sliver; and a relation of position or alignment changes only when an edge moves more than that across the screen, or more than a hundredth of the height of the screen up or down (the same share under which a change of height is not counted). So the icon of a bottom bar item that a wider label makes 16 px shorter, an edge rounded one pixel another way, or a text of taller letters that steps 3 px out of its box are not reported, and the same layout gives the same result in every language. And between a left-to-right and a right-to-left language the layout is expected to be mirrored: who is left of whom and which side is aligned are expected to swap, so that is not reported; what is reported is two elements of the same container that did not swap (`missingMirroring`). Two elements side by side in one row must swap sides and alignments; two stacked ones (in different rows) only the edge they start from, since the other edge moves with the width of each.
 
 In `report.json`, each language has:
 
 - `amIPFs`: the number of findings.
-- `ipfSummary`: `nodesCompared`; `nodesChanged` (the element itself moved or changed size) and `nodesAffected` (it stayed as it was, or was mirrored as expected, and it is its neighbours that changed); `componentsLost` and `componentsAdded`; and `byType`, how many findings carry each kind of change: `positionLost`, `positionAdded`, `alignmentLost`, `alignmentAdded`, `overlapAdded`, `overlapRemoved`, `missingMirroring`, `componentLost`, `componentAdded`, `textOverGraphic`, `outOfFrame`. A finding can carry several. `severe` and `moderate` count the findings by severity. For a right-to-left language, also `siblingPairsChecked` and `siblingPairsNotMirrored`. `textOverGraphic`, the elements whose only finding is a text over a graphic (an element that also moved is counted among the changed and carries the type). `amIPFs` is the sum of changed, affected, lost, added and `textOverGraphic`.
-- `ipfs`: each finding with `severity` (`severe` when it carries `textOverGraphic`, `overlapAdded` or `outOfFrame`, otherwise `moderate`), `stateID`, `nodeID` and `langNodeID` (its position in each screen, -1 when that screen does not have it), `kind` (`relations`, `componentLost`, `componentAdded`, `textOverGraphic`), `types`, `geometry` (`same`, `moved`, `resized`, `moved+resized`, `mirrored`), `score` (how many other elements it changed with; for a lost or added component, how many elements it is made of) and `relations`: against which element (`relNode`, `langRelNode`) which relations were `added`, `removed` or, when mirroring was expected, are `missing`; and `graphics`, for a text drawn over a graphic, the box of each graphic in the translated screen (x1, y1, x2, y2).
+- `ipfSummary`: `nodesCompared`; `nodesChanged` (the element itself moved or changed size) and `nodesAffected` (it stayed as it was, or was mirrored as expected, and it is its neighbours that changed); `componentsLost` and `componentsAdded`; and `byType`, how many findings carry each kind of change: `positionLost`, `positionAdded`, `alignmentLost`, `alignmentAdded`, `overlapAdded`, `overlapRemoved`, `missingMirroring`, `componentLost`, `componentAdded`, `textOverGraphic`, `outOfFrame`, `linesAdded`, `linesRemoved`, `moreOnScreen`, `lessOnScreen`. A finding can carry several. `severe` and `moderate` count the findings by severity. For a right-to-left language, also `siblingPairsChecked` and `siblingPairsNotMirrored`. `textOverGraphic`, the elements whose only finding is a text over a graphic (an element that also moved is counted among the changed and carries the type). `amIPFs` is the sum of changed, affected, lost, added and `textOverGraphic`.
+- `ipfs`: each finding with `severity` (`severe` when it carries `textOverGraphic`, `overlapAdded` or `outOfFrame`, otherwise `moderate`), `stateID`, `nodeID` and `langNodeID` (its position in each screen, -1 when that screen does not have it), `kind` (`relations`, `componentLost`, `componentAdded`, `textOverGraphic`), `types`, `geometry` (`same`, `moved`, `resized`, `moved+resized`, `mirrored`), `score` (how many other elements it changed with; for a lost or added component, how many elements it is made of) and `relations`: against which element (`relNode`, `langRelNode`) which relations were `added`, `removed` or, when mirroring was expected, are `missing`, or for a text that changed its lines the element it `moved`; `heightChange`, the pixels of height a text or a cut element gained (negative when it lost them); and `graphics`, for a text drawn over a graphic, the box of each graphic in the translated screen (x1, y1, x2, y2).
 - `pairedStates`, `statesNotCompared`, `missingDfltStates`, `missingLangStates`: which screens were compared.
 
 These figures are not comparable with those of the 2020 paper, which paired elements by their position in the dump and counted mirroring as a failure. REFACTOR.md, section 12, has the before and after on a batch of 40 apps.
@@ -351,10 +295,10 @@ What an evaluation does not cover today. REFACTOR.md, section 12, has the valida
 - The exploration only sees what the app shows by itself. An app that needs content or an account before it has screens to show (an audiobook player with an empty library, the client of a server) is evaluated on the few screens it reaches. `exploration.setup` runs `adb` commands before every start, which covers what `adb` reaches: a file in shared storage, a row of a content provider, an intent. It does not sign in to an account and does not answer a screen, so an app that asks for a folder in the system picker, or for a server and a password, stays at its door; `exploration.fillForms=true` only types a value in the text fields it finds. The report says when an exploration ended with nothing left to tap.
 - The exploration is small by default: 5 screens and 8 taps per screen (`exploration.maxStates`, `exploration.maxClickables`). Both can be raised, or set to 0 for no limit, with `exploration.maxMinutes` as the stop. The first screens are cheap and each one after them costs more than the one before (in one app, 5 screens took a minute and a half and 9 took ten), once for the source language and once per language; and an app with a calendar or a list never runs out of screens.
 - The replay expects the app to behave the same every time it starts. Where it does not (a first-run dialog, content that arrives from the network, a map that loads late), the path diverges: `replay_report.json` lists every divergence, and a screen that could not be reproduced is not compared. For such an app the findings change from one run to the next; read them together with the share of the replay that was reproduced.
-- The source language is the `defaultLng` of `settings.properties` for every app (the model is asked to detect it from the strings only when that line is removed or empty). An app whose default strings are in another language than the one set there is translated from the wrong language. ITDroid warns when the default strings do not read like the language set (it looks for the most common short words of English, Spanish, French, German, Portuguese or Italian; for another source language it does not check), and does not guess which language they are in.
+- The source language is the `sourceLanguage` of the config (the model is asked to detect it from the strings only when it is empty). An app whose default strings are in another language than the one set there is translated from the wrong language. ITDroid warns when the default strings do not read like the language set (it looks for the most common short words of English, Spanish, French, German, Portuguese or Italian; for another source language it does not check), and does not guess which language they are in.
 - A hardcoded string that is shown outside the screens of the app (a notification, a home-screen widget, an error of a sign-in) is translated and built into the APKs, but the exploration does not get to it, so its layout is not compared.
 - With `hardcoded.translate=ui` a text that reaches the screen through the app's own data objects is not translated; `ui+unknown` reaches it and translates some data too.
-- The translation is as good as the model. A small model takes a short word in the wrong sense. A figure with separators (`6,568.65`, `09:41`, `2026-11-14`) travels masked and comes back as written, so it is not adapted to the way the target language writes numbers either. A proper name that is not in `protected-terms.txt` is translated like any other word.
+- The translation is as good as the model. A small model takes a short word in the wrong sense. A figure with separators (`6,568.65`, `09:41`, `2026-11-14`) travels masked and comes back as written, so it is not adapted to the way the target language writes numbers either. A proper name that is not in `translation.protectedTerms` is translated like any other word.
 - A text that is not in the APK (an ad or other content from the network, data of the device, what the app stored) is not translated, by design: the report counts the ones that stayed the same and gives examples.
 - The check of a text over a graphic is a heuristic on the pixels. It only looks at elements whose box stayed in place (the others are already reported by the boxes) and at graphics that are not elements; it was tuned on 16 apps, where it found the arrow and the border of a drop-down list in Arabic and nothing else. A text that overflows into the margin of a screen with nothing drawn there is not a collision for it.
 - An app built for Android 5.1 or older (`targetSdk` below 23) is refused (see "Devices").

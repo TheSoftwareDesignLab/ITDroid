@@ -38,17 +38,82 @@ final class TestGraphs {
                 + node(0, "android.widget.FrameLayout", "", 0, 0, 1000, 2000, children) + "</hierarchy>";
     }
 
+    /** A window that does not fill the screen, such as a menu or the window of an app shown as a dialog. */
+    static String window(int x1, int y1, int x2, int y2, String... children) {
+        return "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation=\"0\">"
+                + node(0, "android.widget.FrameLayout", "", x1, y1, x2, y2, children) + "</hierarchy>";
+    }
+
     static String button(int index, int x1, int y1, int x2, int y2) {
         return node(index, "android.widget.Button", "", x1, y1, x2, y2);
+    }
+
+    /** A button that shows a text, which a person reads when another element steps on it. */
+    static String button(int index, String text, int x1, int y1, int x2, int y2) {
+        return button(index, x1, y1, x2, y2).replaceFirst("text=\"\"", "text=\"" + text + "\"");
     }
 
     static String textView(int index, int x1, int y1, int x2, int y2) {
         return node(index, "android.widget.TextView", "", x1, y1, x2, y2);
     }
 
+    /** A TextView that shows a text. */
+    static String label(int index, String text, int x1, int y1, int x2, int y2) {
+        return node(index, "android.widget.TextView", "", x1, y1, x2, y2).replaceFirst("text=\"\"", "text=\"" + text + "\"");
+    }
+
+    /** A scroll view whose content does not fit, so what passes its bottom edge is out of view. */
+    static String scroller(int index, int x1, int y1, int x2, int y2, String... children) {
+        return node(index, "android.widget.ScrollView", "", x1, y1, x2, y2, children).replaceFirst("clickable=\"false\"", "clickable=\"false\" scrollable=\"true\"");
+    }
+
     /** A layout that holds other nodes. */
     static String group(int index, int x1, int y1, int x2, int y2, String... children) {
         return node(index, "android.widget.LinearLayout", "", x1, y1, x2, y2, children);
+    }
+
+    /** A plain view with no text, as Compose dumps its boxes. */
+    static String view(int index, int x1, int y1, int x2, int y2, String... children) {
+        return node(index, "android.view.View", "", x1, y1, x2, y2, children);
+    }
+
+    /** A screenshot of the given size filled with one colour, to draw on. */
+    static java.awt.image.BufferedImage canvas(int width, int height, java.awt.Color colour) {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        fill(img, colour, 0, 0, width, height);
+        return img;
+    }
+
+    static void fill(java.awt.image.BufferedImage img, java.awt.Color colour, int x1, int y1, int x2, int y2) {
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setColor(colour);
+        g.fillRect(x1, y1, x2 - x1, y2 - y1);
+        g.dispose();
+    }
+
+    /**
+     * A line of text as one stroke 5 pixels wide per letter, a letter every {@code letter} pixels, and
+     * nothing for a space. It stops at {@code clip}, as a box cuts what passes its side.
+     */
+    static void text(java.awt.image.BufferedImage img, java.awt.Color colour, String text, int x, int y1, int y2, int letter, int clip) {
+        for (int i = 0; i < text.length(); i++) {
+            int from = x + i * letter;
+            if (text.charAt(i) != ' ' && from < clip) {
+                fill(img, colour, from, y1, Math.min(clip, from + 5), y2);
+            }
+        }
+    }
+
+    /** As {@link #writeResult}, one screen with its screenshot in screenshots/state_1.png. */
+    @SuppressWarnings("unchecked")
+    static Path writeResult(Path folder, boolean replay, String activity, String screen, java.awt.image.BufferedImage shot) throws IOException {
+        writeResult(folder, replay, activity, screen);
+        Files.createDirectories(folder.resolve("screenshots"));
+        javax.imageio.ImageIO.write(shot, "png", folder.resolve("screenshots").resolve("state_1.png").toFile());
+        Path result = folder.resolve("result.json");
+        String json = Files.readString(result, StandardCharsets.UTF_8).replace("\"screenShot\":\"\"", "\"screenShot\":\"screenshots\\/state_1.png\"");
+        Files.writeString(result, json, StandardCharsets.UTF_8);
+        return folder;
     }
 
     static State state(String screen) throws Exception {
@@ -92,10 +157,10 @@ final class TestGraphs {
     /** The same for the given language code, "ar" gives a right-to-left comparison. */
     static JSONObject compare(Path source, Path language, Path out, String code, String name) throws IOException {
         Files.createDirectories(out);
-        LayoutGraph sourceGraph = new LayoutGraph("en", source.toString());
-        LayoutGraph languageGraph = new LayoutGraph(code, language.toString());
+        LayoutGraph sourceGraph = new LayoutGraph(source.toString());
+        LayoutGraph languageGraph = new LayoutGraph(language.toString());
         JSONObject report = new JSONObject();
-        new LayoutGraphComparision("en", sourceGraph, name, code, languageGraph, language.toString(), out.toString(), report);
+        new LayoutGraphComparision("en", sourceGraph, name, code, languageGraph, report);
         return report;
     }
 

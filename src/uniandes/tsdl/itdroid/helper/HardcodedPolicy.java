@@ -24,16 +24,9 @@ public enum HardcodedPolicy {
         this.key = key;
     }
 
-    /** True when a literal used this way is translated. */
+    /** True when a literal used this way is translated, as {@link Translatability} decides. */
     public boolean translates(SmaliScan.Consumer consumer) {
-        switch (this) {
-            case UI:
-                return consumer == SmaliScan.Consumer.UI || consumer == SmaliScan.Consumer.COMPOSABLE;
-            case UI_AND_UNKNOWN:
-                return !consumer.neverShown();
-            default:
-                return true;
-        }
+        return Translatability.translatesUse(this, consumer);
     }
 
     /** Reads the configuration value, blank gives the default. */

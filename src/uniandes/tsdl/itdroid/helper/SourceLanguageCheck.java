@@ -77,7 +77,7 @@ public final class SourceLanguageCheck {
             }
             return "the default strings of the app do not look like '" + configured + "' (" + Math.round(share * 100) + " % of its "
                     + sentences + " sentences have a common word of that language)"
-                    + ". They are translated as '" + configured + "' all the same: set defaultLng in settings.properties to the"
+                    + ". They are translated as '" + configured + "' all the same: set sourceLanguage in itdroid.config.properties to the"
                     + " language of the app if it is another one.";
         }
     }
@@ -91,10 +91,9 @@ public final class SourceLanguageCheck {
         try {
             Document document = new SAXBuilder().build(new File(defaultStringsXml));
             for (Element e : document.getRootElement().getChildren("string")) {
-                if ("false".equals(e.getAttributeValue("translatable"))) {
-                    continue;
+                if (Translatability.nameSkip(e, null, Set.of()) == null) {
+                    texts.add(e.getValue());
                 }
-                texts.add(e.getValue());
             }
         } catch (Exception e) {
             // no readable strings.xml, nothing to check

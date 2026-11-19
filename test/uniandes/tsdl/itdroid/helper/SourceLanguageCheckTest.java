@@ -54,7 +54,7 @@ class SourceLanguageCheckTest {
 
         assertTrue(r.mismatch);
         assertTrue(r.share < 0.3, "share " + r.share);
-        assertTrue(r.message().contains("do not look like 'en'") && r.message().contains("defaultLng"), r.message());
+        assertTrue(r.message().contains("do not look like 'en'") && r.message().contains("sourceLanguage"), r.message());
         assertEquals(true, r.toJson().get("mismatch"));
         assertEquals("en", r.toJson().get("configured"));
     }

@@ -51,22 +51,11 @@ public final class NodePairing {
 		paired = count;
 	}
 
-	/** Pairs the elements of two screens of languages written in the same direction. */
-	public static NodePairing of(State source, State target) {
-		return new NodePairing(source, target, false, 0);
-	}
-
 	/**
 	 * Pairs the elements of two screens. With {@code mirrored} the languages are written in opposite
 	 * directions and an element is also looked for at its mirrored place, as the app may not mirror.
-	 */
-	public static NodePairing of(State source, State target, boolean mirrored) {
-		return new NodePairing(source, target, mirrored, 0);
-	}
-
-	/**
-	 * As {@link #of(State, State, boolean)}, with the device screen width. Without it the width comes
-	 * from the source screen, which for a dialog is too narrow and puts the mirrored place off.
+	 * The device screen width places the mirror, 0 takes it from the source screen, which for a
+	 * dialog is too narrow and puts the mirrored place off.
 	 */
 	public static NodePairing of(State source, State target, boolean mirrored, int screenWidth) {
 		return new NodePairing(source, target, mirrored, screenWidth);

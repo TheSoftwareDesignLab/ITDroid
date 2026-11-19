@@ -15,7 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import org.jdom2.Attribute;
 import org.jdom2.Document;
@@ -33,7 +32,6 @@ import uniandes.tsdl.itdroid.translator.LLMTranslator;
  * system cannot translate, and can move it to string resources. Library layouts are left out.
  */
 public final class XmlLiterals {
-
 
     /** One attribute that holds literal text. */
     public static final class Literal {
@@ -72,17 +70,9 @@ public final class XmlLiterals {
     /** Resource folders that hold screens, menus, preference screens and navigation graphs. */
     private static final List<String> FOLDERS = List.of("layout", "menu", "xml", "navigation");
 
-    /** File name prefixes of the XML that common libraries add to every APK. */
-    private static final String[] LIBRARY_PREFIXES = {"abc_", "mtrl_", "m3_", "material_", "design_", "notification_template_",
-            "notification_action", "select_dialog_", "support_simple_", "browser_actions_", "custom_dialog", "ime_",
-            "preference_", "expand_button", "image_frame", "test_", "text_view_with_", "md_", "exo_", "leak_", "ucrop_",
-            "zxing_", "fingerprint_dialog_", "splits", "standalone_badge", "tooltip", "androidx_", "com_google_android_",
-            "glance_", "invalid_list_item", "bonuspack_"};
-
     /** The android and app namespaces, whose attributes the framework reads as text. */
     private static final Set<String> TEXT_NAMESPACES = Set.of("http://schemas.android.com/apk/res/android",
             "http://schemas.android.com/apk/res-auto");
-    private static final Pattern FORMAT_SPECIFIER = Pattern.compile("%(\\d+\\$)?[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z]");
 
     private XmlLiterals() {
     }
@@ -105,7 +95,7 @@ public final class XmlLiterals {
                 }
                 Arrays.sort(files, Comparator.comparing(File::getName));
                 for (File f : files) {
-                    if (!isLibraryFile(f.getName())) {
+                    if (!Translatability.isLibraryLayout(f.getName())) {
                         collect(f, "res/" + dir.getName() + "/" + f.getName(), out);
                     }
                 }
@@ -116,15 +106,6 @@ public final class XmlLiterals {
             collect(manifest, "AndroidManifest.xml", out);
         }
         return out;
-    }
-
-    static boolean isLibraryFile(String fileName) {
-        for (String prefix : LIBRARY_PREFIXES) {
-            if (fileName.startsWith(prefix)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void collect(File file, String relativePath, List<Literal> out) {
@@ -145,7 +126,7 @@ public final class XmlLiterals {
             if (!TEXT_ATTRIBUTES.contains(attribute.getName()) || !TEXT_NAMESPACES.contains(attribute.getNamespaceURI())) {
                 continue;
             }
-            String text = literalOf(attribute.getValue());
+            String text = Translatability.layoutText(attribute.getValue());
             if (text == null) {
                 continue;
             }
@@ -155,21 +136,6 @@ public final class XmlLiterals {
         for (Element child : element.getChildren()) {
             walk(child, relativePath, out);
         }
-    }
-
-    /** The text of an attribute value when it is literal text with at least one letter, else null. */
-    static String literalOf(String value) {
-        if (value == null) {
-            return null;
-        }
-        String v = value;
-        if (v.startsWith("\\@") || v.startsWith("\\?")) {
-            v = v.substring(1);                              // an escaped @ or ? is text, not a reference
-        } else if (v.startsWith("@") || v.startsWith("?")) {
-            return null;                                     // a reference or binding
-        }
-        // format specifiers alone hold no text of their own
-        return FORMAT_SPECIFIER.matcher(v).replaceAll("").matches("(?s).*\\p{L}.*") ? v : null;
     }
 
     private static String idOf(Element element) {
@@ -213,7 +179,7 @@ public final class XmlLiterals {
         // file to the literals to replace in it
         Map<String, List<XmlLiterals.Literal>> byFile = new LinkedHashMap<>();
         for (XmlLiterals.Literal l : literals) {
-            if (extractable(l, appNames)) {
+            if (Translatability.layoutSkip(l, appNames) == null) {
                 byFile.computeIfAbsent(l.file, k -> new ArrayList<>()).add(l);
             }
         }
@@ -265,26 +231,12 @@ public final class XmlLiterals {
         return result;
     }
 
-    /** True when a literal of the XML is moved to a resource. */
-    static boolean extractable(XmlLiterals.Literal l, Set<String> appNames) {
-        if (StringInventory.textSkipReason(l.text) != null) {
-            return false;
-        }
-        return !isAppName(l, appNames);
-    }
-
-    /** The label of the application element, or any literal equal to the app's name. */
-    static boolean isAppName(XmlLiterals.Literal l, Set<String> appNames) {
-        return ("AndroidManifest.xml".equals(l.file) && "application".equals(l.element) && l.attribute.endsWith(":label"))
-                || appNames.contains(l.text);
-    }
-
     /** The attribute a literal was read from, matched by element, line, attribute and value. */
     private static Attribute find(Element element, XmlLiterals.Literal l) {
         int line = element instanceof Located ? ((Located) element).getLine() : 0;
         if (element.getName().equals(l.element) && (l.line == 0 || line == l.line)) {
             for (Attribute a : element.getAttributes()) {
-                if (a.getQualifiedName().equals(l.attribute) && l.text.equals(XmlLiterals.literalOf(a.getValue()))) {
+                if (a.getQualifiedName().equals(l.attribute) && l.text.equals(Translatability.layoutText(a.getValue()))) {
                     return a;
                 }
             }

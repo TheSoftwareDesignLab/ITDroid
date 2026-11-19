@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,8 +44,7 @@ class HardcodedDetectionTest {
 
     @BeforeAll
     static void collectTheInventory() throws Exception {
-        inventory = StringInventory.collect(Fixtures.decodedApp().toString(), APPLICATION_ID,
-                new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()));
+        inventory = Fixtures.inventory(Fixtures.decodedApp().toString(), APPLICATION_ID);
         for (StringInventory.Entry e : inventory.entries()) {
             if (StringInventory.KIND_HARDCODED.equals(e.kind)) {
                 CODE.put(e.text, e);
@@ -58,6 +58,16 @@ class HardcodedDetectionTest {
         StringInventory.Entry e = CODE.get(literal);
         assertNotNull(e, "not detected: \"" + literal + "\"");
         assertTrue(e.translatable, "\"" + literal + "\" is kept verbatim: " + e.skipReason);
+    }
+
+    /** The code literals chosen for translation, which without an extraction all stay in the code. */
+    private static List<String> chosen(StringInventory inv) {
+        return new ArrayList<>(inv.notMovedCodeLiterals().keySet());
+    }
+
+    private static int writeHcs(String app, Path folder) throws Exception {
+        return HardcodedStringFinder.writeHcs(folder.resolve("hcs.txt"), HardcodedStringFinder.hits(Fixtures.scan(app, APPLICATION_ID)),
+                XmlLiterals.find(app));
     }
 
     private static void assertKeptVerbatim(String literal, String reason) {
@@ -107,7 +117,7 @@ class HardcodedDetectionTest {
         StringInventory.Entry appName = inventory.resourceEntries().stream().filter(e -> e.name.equals("app_name")).findFirst().get();
         assertEquals("application name", appName.skipReason);
 
-        StringInventory.AppName name = StringInventory.appName(Fixtures.decodedApp().toString());
+        Translatability.AppName name = Translatability.appName(Fixtures.decodedApp().toString());
         assertEquals(java.util.Set.of("app_name"), name.resources);
         assertEquals(java.util.Set.of("Shop"), name.texts);
     }
@@ -131,8 +141,10 @@ class HardcodedDetectionTest {
                 premium.codePlaces.stream().map(p -> p.method).toList());
         assertEquals(List.of("return", "ui", "data"),
                 premium.codePlaces.stream().map(p -> p.consumer.label).toList());
-        // translated only where it is shown, the returned value and the operand of equals() stay
-        assertEquals(List.of("showPlan"), premium.patchPlaces.stream().map(p -> p.method).toList());
+        // chosen only where it is shown, the returned value and the operand of equals() stay, and without
+        // an extraction that place stays in the code with the reason
+        assertEquals(List.of("showPlan"), premium.notMovedPlaces.stream().map(p -> p.method).toList());
+        assertEquals("it was not moved to a resource", premium.notMovedReason);
     }
 
     @Test
@@ -153,7 +165,7 @@ class HardcodedDetectionTest {
         assertEquals("log", CODE.get("onCreate called with saved state").consumer);
         assertEquals("exception", CODE.get("Cart must not be empty").consumer);
         assertEquals("data", CODE.get("Last Sync").consumer);
-        assertFalse(inventory.hardcodedTexts().contains("Last Sync"));
+        assertFalse(chosen(inventory).contains("Last Sync"));
     }
 
     /**
@@ -162,13 +174,14 @@ class HardcodedDetectionTest {
      */
     @Test
     void literalsOfUnknownUseAreNotTranslatedByDefault() {
-        assertEquals(HardcodedPolicy.UI, inventory.policy());
         assertKeptVerbatim(" LIMIT 0", "use not known: part of a text whose destination is not known");
         assertKeptVerbatim("Bearer ", "use not known: returned by the method");
         assertEquals(List.of("Premium", "Welcome back", "Checkout now", "Saved", "Items: ", " of 3 in your cart", "Add to cart",
-                "Your cart is empty"), inventory.hardcodedTexts());
-        assertEquals(8, inventory.hardcodedPlaces().size(), "one place each: Premium only where it is shown");
-        assertTrue(inventory.hardcodedPlaces().stream().allMatch(p -> p.consumer == SmaliScan.Consumer.UI));
+                "Your cart is empty"), chosen(inventory));
+        List<SmaliScan.Occurrence> places = new ArrayList<>();
+        inventory.entries().forEach(e -> places.addAll(e.notMovedPlaces));
+        assertEquals(8, places.size(), "one place each, Premium only where it is shown");
+        assertTrue(places.stream().allMatch(p -> p.consumer == SmaliScan.Consumer.UI));
     }
 
     /** {@code hardcoded.translate=ui+unknown} also takes the places the scan cannot decide, never logs or data. */
@@ -176,12 +189,12 @@ class HardcodedDetectionTest {
     void thePolicyCanIncludeTheLiteralsOfUnknownUse() throws Exception {
         StringInventory wider = collect(HardcodedPolicy.UI_AND_UNKNOWN);
 
-        assertTrue(wider.hardcodedTexts().containsAll(List.of(" LIMIT 0", "Bearer ", "Welcome back")));
-        assertFalse(wider.hardcodedTexts().contains("onCreate called with saved state"), "a log message");
-        assertFalse(wider.hardcodedTexts().contains("Last Sync"), "a preference key");
-        assertFalse(wider.hardcodedTexts().contains("Shop"), "the app's name, whatever the policy");
+        assertTrue(chosen(wider).containsAll(List.of(" LIMIT 0", "Bearer ", "Welcome back")));
+        assertFalse(chosen(wider).contains("onCreate called with saved state"), "a log message");
+        assertFalse(chosen(wider).contains("Last Sync"), "a preference key");
+        assertFalse(chosen(wider).contains("Shop"), "the app's name, whatever the policy");
         StringInventory.Entry premium = wider.entries().stream().filter(e -> e.text.equals("Premium")).findFirst().get();
-        assertEquals(List.of("planName", "showPlan"), premium.patchPlaces.stream().map(p -> p.method).toList(),
+        assertEquals(List.of("planName", "showPlan"), premium.notMovedPlaces.stream().map(p -> p.method).toList(),
                 "the returned value and the label, not the operand of equals()");
     }
 
@@ -190,9 +203,9 @@ class HardcodedDetectionTest {
     void thePolicyAllTranslatesEveryUseButNotWhatHasTheShapeOfData() throws Exception {
         StringInventory all = collect(HardcodedPolicy.ALL);
 
-        assertTrue(all.hardcodedTexts().containsAll(List.of("onCreate called with saved state", "Cart must not be empty", "Last Sync")));
-        assertFalse(all.hardcodedTexts().contains("SELECT * FROM cart WHERE id = ?"));
-        assertFalse(all.hardcodedTexts().contains("FreeActivity"));
+        assertTrue(chosen(all).containsAll(List.of("onCreate called with saved state", "Cart must not be empty", "Last Sync")));
+        assertFalse(chosen(all).contains("SELECT * FROM cart WHERE id = ?"));
+        assertFalse(chosen(all).contains("FreeActivity"));
         assertEquals(HardcodedPolicy.ALL, HardcodedPolicy.parse(" ALL "));
         assertEquals(HardcodedPolicy.UI_AND_UNKNOWN, HardcodedPolicy.parse("ui+unknown"));
         assertEquals(HardcodedPolicy.UI, HardcodedPolicy.parse(""));
@@ -200,9 +213,7 @@ class HardcodedDetectionTest {
     }
 
     private static StringInventory collect(HardcodedPolicy policy) throws Exception {
-        String app = Fixtures.decodedApp().toString();
-        return StringInventory.collect(app, APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
-                HardcodedStringFinder.hits(SmaliScan.scan(app, APPLICATION_ID)), XmlLiterals.find(app), policy, null);
+        return Fixtures.inventory(Fixtures.decodedApp().toString(), APPLICATION_ID, policy, null, null);
     }
 
     // ------------------------------------------------------------------ the XML
@@ -222,7 +233,7 @@ class HardcodedDetectionTest {
     void textWrittenInLayoutsIsOnlyListedUntilItIsExtracted() {
         assertFalse(XML.get("Coupon code").translatable);
         assertEquals("XML literal (not extracted to a resource)", XML.get("Coupon code").skipReason);
-        assertFalse(inventory.hardcodedTexts().contains("Coupon code"));
+        assertFalse(chosen(inventory).contains("Coupon code"));
     }
 
     // ------------------------------------------------------------------ one figure, one format
@@ -230,7 +241,7 @@ class HardcodedDetectionTest {
     /** hcs.txt, the inventory and the report give the same number of distinct literals, code plus XML. */
     @Test
     void everyOutputGivesTheSameFigure() throws Exception {
-        int reported = HardcodedStringFinder.findHardCodedStrings(Fixtures.decodedApp().toString(), APPLICATION_ID, out.toString());
+        int reported = writeHcs(Fixtures.decodedApp().toString(), out);
         JSONObject summary = inventory.summary();
 
         assertEquals(20, reported);
@@ -239,7 +250,7 @@ class HardcodedDetectionTest {
         assertEquals(3L, summary.get("hardcodedXml"));
         assertEquals(22L, summary.get("hardcodedOccurrences"), "Premium is in three places");
         assertEquals(8L, summary.get("hardcodedTranslatable"));
-        assertEquals(8L, summary.get("hardcodedPlacesToPatch"));
+        assertEquals(8L, summary.get("hardcodedPlacesNotMoved"), "nothing was moved to a resource");
         assertEquals(0L, summary.get("hardcodedXmlExtracted"));
         assertEquals("ui", summary.get("hardcodedPolicy"));
         assertEquals(CODE.size() + XML.size(), reported);
@@ -258,7 +269,7 @@ class HardcodedDetectionTest {
     /** As in the original tool, class, then method, then the literals of that method. */
     @Test
     void hcsTxtGroupsTheLiteralsByClassAndMethod() throws Exception {
-        HardcodedStringFinder.findHardCodedStrings(Fixtures.decodedApp().toString(), APPLICATION_ID, out.toString());
+        writeHcs(Fixtures.decodedApp().toString(), out);
         List<String> lines = Files.readAllLines(out.resolve("hcs.txt"), StandardCharsets.UTF_8);
 
         assertEquals(List.of(
@@ -313,8 +324,12 @@ class HardcodedDetectionTest {
         assertEquals("showPlan", shown.get("method"));
         assertEquals("ui", shown.get("consumer"));
         assertEquals("Landroid/widget/TextView;->setText", shown.get("via"));
-        assertEquals(true, shown.get("translated"));
-        assertEquals(false, ((JSONObject) ((JSONArray) premium.get("places")).get(2)).get("translated"), "the operand of equals()");
+        assertEquals(false, shown.get("translated"), "nothing was moved to a resource");
+        assertEquals(true, shown.get("notMoved"), "chosen for translation, it stays in the code");
+        assertEquals("it was not moved to a resource", premium.get("notMovedReason"));
+        JSONObject operand = (JSONObject) ((JSONArray) premium.get("places")).get(2);
+        assertEquals(false, operand.get("translated"), "the operand of equals()");
+        assertNull(operand.get("notMoved"), "it was never chosen");
 
         assertEquals("hardcoded-xml", coupon.get("kind"));
         JSONObject place = (JSONObject) ((JSONArray) coupon.get("places")).get(0);
@@ -348,16 +363,15 @@ class HardcodedDetectionTest {
         FileUtils.deleteDirectory(app.resolve("res/values").toFile());
         Path results = Files.createDirectories(out.resolve("results"));
 
-        int reported = HardcodedStringFinder.findHardCodedStrings(app.toString(), APPLICATION_ID, results.toString());
-        StringInventory withoutResources = StringInventory.collect(app.toString(), APPLICATION_ID,
-                new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()));
+        int reported = writeHcs(app.toString(), results);
+        StringInventory withoutResources = Fixtures.inventory(app.toString(), APPLICATION_ID);
 
         assertEquals(20, reported);
         assertTrue(Files.size(results.resolve("hcs.txt")) > 0);
         assertEquals(0L, withoutResources.summary().get("resources"));
         assertEquals(20L, withoutResources.summary().get("hardcoded"));
         // without resources the label of the application cannot be resolved, so "Shop" is one more label
-        assertTrue(withoutResources.hardcodedTexts().containsAll(inventory.hardcodedTexts()));
+        assertTrue(chosen(withoutResources).containsAll(chosen(inventory)));
 
         JSONObject facts = Preflight.describeDecodedApp(app.toString());
         assertEquals("com.example.shop.free", facts.get("package"), "the package the run is checked against");

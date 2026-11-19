@@ -15,25 +15,19 @@ import java.util.regex.Pattern;
 import uniandes.tsdl.itdroid.translator.LLMTranslator;
 
 /**
- * Starts the local LLM server when needed and stops it at the end. The optional 8th CLI argument is
- * an Ollama model name (served and pulled), a launch command (run until the endpoint answers), or
- * empty (the server must already run). A server the user started is never stopped.
+ * Starts the local LLM server when needed and stops it at the end. translation.autoStart gives an
+ * Ollama model name (served and pulled), a launch command (run until the endpoint answers), or
+ * nothing (the server must already run). A server the user started is never stopped.
  */
 public class LLMServerManager {
 
     private static final int STARTUP_TIMEOUT_SECONDS = 180;
-    private static final String OLLAMA_ENDPOINT = "http://localhost:11434/v1/chat/completions";
 
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
-    private final String settingsDir;
     private String endpoint;
     private String origin;
     private Process serverProcess;   // set only when ITDroid started it, so stop() never kills a user server
     private boolean shutdownHookRegistered;
-
-    public LLMServerManager(String settingsDir) {
-        this.settingsDir = settingsDir;
-    }
 
     private void registerShutdownHook() {
         if (!shutdownHookRegistered) {
@@ -46,18 +40,16 @@ public class LLMServerManager {
     public void ensureRunning(String spec, String logDir) throws Exception {
         String s = spec == null ? "" : spec.trim();
 
-        // a single bare token is an Ollama model name, not a command
-        boolean looksLikeModel = !s.isEmpty()
-                && !s.contains(" ") && !s.contains("\t")
-                && !s.contains("/") && !s.contains("\\")
-                && (s.contains(":") || s.matches("[A-Za-z0-9._-]+"));
+        // a single token is an Ollama model name, a Hugging Face one included, and a script path is a command
+        boolean looksLikeModel = !s.isEmpty() && !s.matches(".*\\s.*")
+                && !s.contains("\\") && !s.matches(".*\\.(bat|cmd|sh|exe|ps1)$");
 
         if (looksLikeModel) {
             ensureOllamaModel(s, logDir);
             return;
         }
 
-        this.endpoint = LLMTranslator.resolveEndpoint(settingsDir);
+        this.endpoint = LLMTranslator.resolveEndpoint();
         this.origin = origin(endpoint);
 
         // a --port in the command wins, or the probe would wait the whole timeout on the wrong port
@@ -81,15 +73,14 @@ public class LLMServerManager {
         if (s.isEmpty()) {
             // a remote API with a token cannot be health-checked reliably, so a wrong one shows up as an
             // HTTP error on the first translation instead
-            String apiKey = LLMTranslator.resolveApiKey(settingsDir);
+            String apiKey = LLMTranslator.resolveApiKey();
             if (apiKey != null && !apiKey.isEmpty()) {
                 System.out.println("Using remote translation endpoint " + endpoint + " with an API token.");
                 return;
             }
             throw new IllegalStateException("No LLM server is reachable at " + endpoint
-                    + " and no model/command was provided (8th argument). Pass an Ollama model name "
-                    + "(e.g. \"qwen2.5:3b\"), a launch command (e.g. \"llama-server -m model.gguf --port 8080\"), "
-                    + "or start your server manually, then retry.");
+                    + " and translation.autoStart starts nothing. Set translation.autoStart=true for Ollama, "
+                    + "or a launch command such as llama-server -m model.gguf --port 8080, or start your server, then retry.");
         }
         System.out.println("Starting LLM server: " + s);
         serverProcess = spawn(s, logDir);
@@ -98,19 +89,22 @@ public class LLMServerManager {
         System.out.println("LLM server is ready at " + endpoint);
     }
 
-    /** Points the translator at Ollama, starts the daemon if needed and pulls the model. */
+    /**
+     * Points the translator at Ollama on the configured endpoint, starts the daemon if needed and pulls
+     * the model.
+     */
     private void ensureOllamaModel(String model, String logDir) throws Exception {
-        this.endpoint = OLLAMA_ENDPOINT;
+        this.endpoint = LLMTranslator.resolveEndpoint();
         this.origin = origin(endpoint);
-        // system properties override .env in LLMTranslator
+        // system properties are what LLMTranslator reads
         System.setProperty("ITDROID_LLM_ENDPOINT", endpoint);
         System.setProperty("ITDROID_LLM_MODEL", model);
         System.out.println("Using Ollama model '" + model + "' at " + endpoint);
 
         if (!ollamaAvailable()) {
-            throw new IllegalStateException("The 8th argument '" + model + "' looks like an Ollama model, but "
-                    + "'ollama' is not on PATH. Install Ollama (https://ollama.com) or pass a full launch command "
-                    + "instead (e.g. \"llama-server -m model.gguf --port 8080\").");
+            throw new IllegalStateException("translation.autoStart starts the Ollama model '" + model + "', but "
+                    + "'ollama' is not on PATH. Install Ollama (https://ollama.com) or write a launch command "
+                    + "in translation.autoStart (e.g. llama-server -m model.gguf --port 8080).");
         }
         if (ready()) {
             System.out.println("Ollama already running at " + endpoint);

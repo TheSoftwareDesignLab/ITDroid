@@ -13,7 +13,6 @@
   "hardcodedPolicy": "ui",
   "hardcodedCodeExtracted": 2,
   "hardcodedPlacesExtracted": 3,
-  "hardcodedPlacesToPatch": 1,
   "hardcodedXmlExtracted": 1,
   "hardcodedByConsumer": {
    "ui": 3,
@@ -26,7 +25,8 @@
    "es": 10,
    "ru": 10,
    "fr": 10
-  }
+  },
+  "hardcodedPlacesNotMoved": 1
  },
  "entries": [
   {
@@ -185,11 +185,6 @@
    "occurrences": 2,
    "translatable": true,
    "origin": "smali_classes2/org/example/shop/billing/Plans.smali:57 (+1 more)",
-   "translations": {
-    "es": "Premium",
-    "ru": "Премиум",
-    "fr": "Premium"
-   },
    "places": [
     {
      "class": "org.example.shop.billing.Plans",

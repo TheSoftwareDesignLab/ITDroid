@@ -118,7 +118,7 @@
 			(LLMTranslator) using the built-in java.net.http client, so no extra dependency
 			is required. The former IBM Watson SDK + java-dotenv were removed in the LLM
 			migration; antlr 3.5.2 + dexlib2 2.2.3 were removed when the smali AST analysis
-			was replaced by the regex-based HardcodedStringFinder.
+			was replaced by SmaliScan.
 		-->
 		<!-- Tests only: test scope, so the shade plugin leaves it out of the runnable jar. -->
 		<dependency>

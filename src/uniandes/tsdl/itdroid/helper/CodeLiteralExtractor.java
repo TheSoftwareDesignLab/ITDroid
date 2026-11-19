@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -56,17 +55,21 @@ public final class CodeLiteralExtractor {
         public final Map<String, String> valueByName = new LinkedHashMap<>();
         /** The places rewritten, as the scan gave them. */
         public final Set<SmaliScan.Occurrence> places = new HashSet<>();
-        /** What could not be extracted and why, those places are still patched per language. */
-        public final List<String> problems = new ArrayList<>();
+        /** Literals that could not be moved, with the reason. They stay in the source language. */
+        public final Map<String, String> notMoved = new LinkedHashMap<>();
+        /** Why nothing was moved at all, when the extraction is off or was put back, else null. */
+        public final String reasonNoneMoved;
 
         private final Map<Path, List<String>> originals = new LinkedHashMap<>();
-        /** Scan file to the original lines of the literals extracted in it. */
-        private final Map<String, List<Integer>> extractedLines = new HashMap<>();
         private Path stringsFile;
         private String stringsBefore;
         private boolean stringsExisted;
         private Path helperDexFolder;
         private String decodedPath;
+
+        Extraction(String reasonNoneMoved) {
+            this.reasonNoneMoved = reasonNoneMoved;
+        }
 
         /** True when at least one literal was moved. */
         public boolean active() {
@@ -77,15 +80,13 @@ public final class CodeLiteralExtractor {
             return valueByName.keySet();
         }
 
-        /** The line a scan place is on now, each literal extracted above it added two lines. */
-        public int currentLine(SmaliScan.Occurrence place) {
-            int shift = 0;
-            for (int line : extractedLines.getOrDefault(place.file, List.of())) {
-                if (line < place.line) {
-                    shift += 2;
-                }
+        /** Why a literal chosen for translation stays in the code, or null when it was moved. */
+        public String notMovedReason(String text) {
+            String reason = notMoved.get(text);
+            if (reason != null || nameByText.containsKey(text)) {
+                return reason;
             }
-            return place.line + shift;
+            return reasonNoneMoved != null ? reasonNoneMoved : "it was not moved to a resource";
         }
 
         /** Puts the code and strings.xml back as they were and removes the added class. */
@@ -113,7 +114,6 @@ public final class CodeLiteralExtractor {
                 }
             }
             originals.clear();
-            extractedLines.clear();
             places.clear();
             nameByText.clear();
             valueByName.clear();
@@ -123,19 +123,20 @@ public final class CodeLiteralExtractor {
     private CodeLiteralExtractor() {
     }
 
-    /** An extraction that moved nothing. */
-    public static Extraction none() {
-        return new Extraction();
+    /** An extraction that moved nothing, with the reason every literal stays in the code. */
+    public static Extraction none(String reason) {
+        return new Extraction(reason);
     }
 
     /**
-     * Moves the literals at the given places to resources.
+     * Moves the literals at the given places to resources. What cannot be moved stays in the code, in
+     * the source language, and {@link Extraction#notMoved} says why.
      *
      * @param fullDexFolders dex folders with no room for the added call, their literals are left alone
      */
     public static Extraction extract(String decodedPath, List<SmaliScan.Occurrence> places, Set<String> fullDexFolders)
             throws IOException {
-        Extraction result = new Extraction();
+        Extraction result = new Extraction(null);
         result.decodedPath = decodedPath;
         if (places.isEmpty()) {
             return result;
@@ -144,27 +145,24 @@ public final class CodeLiteralExtractor {
         Map<String, String> textByName = new HashMap<>();
         Set<String> skippedTexts = new HashSet<>();
         Map<String, List<SmaliScan.Occurrence>> byFile = new LinkedHashMap<>();
-        Set<String> crowded = new HashSet<>();
         for (SmaliScan.Occurrence place : places) {
             String dexFolder = place.file.contains("/") ? place.file.substring(0, place.file.indexOf('/')) : "";
             if (fullDexFolders.contains(dexFolder)) {
-                crowded.add(dexFolder);
+                result.notMoved.putIfAbsent(place.text, "its dex file (" + dexFolder + ") is at the limit of " + DEX_REFERENCE_LIMIT
+                        + " method references and has no room for the call that reads the resource");
                 continue;
             }
             String name = resourceName(place.text);
             String owner = textByName.get(name);
             if (skippedTexts.contains(place.text) || (owner == null && taken.contains(name)) || (owner != null && !owner.equals(place.text))) {
-                // hash collision or a name the app already uses, so this one is patched instead
+                // hash collision or a name the app already uses, so this one stays in the code
                 if (skippedTexts.add(place.text)) {
-                    result.problems.add("\"" + place.text + "\": the resource name " + name + " is already in use");
+                    result.notMoved.putIfAbsent(place.text, "the resource name " + name + " is already in use");
                 }
                 continue;
             }
             textByName.put(name, place.text);
             byFile.computeIfAbsent(place.file, k -> new ArrayList<>()).add(place);
-        }
-        for (String dexFolder : crowded) {
-            result.problems.add(dexFolder + " has no room for one more method reference: its literals are patched per language instead");
         }
 
         for (Map.Entry<String, List<SmaliScan.Occurrence>> f : byFile.entrySet()) {
@@ -173,25 +171,23 @@ public final class CodeLiteralExtractor {
             List<String> lines = new ArrayList<>(original);
             List<SmaliScan.Occurrence> inFile = new ArrayList<>(f.getValue());
             inFile.sort(Comparator.comparingInt((SmaliScan.Occurrence o) -> o.line).reversed());   // bottom up so lines above keep their number
-            List<Integer> done = new ArrayList<>();
+            boolean changed = false;
             for (SmaliScan.Occurrence place : inFile) {
                 int index = place.line - 1;
                 Matcher m = index >= 0 && index < lines.size() ? CONST_STRING.matcher(lines.get(index)) : null;
                 if (m == null || !m.matches() || !SmaliScan.unescape(m.group(3)).equals(place.text)) {
-                    result.problems.add(place.origin() + " no longer holds the literal found by the scan");
+                    result.notMoved.putIfAbsent(place.text, place.origin() + " no longer holds the literal found by the scan");
                     continue;
                 }
                 lines.add(index + 1, m.group(1) + String.format(CALL, m.group(2)));
                 lines.add(index + 2, m.group(1) + "move-result-object " + m.group(2));
-                done.add(place.line);
+                changed = true;
                 result.places.add(place);
                 String name = resourceName(place.text);
                 result.nameByText.putIfAbsent(place.text, name);
                 result.valueByName.putIfAbsent(name, resourceValue(place.text));
             }
-            if (!done.isEmpty()) {
-                Collections.sort(done);
-                result.extractedLines.put(f.getKey(), done);
+            if (changed) {
                 result.originals.put(file, original);
                 Files.write(file, lines, StandardCharsets.UTF_8);
             }
@@ -304,7 +300,7 @@ public final class CodeLiteralExtractor {
                 }
             }
         } catch (IOException e) {
-            // unreadable APK, a failed build makes ITDroid fall back to patching
+            // unreadable APK, a failed build makes ITDroid put the literals back
         }
         return full;
     }

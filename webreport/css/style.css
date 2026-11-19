@@ -83,6 +83,13 @@ body {
 .shot .box.rel {
   border: 1px dashed #007bff;
 }
+/* in the source screen, where an element with a finding is, which looks as it should there */
+.shot .box.where {
+  border: 2px dashed #6c757d;
+}
+.legend.where {
+  border: 2px dashed #6c757d;
+}
 .shot .box.missing {
   border: 2px dotted #6c757d;
 }
@@ -106,7 +113,7 @@ body {
   background: rgba(253, 126, 20, 0.22);
 }
 .legend.diff {
-  background: #17a2b8;
+  background: #d6249f;
 }
 .legend {
   display: inline-block;
@@ -178,4 +185,9 @@ pre.small {
 .legend.severe {
   border: 3px solid #ffc107;
   background: rgba(255, 193, 7, 0.15);
+}
+/* what ITDroid did with the texts of a language beyond translating them whole */
+.translation-block {
+  border-left: 3px solid #17a2b8;
+  padding-left: 0.6rem;
 }

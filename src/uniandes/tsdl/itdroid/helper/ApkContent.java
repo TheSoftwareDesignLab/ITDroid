@@ -88,6 +88,94 @@ public final class ApkContent {
         return new ApkContent(strings, files.toString().toLowerCase(Locale.ROOT));
     }
 
+    /** The package of an APK, read from its binary manifest without decoding it, or empty when it cannot be read. */
+    public static String packageName(String apkPath) {
+        try (ZipFile zip = new ZipFile(apkPath)) {
+            ZipEntry e = zip.getEntry("AndroidManifest.xml");
+            return e == null ? "" : manifestPackage(bytes(zip, e));
+        } catch (IOException | RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
+     * The package attribute of the manifest element of a binary XML file. The file is a chain of chunks,
+     * a string pool first and then one chunk per element, whose attributes point into the pool.
+     */
+    static String manifestPackage(byte[] x) {
+        if (x.length < 8 || u16(x, 0) != 0x0003) {
+            return "";
+        }
+        List<String> pool = null;
+        int at = u16(x, 2);
+        while (at + 8 <= x.length) {
+            int type = u16(x, at);
+            int size = u32(x, at + 4);
+            if (size <= 0 || at + size > x.length) {
+                break;
+            }
+            if (type == 0x0001) {
+                pool = stringPool(x, at);
+            } else if (type == 0x0102 && pool != null) {
+                // the element starts after its node header with namespace, name and where its attributes are
+                int ext = at + u16(x, at + 2);
+                if (!entry(pool, u32(x, ext + 4)).equals("manifest")) {
+                    return "";
+                }
+                int start = u16(x, ext + 8);
+                int step = u16(x, ext + 10);
+                for (int i = 0; i < u16(x, ext + 12); i++) {
+                    int a = ext + start + i * step;
+                    if (entry(pool, u32(x, a + 4)).equals("package")) {
+                        // the raw text, or the typed value when it is a string
+                        int raw = u32(x, a + 8);
+                        return raw != -1 ? entry(pool, raw) : (x[a + 15] == 0x03 ? entry(pool, u32(x, a + 16)) : "");
+                    }
+                }
+                return "";
+            }
+            at += size;
+        }
+        return "";
+    }
+
+    /** The strings of a string pool chunk, in UTF-8 or UTF-16 as its flags say. */
+    private static List<String> stringPool(byte[] x, int at) {
+        int count = u32(x, at + 8);
+        boolean utf8 = (u32(x, at + 16) & 0x100) != 0;
+        int data = at + u32(x, at + 20);
+        int offsets = at + u16(x, at + 2);
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            int p = data + u32(x, offsets + 4 * i);
+            if (utf8) {
+                p += (x[p] & 0x80) != 0 ? 2 : 1;   // length in UTF-16 units, not needed
+                int len = x[p] & 0xff;
+                if ((len & 0x80) != 0) {
+                    len = ((len & 0x7f) << 8) | (x[p + 1] & 0xff);
+                    p++;
+                }
+                out.add(new String(x, p + 1, len, StandardCharsets.UTF_8));
+            } else {
+                int len = u16(x, p);
+                if ((len & 0x8000) != 0) {
+                    len = ((len & 0x7fff) << 16) | u16(x, p + 2);
+                    p += 2;
+                }
+                out.add(new String(x, p + 2, len * 2, StandardCharsets.UTF_16LE));
+            }
+        }
+        return out;
+    }
+
+    private static String entry(List<String> pool, int index) {
+        return index >= 0 && index < pool.size() ? pool.get(index) : "";
+    }
+
+    private static int u16(byte[] b, int at) {
+        return (b[at] & 0xff) | (b[at + 1] & 0xff) << 8;
+    }
+
     private static boolean isMedia(String name) {
         String n = name.toLowerCase(Locale.ROOT);
         for (String ext : MEDIA) {

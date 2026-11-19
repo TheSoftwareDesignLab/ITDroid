@@ -114,12 +114,16 @@ public class APKToolWrapper {
 		Files.deleteIfExists(Paths.get(signed.getPath() + ".idsig"));
 	}
 
-	/** Deletes the unsigned APK when the signed one exists and returns whether it exists. */
+	/**
+	 * Deletes the unsigned APK and the v4 signature file, which only an incremental install reads, when
+	 * the signed APK exists, and returns whether it exists.
+	 */
 	static boolean keepOnlySigned(File unsigned, File signed) throws IOException {
 		if (!signed.isFile()) {
 			return false;
 		}
 		Files.deleteIfExists(unsigned.toPath());
+		Files.deleteIfExists(Paths.get(signed.getPath() + ".idsig"));
 		return true;
 	}
 

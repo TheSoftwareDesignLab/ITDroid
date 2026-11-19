@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Not-translatable dictionary for the tests: resource names that must be kept verbatim. -->
-<resources>
-    <string name="abc_action_bar_home_description">Navigate home</string>
-    <string name="abc_action_bar_up_description">Navigate up</string>
-</resources>

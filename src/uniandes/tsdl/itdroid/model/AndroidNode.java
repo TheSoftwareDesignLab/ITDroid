@@ -58,13 +58,12 @@ public class AndroidNode {
 	private int[] point1 = {0,0};
 	private int[] point2 = {0,0};
 	private String pClass = "";
-	private boolean enabled;
 	private String resourceID="";
 	private String text="";
 	private String name="";
-	private String xPath="";
-	private String index="";
 	private String contentDesc="";
+	/** True for a list or a scroll view whose content does not fit, so what is past its edges is out of view. */
+	private boolean scrollable;
 	/** Position of this node in the node list of its state (document order), -1 until the state sets it. */
 	private int position = -1;
 	/** Position of the parent node in that list, -1 for a top-level node. */
@@ -74,36 +73,11 @@ public class AndroidNode {
 	
 	@Override
 	public String toString() {
-		String result = name+xPath+resourceID;
-		
-		return result;
-	}
-
-	public String getIndex(){
-		return index;
+		return pClass + (resourceID.isEmpty() ? "" : " " + resourceID) + " [" + point1[0] + "," + point1[1] + "][" + point2[0] + "," + point2[1] + "]";
 	}
 
 	public AndroidNode(Node domNode) {
 		loadAttributesFromDom(domNode);
-		String[] classes = pClass.split("\\.");
-		NamedNodeMap domAttrs = domNode.getAttributes();
-		Node ownIndex = domAttrs != null ? domAttrs.getNamedItem("index") : null;
-		String ownIndexValue = ownIndex != null ? ownIndex.getNodeValue() : "";
-		xPath = ownIndexValue+"_"+(!pClass.equals("")?classes[classes.length-1]:"")+(!resourceID.equals("")?"/"+resourceID:"");
-		Node temp = domNode.getParentNode();
-		while(temp != null && !temp.getNodeName().equals("hierarchy")) {
-			NamedNodeMap teemp = temp.getAttributes();
-			if(teemp == null) {
-				temp = temp.getParentNode();
-				continue;
-			}
-			Node classItem = teemp.getNamedItem("class");
-			Node indexItem = teemp.getNamedItem("index");
-			String [] classess = classItem != null ? classItem.getNodeValue().split("\\.") : new String[]{""};
-			String indexx = indexItem != null ? indexItem.getNodeValue() : "";
-			xPath=indexx+"_"+classess[classess.length-1]+"/"+xPath;
-			temp = temp.getParentNode();
-		}
 	}
 
 	public void loadAttributesFromDom(Node domNode) {
@@ -126,9 +100,6 @@ public class AndroidNode {
 				case CLASS:
 					pClass = attributeValue;
 					break;
-				case ENABLED:
-					enabled = attributeValue.equals(TRUE);
-					break;
 				case RESOURCE_ID:
 					resourceID = attributeValue;
 					break;
@@ -138,8 +109,8 @@ public class AndroidNode {
 				case CONTENT_DESCRIPTION:
 					contentDesc = attributeValue;
 					break;
-				case INDEX:
-					index = attributeValue;
+				case SCROLLABLE:
+					scrollable = attributeValue.equals(TRUE);
 					break;
 				default:
 					break;
@@ -150,10 +121,6 @@ public class AndroidNode {
 	
 	
 	
-	public String getxPath() {
-		return xPath;
-	}
-
 	public String getResourceID() {
 		return resourceID;
 	}
@@ -256,8 +223,8 @@ public class AndroidNode {
 		return pClass;
 	}
 
-	public boolean isEnabled() {
-		return enabled;
+	public boolean isScrollable() {
+		return scrollable;
 	}
 
 }

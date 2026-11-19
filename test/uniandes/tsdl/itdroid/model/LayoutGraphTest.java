@@ -2,7 +2,6 @@ package uniandes.tsdl.itdroid.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static uniandes.tsdl.itdroid.model.TestGraphs.button;
 import static uniandes.tsdl.itdroid.model.TestGraphs.screen;
 
@@ -41,10 +40,10 @@ class LayoutGraphTest {
 
     @Test
     void loadsTheStatesAndTransitionsOfAnExploration() throws IOException {
-        LayoutGraph graph = new LayoutGraph("en", copyOfCandleSource().toString());
+        LayoutGraph graph = new LayoutGraph(copyOfCandleSource().toString());
 
         assertEquals(5, graph.getStates().size());
-        assertEquals(9, graph.getTransitions().size());
+        assertEquals(9, graph.getTransitionCount());
         assertEquals(List.of(1, 2, 3, 4, 5), graph.getStates().stream().map(State::getId).collect(Collectors.toList()));
     }
 
@@ -52,19 +51,9 @@ class LayoutGraphTest {
     void loadingDoesNotWriteIntoTheFolder() throws IOException {
         Path folder = copyOfCandleSource();
 
-        new LayoutGraph("en", folder.toString());
+        new LayoutGraph(folder.toString());
 
         assertEquals(List.of("result.json"), filesIn(folder));
-    }
-
-    @Test
-    void theDebugDumpsAreWrittenOnlyWhenAsked() throws IOException {
-        Path folder = copyOfCandleSource();
-
-        new LayoutGraph("en", folder.toString(), true);
-
-        assertEquals(List.of("graph.json", "graph.txt", "result.json"), filesIn(folder));
-        assertTrue(Files.size(folder.resolve("graph.txt")) > 0);
     }
 
     @Test
@@ -89,7 +78,7 @@ class LayoutGraphTest {
         Path folder = Files.createDirectories(tmp.resolve("es"));
         Files.writeString(folder.resolve("result.json"), root.toJSONString(), StandardCharsets.UTF_8);
 
-        LayoutGraph graph = new LayoutGraph("es", folder.toString());
+        LayoutGraph graph = new LayoutGraph(folder.toString());
 
         assertEquals(List.of(1, 3), graph.getStates().stream().map(State::getId).collect(Collectors.toList()));
         assertEquals(3, graph.getState(1).getSourceStateId());
@@ -97,6 +86,6 @@ class LayoutGraphTest {
 
     @Test
     void aMissingResultFileFailsInsteadOfGivingAnEmptyGraph() {
-        assertThrows(RuntimeException.class, () -> new LayoutGraph("en", tmp.resolve("nothing-here").toString()));
+        assertThrows(RuntimeException.class, () -> new LayoutGraph(tmp.resolve("nothing-here").toString()));
     }
 }

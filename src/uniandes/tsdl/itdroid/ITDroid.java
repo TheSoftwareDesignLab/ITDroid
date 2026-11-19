@@ -1,6 +1,5 @@
 package uniandes.tsdl.itdroid;
 
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -14,9 +13,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -24,6 +23,7 @@ import org.json.simple.parser.JSONParser;
 
 import uniandes.tsdl.itdroid.explorer.AdbExplorer;
 import uniandes.tsdl.itdroid.explorer.AdbExplorer.ExplorationException;
+import uniandes.tsdl.itdroid.explorer.Device;
 import uniandes.tsdl.itdroid.helper.APKToolWrapper;
 import uniandes.tsdl.itdroid.helper.ApkContent;
 import uniandes.tsdl.itdroid.helper.AppCode;
@@ -46,12 +46,11 @@ import uniandes.tsdl.itdroid.helper.PortablePaths;
 import uniandes.tsdl.itdroid.helper.RtlRepair;
 import uniandes.tsdl.itdroid.helper.RunMetrics;
 import uniandes.tsdl.itdroid.helper.SetupScript;
-import uniandes.tsdl.itdroid.helper.SmaliPatcher;
 import uniandes.tsdl.itdroid.helper.SmaliScan;
 import uniandes.tsdl.itdroid.helper.SourceLanguageCheck;
 import uniandes.tsdl.itdroid.helper.StringInventory;
 import uniandes.tsdl.itdroid.helper.XMLComparator;
-import uniandes.tsdl.itdroid.helper.XmlLiterals;
+import uniandes.tsdl.itdroid.helper.Translatability;
 import uniandes.tsdl.itdroid.helper.XmlLiterals;
 import uniandes.tsdl.itdroid.model.LayoutGraph;
 import uniandes.tsdl.itdroid.model.LayoutGraphComparision;
@@ -67,23 +66,15 @@ public class ITDroid {
 
 	static HashMap<String, String> pathsMap = new HashMap<>();
 
-	static HashMap<String, LayoutGraph> graphs = new HashMap<String, LayoutGraph>();
-	static HashMap<String, LayoutGraphComparision> lgcomparisions = new HashMap<String, LayoutGraphComparision>();
 	static JSONObject report;
 	static String outputPath;
 	static boolean finishedOk;
 
-	/** Settings from the config file, with these defaults in positional mode. */
+	/** The config file of the run, read where each setting is used. */
+	static RunConfig config;
 	static AdbExplorer.Options explorerOptions = new AdbExplorer.Options();
-	static boolean launchTest = true;
-	static boolean reuseInventory = true;
-	static boolean graphDumps = false;
 	/** Decode and analyse only, with no device and no LLM. */
 	static boolean staticOnly = false;
-	static HardcodedPolicy hardcodedPolicy = HardcodedPolicy.DEFAULT;
-	static boolean extractCode = true;
-	static boolean keepLanguageApks = true;
-	static boolean rtlRepair = false;
 	/** The decoded app and its minSdk, for the layout repair. */
 	static String decodedApp;
 	static int appMinSdk;
@@ -111,20 +102,29 @@ public class ITDroid {
 			return;
 		}
 		if (args.length >= 1 && args[0].equals("--static")) {
-			// static analysis only, with the same arguments as a run
+			// static analysis only, with the same config as a run
 			staticOnly = true;
 			args = Arrays.copyOfRange(args, 1, args.length);
 		}
+		if (args.length > 1 || (args.length == 1 && args[0].startsWith("-"))) {
+			printUsage();
+			System.exit(args[0].equals("--help") || args[0].equals("-h") ? 0 : 1);
+		}
 		try {
-			runITDroid(args);
+			runITDroid(args.length == 1 ? args[0] : RunConfig.DEFAULT_FILE);
 			finishedOk = true;
 		} catch (Exception e) {
-			e.printStackTrace();
+			// a refusal or a wrong config is a message for the user, anything else keeps its stack trace
+			if (e instanceof ITDroidException || e instanceof IllegalArgumentException || e instanceof java.io.FileNotFoundException) {
+				System.out.println("ERROR: " + e.getMessage());
+			} else {
+				e.printStackTrace();
+			}
 			if (report != null) {
 				report.put("error", e.getMessage() != null ? e.getMessage() : e.toString());
 			}
 		} finally {
-			// report is still null when the arguments were wrong
+			// report is still null when the config was wrong
 			if (outputPath != null && report != null) {
 				finishReport();
 				writeReport();
@@ -206,81 +206,59 @@ public class ITDroid {
 	}
 
 	@SuppressWarnings("unchecked")
-	public static void runITDroid(String[] args) throws ExplorationException, Exception {
-		// a single config file or the positional arguments
-		String apkName;
-		String apkPath;
-		String appName;
-		String extraPath;
-		String langsDir;
-		int alpha;
-		String emulatorName;
-		String llmLaunchCommand;
-
-		if (args.length == 1 && RunConfig.looksLikeConfigFile(args[0])) {
-			RunConfig cfg = RunConfig.load(args[0]);
-			apkPath = cfg.getApkPath();
-			appName = cfg.getAppPackage();
-			extraPath = cfg.getExtraFolder();
-			langsDir = cfg.getSettingsDir();
-			alpha = cfg.getAlpha();
-			// by default the package folder inside the results folder, which the web report lists
-			outputPath = cfg.getOutput().isEmpty() ? Paths.get(cfg.getResultsDir(), appName).toString() : cfg.getOutput();
-			emulatorName = staticOnly ? "" : cfg.getEmulator();
-			cfg.applyTranslationSystemProperties();
-			String autoStart = cfg.getAutoStart();
-			llmLaunchCommand = autoStart.isEmpty() ? null : autoStart;
-			explorerOptions.maxStates = cfg.getMaxStates();
-			explorerOptions.maxClickables = cfg.getMaxClickables();
-			explorerOptions.maxMinutes = cfg.getMaxMinutes();
-			try {
-				explorerOptions.setup = SetupScript.load(cfg.getSetupFile());
-			} catch (IOException e) {
-				throw new ITDroidException(e.getMessage());
-			}
-			explorerOptions.settleSeconds = cfg.getSettleSeconds();
-			explorerOptions.fillForms = cfg.isFillForms();
-			launchTest = cfg.isLaunchTest();
-			reuseInventory = cfg.isReuseInventory();
-			graphDumps = cfg.isGraphDumps();
-			LayoutGraphComparision.setMinSimilarity(cfg.getMinSimilarity());
-			LayoutGraphComparision.setTextOverGraphic(cfg.isTextOverGraphic());
-			AppCode.setExtraRoots(cfg.getCodePackages());
-			hardcodedPolicy = cfg.getHardcodedPolicy();
-			extractCode = cfg.isExtractCode();
-			keepLanguageApks = cfg.isKeepLanguageApks();
-			rtlRepair = cfg.isRtlRepair();
-		} else if (staticOnly && args.length == 5) {
-			// apk, package, extra folder, settings folder and output folder
-			apkPath = args[0];
-			appName = args[1];
-			extraPath = args[2];
-			langsDir = args[3];
-			alpha = 0;
-			outputPath = args[4];
-			emulatorName = "";
-			llmLaunchCommand = null;
-		} else if (args.length == 7 || args.length == 8) {
-			// positional mode, kept for backward compatibility
-			apkPath = args[0];
-			appName = args[1];
-			extraPath = args[2];
-			langsDir = args[3];
-			try {
-				alpha = Integer.parseInt(args[4]);
-			} catch (NumberFormatException e) {
-				throw new IllegalArgumentException(
-						"Argument 5 (alpha, the amount of untranslatable strings) must be an integer, got '"
-								+ args[4] + "'.");
-			}
-			outputPath = args[5];
-			emulatorName = args[6];
-			// optional Ollama model or launch command of the LLM server
-			llmLaunchCommand = args.length >= 8 ? args[7] : null;
-		} else {
-			printUsage();
-			return;
+	public static void runITDroid(String configFile) throws ExplorationException, Exception {
+		// everything comes from the one config file
+		RunConfig cfg = RunConfig.load(configFile);
+		config = cfg;
+		String apkPath = cfg.getApkPath();
+		String extraPath = cfg.getExtraFolder();
+		int alpha = cfg.getAlpha();
+		String emulatorName = staticOnly ? "" : cfg.getEmulator();
+		Device.preferredDevice = emulatorName;
+		List<String> languages = cfg.getLanguages();
+		String configuredSource = cfg.getSourceLanguage();
+		String extraRules = cfg.getExtraRules();
+		NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(cfg.getKeepResources());
+		cfg.applyTranslationSystemProperties();
+		String autoStart = cfg.getAutoStart();
+		String llmLaunchCommand = autoStart.isEmpty() ? null : autoStart;
+		explorerOptions.maxStates = cfg.getMaxStates();
+		explorerOptions.maxClickables = cfg.getMaxClickables();
+		explorerOptions.maxMinutes = cfg.getMaxMinutes();
+		try {
+			explorerOptions.setup = SetupScript.load(cfg.getSetupFile());
+		} catch (IOException e) {
+			throw new ITDroidException(e.getMessage());
 		}
+		explorerOptions.settleSeconds = cfg.getSettleSeconds();
+		explorerOptions.fillForms = cfg.isFillForms();
+		explorerOptions.grantPermissions = cfg.isGrantPermissions();
+		LayoutGraphComparision.setMinSimilarity(cfg.getMinSimilarity());
+		LayoutGraphComparision.setTextOverGraphic(cfg.isTextOverGraphic());
+		LayoutGraphComparision.setTextCut(cfg.isTextCut());
+		AppCode.setExtraRoots(cfg.getCodePackages());
+		// read now so a value it does not know stops the run before any work
+		HardcodedPolicy hardcodedPolicy = cfg.getHardcodedPolicy();
+
+		// the package of the APK, unless the config names one, which must then be that one
+		if (!new File(apkPath).isFile()) {
+			throw new ITDroidException("APK not found: " + new File(apkPath).getAbsolutePath() + " (apkPath in " + configFile + ")");
+		}
+		String apkPackage = ApkContent.packageName(apkPath);
+		String appName = cfg.getAppPackage();
+		if (appName.isEmpty()) {
+			if (apkPackage.isEmpty()) {
+				throw new ITDroidException("The package of the APK could not be read from its manifest. Set appPackage in " + configFile + ".");
+			}
+			appName = apkPackage;
+			System.out.println("Package of the APK: " + appName);
+		} else if (!apkPackage.isEmpty() && !apkPackage.equals(appName)) {
+			throw new ITDroidException("PREFLIGHT: appPackage is '" + appName + "' but the package of this APK is '" + apkPackage
+					+ "'. Leave appPackage empty in " + configFile + " to take it from the APK.");
+		}
+		// the folder of the app inside the results folder, which the web report lists
+		outputPath = Paths.get(cfg.getResultsDir(), appName).toString();
+		String apkName;
 
 		// a literal replace, since replaceAll reads the Windows backslash as a regex escape
 		apkName = new File(apkPath).getName();
@@ -306,7 +284,6 @@ public class ITDroid {
 		report.put("apkSizeKB", Math.round(new File(apkPath).length() / 102.4) / 10.0);
 		report.put("appName", appName);
 		report.put("alpha", alpha);
-		report.put("outputFolder", Paths.get(outputPath).toAbsolutePath().normalize().getFileName().toString());
 		report.put("emulatorName", emulatorName);
 		JSONObject itdroidInfo = new JSONObject();
 		itdroidInfo.put("version", RunMetrics.VERSION);
@@ -338,7 +315,7 @@ public class ITDroid {
 		if (!staticOnly) {
 			metrics.begin("preflight");
 			try {
-				serial = AdbExplorer.resolveSerial();
+				serial = Device.resolveSerial();
 				device = Preflight.checkDevice(serial);
 				preflight.put("device", device);
 				deviceSdk = ((Number) device.get("sdk")).intValue();
@@ -351,7 +328,7 @@ public class ITDroid {
 				Preflight.checkAbis(apkAbis, deviceAbis);
 
 				// started early so the model loads while the APK is decoded
-				new LLMServerManager(langsDir).ensureRunning(llmLaunchCommand, outputPath);
+				new LLMServerManager().ensureRunning(llmLaunchCommand, outputPath);
 			} catch (Exception e) {
 				notReady = e;
 				System.out.println("ERROR: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
@@ -370,48 +347,39 @@ public class ITDroid {
 		preflight.put("app", appInfo);
 		decodedApp = decodedFolderPath;
 		appMinSdk = ((Number) appInfo.get("minSdk")).intValue();
-		// a wrong package would only show later as the explorer tapping the launcher
-		String realPackage = String.valueOf(appInfo.get("package"));
-		if (!realPackage.isEmpty() && !realPackage.equals(appName)) {
-			throw new ITDroidException("PREFLIGHT: the package given is '" + appName + "' but the package of this APK is '"
-					+ realPackage + "'. Pass the APK's own package (appPackage in the config file).");
-		}
 		// ITDroid does not translate a cross-platform interface, so say it before measuring
-		List<String> frameworks = AppFramework.detect(decodedFolderPath);
+		List<String> frameworks = (List<String>) appInfo.get("frameworks");
 		if (!frameworks.isEmpty()) {
 			System.out.println("NOTE: this app is built with a cross-platform framework. " + AppFramework.describe(frameworks)
 					+ ". ITDroid translates Android string resources and the literals of the Dalvik code: the texts of this"
 					+ " interface stay as the app ships them, and each language shows what the app does by itself.");
 		}
 
-		// one scan of the smali and the XML, shared by hcs.txt, the inventory and the patcher
+		// one scan of the smali and the XML, shared by hcs.txt, the inventory and the extraction
 		metrics.begin("inventory");
-		SmaliScan scan = SmaliScan.scan(decodedFolderPath, appName, ConsumerRules.load(langsDir));
+		SmaliScan scan = SmaliScan.scan(decodedFolderPath, appName, ConsumerRules.load(extraRules));
 		List<XmlLiterals.Literal> xmlLiterals = XmlLiterals.find(decodedFolderPath);
 		List<HardcodedStringFinder.Hit> hits = HardcodedStringFinder.hits(scan);
 		report.put("hardcoded", (long) HardcodedStringFinder.writeHcs(Paths.get(outputPath, "hcs.txt"), hits, xmlLiterals));
-		JSONArray codePackages = new JSONArray();
-		codePackages.addAll(scan.packageRoots());
-		report.put("codePackages", codePackages);
 		System.out.println("App code found under " + scan.packageRoots() + " (" + scan.files().size() + " smali files)");
 
-		LanguageBundle lngBundle = new LanguageBundle(langsDir);
+		LanguageBundle lngBundle = new LanguageBundle(languages);
 		System.out.println(lngBundle.printSelectedLanguages());
 
 		String[] lngs = lngBundle.getSelectedLanguagesAsArray();
 		String[] stringFiles = buildStringPaths(lngs);
-		StringInventory.AppName appNameInfo = StringInventory.appName(decodedFolderPath);
-		XMLComparator xmlc = new XMLComparator(stringFiles, alpha, langsDir, appNameInfo.resources);
+		Translatability.AppName appNameInfo = Translatability.appName(decodedFolderPath);
+		XMLComparator xmlc = new XMLComparator(stringFiles, alpha, dictionary, appNameInfo.resources);
 
 		ArrayList<String> translatedFiles = xmlc.getUsefull();
 		System.out.println("Your application is translated to the following languages:");
 		for (int i = 0; i < translatedFiles.size(); i++) {
-			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(translatedFiles.get(i))));
+			System.out.println(LanguageBundle.name(pathsMap.get(translatedFiles.get(i))));
 		}
 		ArrayList<String> notTrnsltdFiles = xmlc.getUseLess();
 		System.out.println("Your application is not translated to the following languages:");
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
-			System.out.println(lngBundle.getBundle().getObject(pathsMap.get(notTrnsltdFiles.get(i))));
+			System.out.println(LanguageBundle.name(pathsMap.get(notTrnsltdFiles.get(i))));
 		}
 
 		// per language, whether the app ships it and which default strings it lacks
@@ -426,11 +394,9 @@ public class ITDroid {
 		nis.put("languages", nisLanguages);
 		report.put("nonInternationalized", nis);
 
-		// the configured defaultLng, with LLM detection later only as a fallback
-		String sourceLang = lngBundle.getBundle().containsKey("defaultLng")
-				? lngBundle.getBundle().getString("defaultLng") : null;
+		// the configured sourceLanguage, with LLM detection later only when it is empty
+		String sourceLang = configuredSource.isEmpty() ? null : configuredSource;
 
-		NotTranslatableStringsDictionary dictionary = new NotTranslatableStringsDictionary(langsDir);
 		// XML literals move to string resources after the language comparison, since the new strings
 		// are ITDroid's and not strings a language lacks
 		XmlLiterals.Extraction extraction = XmlLiterals.extract(decodedFolderPath, xmlLiterals, appNameInfo.texts);
@@ -442,20 +408,18 @@ public class ITDroid {
 			System.out.println("WARNING: XML literals not extracted from " + problem);
 		}
 		// Code literals move to resources too, looked up at run time by a class added to the app.
-		// What cannot be moved is patched per language.
-		CodeLiteralExtractor.Extraction codeExtraction = CodeLiteralExtractor.none();
+		// What cannot be moved stays in the source language and the report says why.
+		CodeLiteralExtractor.Extraction codeExtraction = CodeLiteralExtractor.none(
+				"moving code literals to resources is turned off (hardcoded.extractCode=false)");
 		JSONObject codeExtractionInfo = new JSONObject();
-		codeExtractionInfo.put("enabled", extractCode);
-		if (extractCode) {
+		codeExtractionInfo.put("enabled", cfg.isExtractCode());
+		if (cfg.isExtractCode()) {
 			codeExtraction = CodeLiteralExtractor.extract(decodedFolderPath,
 					StringInventory.placesToTranslate(decodedFolderPath, hits, hardcodedPolicy),
 					CodeLiteralExtractor.fullDexFolders(apkPath));
 			if (codeExtraction.active()) {
 				System.out.println("Moved " + codeExtraction.names().size() + " literals of the code (" + codeExtraction.places.size()
 						+ " places) to string resources named " + CodeLiteralExtractor.PREFIX + "<hash>");
-			}
-			for (String problem : codeExtraction.problems) {
-				System.out.println("NOTE: code literal not moved to a resource: " + problem);
 			}
 			codeExtractionInfo.put("literals", (long) codeExtraction.names().size());
 			codeExtractionInfo.put("places", (long) codeExtraction.places.size());
@@ -464,6 +428,7 @@ public class ITDroid {
 		Path inventoryFile = Paths.get(outputPath, "strings_inventory.json");
 		StringInventory inventory = collectInventory(decodedFolderPath, appName, dictionary, hits, xmlLiterals, extraction,
 				codeExtraction, sourceLang, inventoryFile);
+		putNotMoved(codeExtractionInfo, inventory, true);
 		if (sourceLang != null && !sourceLang.isEmpty()) {
 			report.put("dfltLang", sourceLang);
 		}
@@ -498,8 +463,8 @@ public class ITDroid {
 		Preflight.checkDecodedApp(appInfo, deviceSdk);
 
 		// tells an app that does not run here apart from one the rebuild broke
-		if (launchTest) {
-			String reason = AdbExplorer.checkLaunch(serial, appName, originalApkAbs);
+		if (cfg.isLaunchTest()) {
+			String reason = Device.checkLaunch(serial, appName, originalApkAbs);
 			preflight.put("launchTest", reason == null ? "ok" : reason);
 			if (reason != null) {
 				throw new ITDroidException("PREFLIGHT: " + reason);
@@ -508,10 +473,10 @@ public class ITDroid {
 		metrics.end("preflight");
 
 		if (sourceLang == null || sourceLang.isEmpty()) {
-			String detected = xmlc.hasDefault() ? new LLMTranslator(langsDir).detectSourceLanguage(stringFiles[0]) : null;
+			String detected = xmlc.hasDefault() ? new LLMTranslator().detectSourceLanguage(stringFiles[0]) : null;
 			if (detected == null || detected.isEmpty()) {
 				detected = "en";
-				System.out.println("WARNING: no defaultLng in settings.properties and the source language could not be detected; assuming en.");
+				System.out.println("WARNING: sourceLanguage is empty in the config and the source language could not be detected, assuming en.");
 			}
 			sourceLang = detected;
 			inventory.setSourceLanguage(sourceLang);
@@ -527,12 +492,14 @@ public class ITDroid {
 		}
 		writeReport();
 
-		LLMTranslator llm = new LLMTranslator(langsDir, inventory);
-		// the app name is also protected inside other texts when it looks like a name
+		LLMTranslator llm = new LLMTranslator(inventory);
+		// the app name and the product name inside it are also protected in other texts when they look like a name
 		List<String> ownNames = new ArrayList<>();
 		for (String name : appNameInfo.texts) {
-			if (LLMTranslator.looksLikeBrand(name)) {
-				ownNames.add(name);
+			for (String variant : Translatability.nameVariants(name)) {
+				if (Translatability.looksLikeBrand(variant) && !ownNames.contains(variant)) {
+					ownNames.add(variant);
+				}
 			}
 		}
 		llm.addProtectedTerms(ownNames);
@@ -545,32 +512,32 @@ public class ITDroid {
 		}
 		explorerOptions.llm = llm;
 		explorerOptions.language = sourceLang;
-		SmaliPatcher patcher = new SmaliPatcher(decodedFolderPath);
 
-		JSONObject config = new JSONObject();
-		config.put("sourceLanguage", sourceLang);
+		JSONObject settings = new JSONObject();
+		settings.put("sourceLanguage", sourceLang);
 		JSONObject selected = new JSONObject();
 		for (String code : lngs) {
-			selected.put(code, lngBundle.getBundle().getString(code));
+			selected.put(code, LanguageBundle.name(code));
 		}
-		config.put("languages", selected);
-		config.put("alpha", alpha);
-		config.put("maxStates", explorerOptions.maxStates);
-		config.put("maxClickables", explorerOptions.maxClickables);
-		config.put("maxMinutes", explorerOptions.maxMinutes);
-		config.put("setupCommands", (long) explorerOptions.setup.size());
-		config.put("settleSeconds", explorerOptions.settleSeconds);
-		config.put("fillForms", explorerOptions.fillForms);
-		config.put("launchTest", launchTest);
-		config.put("reuseInventory", reuseInventory);
-		config.put("graphDumps", graphDumps);
-		config.put("keepLanguageApks", keepLanguageApks);
-		config.put("rtlRepair", rtlRepair);
-		config.put("minSimilarity", LayoutGraphComparision.getMinSimilarity());
-		config.put("textOverGraphic", LayoutGraphComparision.isTextOverGraphic());
-		config.put("hardcodedTranslate", hardcodedPolicy.key);
-		config.put("emulator", emulatorName);
-		report.put("environment", RunMetrics.environment(device, llm.settings(), config));
+		settings.put("languages", selected);
+		settings.put("alpha", alpha);
+		settings.put("maxStates", explorerOptions.maxStates);
+		settings.put("maxClickables", explorerOptions.maxClickables);
+		settings.put("maxMinutes", explorerOptions.maxMinutes);
+		settings.put("setupCommands", (long) explorerOptions.setup.size());
+		settings.put("settleSeconds", explorerOptions.settleSeconds);
+		settings.put("fillForms", explorerOptions.fillForms);
+		settings.put("grantPermissions", explorerOptions.grantPermissions);
+		settings.put("launchTest", cfg.isLaunchTest());
+		settings.put("reuseInventory", cfg.isReuseInventory());
+		settings.put("keepLanguageApks", cfg.isKeepLanguageApks());
+		settings.put("rtlRepair", cfg.isRtlRepair());
+		settings.put("minSimilarity", LayoutGraphComparision.getMinSimilarity());
+		settings.put("textOverGraphic", LayoutGraphComparision.isTextOverGraphic());
+		settings.put("textCut", LayoutGraphComparision.isTextCut());
+		settings.put("hardcodedTranslate", hardcodedPolicy.key);
+		settings.put("emulator", emulatorName);
+		report.put("environment", RunMetrics.environment(device, llm.settings(), settings));
 		writeReport();
 
 		// Source build and exploration, with no translation. If apktool cannot rebuild the app,
@@ -583,22 +550,24 @@ public class ITDroid {
 			if (sourceApk == null || sourceApk.isEmpty()) {
 				problem = "apktool could not rebuild the app";
 			} else {
-				String reason = AdbExplorer.checkLaunch(serial, appName, sourceApk, "the app with its code literals read from resources");
+				String reason = Device.checkLaunch(serial, appName, sourceApk, "the app with its code literals read from resources");
 				if (reason != null) {
 					problem = reason;
 				}
 			}
 			if (problem != null) {
 				System.out.println("WARNING: with the literals of the code moved to resources, " + problem
-						+ ". Putting them back in the code; they will be patched per language.");
+						+ ". Putting them back in the code, where they stay in the source language.");
 				codeExtraction.revert();
-				codeExtraction = CodeLiteralExtractor.none();
+				codeExtraction = CodeLiteralExtractor.none("the app did not build or start with its code literals read from resources ("
+						+ problem + ")");
 				codeExtractionInfo.put("reverted", problem);
 				codeExtractionInfo.put("literals", 0L);
 				codeExtractionInfo.put("places", 0L);
 				inventory = collectInventory(decodedFolderPath, appName, dictionary, hits, xmlLiterals, extraction,
 						codeExtraction, sourceLang, inventoryFile);
-				llm = new LLMTranslator(langsDir, inventory);
+				putNotMoved(codeExtractionInfo, inventory, false);
+				llm = new LLMTranslator(inventory);
 				llm.addProtectedTerms(ownNames);
 				explorerOptions.llm = llm;
 				sourceApk = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
@@ -620,17 +589,14 @@ public class ITDroid {
 		metrics.begin("explore:" + sourceLang);
 		String resultFolderPath = AdbExplorer.exploreSource(deftLanguage, outputPath, true, sourceApkCopy.toString(), appName, explorerOptions);
 		System.out.println("The app has been inspected");
-		LayoutGraph defltGraph = new LayoutGraph(deftLanguage, resultFolderPath, graphDumps);
+		LayoutGraph defltGraph = new LayoutGraph(resultFolderPath);
 		metrics.end("explore:" + sourceLang);
 		JSONObject dfltLangJSON = new JSONObject();
-		String deftLanguageName = lngBundle.isLanguageSelected(deftLanguage)
-				? lngBundle.getBundle().getString(deftLanguage) : deftLanguage;
-		dfltLangJSON.put("lang", deftLanguageName);
+		dfltLangJSON.put("lang", LanguageBundle.name(deftLanguage));
 		dfltLangJSON.put("dflt", true);
 		dfltLangJSON.put("amStates", defltGraph.getStates().size());
-		dfltLangJSON.put("amTrans", defltGraph.getTransitions().size());
+		dfltLangJSON.put("amTrans", defltGraph.getTransitionCount());
 		lngsResults.put(deftLanguage, dfltLangJSON);
-		graphs.put(deftLanguage, defltGraph);
 		String scriptPath = resultFolderPath + File.separator + AdbExplorer.SCRIPT_FILE;
 		List<String> sourceCrashes = crashesIn(Paths.get(scriptPath));
 		if (!sourceCrashes.isEmpty()) {
@@ -652,12 +618,6 @@ public class ITDroid {
 		}
 		writeReport();
 
-		// a fresh header, the comparison appends the rows of each language
-		try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath + File.separator + "ipfs.csv", false))) {
-			bw.write("language;state;nodePos;ipfScore;langNodePos;kind");
-			bw.newLine();
-		}
-
 		// per language
 		System.out.println("Inspecting translated versions");
 		for (int i = 0; i < translatedFiles.size(); i++) {
@@ -666,8 +626,9 @@ public class ITDroid {
 				continue;
 			}
 			requireDevice(serial, lang);
-			processLanguage(lang, true, sourceLang, stringFiles[0], llm, inventory, inventoryFile, patcher, extraPath, appName,
-					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction);
+			processLanguage(lang, true, sourceLang, stringFiles[0], llm, inventory, inventoryFile, extraPath, appName,
+					lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction,
+					copiesOfSource(xmlc, translatedFiles.get(i)));
 		}
 		System.out.println("Inspecting non translated versions");
 		for (int i = 0; i < notTrnsltdFiles.size(); i++) {
@@ -677,14 +638,14 @@ public class ITDroid {
 				continue;
 			}
 			requireDevice(serial, lang);
-			processLanguage(lang, false, sourceLang, stringFiles[0], llm, inventory, inventoryFile, patcher, extraPath, appName,
-					lngBundle, lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction);
+			processLanguage(lang, false, sourceLang, stringFiles[0], llm, inventory, inventoryFile, extraPath, appName,
+					lngsResults, deftLanguage, defltGraph, scriptPath, sourceCrashes, codeExtraction,
+					copiesOfSource(xmlc, notTrnsltdFiles.get(i)));
 		}
 
-		// Close with the internationalized APK, one unpatched build with the resources of every language,
-		// left under the default name.
+		// Close with the internationalized APK, one build with the resources of every language, left
+		// under the default name.
 		metrics.begin("close");
-		patcher.restoreOriginal();
 		JSONObject i18nApk = new JSONObject();
 		JSONArray i18nLanguages = new JSONArray();
 		for (String code : lngs) {
@@ -697,7 +658,7 @@ public class ITDroid {
 		metrics.begin("build:all");
 		// with rtl.repair the delivered APK carries the repair, or is built without it if it fails
 		RtlRepair finalRepair = null;
-		if (rtlRepair) {
+		if (cfg.isRtlRepair()) {
 			try {
 				finalRepair = RtlRepair.apply(decodedFolderPath, appMinSdk);
 			} catch (Exception e) {
@@ -737,7 +698,7 @@ public class ITDroid {
 		// leaves the device on the original APK, never on a translated build
 		try {
 			System.out.println("Reinstalling the original app so the device ends clean...");
-			AdbExplorer.installApk(serial, appName, originalApkAbs);
+			Device.installApk(serial, appName, originalApkAbs);
 		} catch (Exception e) {
 			System.out.println("WARNING: could not reinstall the original app: " + e.getMessage());
 		}
@@ -752,11 +713,11 @@ public class ITDroid {
 	 * language fail as if the language were at fault.
 	 */
 	private static void requireDevice(String serial, String nextLanguage) throws ITDroidException {
-		if (AdbExplorer.deviceAnswers(serial)) {
+		if (Device.deviceAnswers(serial)) {
 			return;
 		}
 		System.out.println("WARNING: the device " + serial + " does not answer; waiting up to " + DEVICE_WAIT_SECONDS + " s for it");
-		if (!AdbExplorer.waitForDevice(serial, DEVICE_WAIT_SECONDS)) {
+		if (!Device.waitForDevice(serial, DEVICE_WAIT_SECONDS)) {
 			throw new ITDroidException("the device " + serial + " stopped answering before the '" + nextLanguage
 					+ "' version could be evaluated (waited " + DEVICE_WAIT_SECONDS + " s). The languages evaluated until then are in the"
 					+ " report; this one and the ones after it were not evaluated.");
@@ -810,10 +771,10 @@ public class ITDroid {
 			String folder = AdbExplorer.replayInto("rtlResults", lang, outputPath, apk.toString(), appName, scriptPath, explorerOptions);
 			info.put("resultsFolder", "rtlResults");
 			info.put("replay", readJson(Paths.get(folder, AdbExplorer.REPLAY_REPORT_FILE)));
-			LayoutGraph repaired = new LayoutGraph(lang, folder, graphDumps);
+			LayoutGraph repaired = new LayoutGraph(folder);
 			info.put("amStates", repaired.getStates().size());
-			info.put("amTrans", repaired.getTransitions().size());
-			new LayoutGraphComparision(deftLanguage, defltGraph, languageName + " (RTL repaired)", lang, repaired, folder, outputPath, info);
+			info.put("amTrans", repaired.getTransitionCount());
+			new LayoutGraphComparision(deftLanguage, defltGraph, languageName + " (RTL repaired)", lang, repaired, info);
 		} catch (Exception e) {
 			info.put("error", "the repaired build could not be evaluated: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
 			System.out.println("WARNING: the " + lang + " build with the RTL repair could not be evaluated: " + e.getMessage());
@@ -823,19 +784,21 @@ public class ITDroid {
 	/**
 	 * One target language end to end, translated, rebuilt, replayed and compared. A failure is
 	 * recorded for this language only.
+	 *
+	 * @param copiesOfSource strings the app ships for this language with the default text, translated in place
 	 */
 	@SuppressWarnings("unchecked")
 	private static void processLanguage(String lang, boolean translated, String sourceLang, String defaultStringsXml,
-			LLMTranslator llm, StringInventory inventory, Path inventoryFile, SmaliPatcher patcher, String extraPath,
-			String appName, LanguageBundle lngBundle, JSONObject lngsResults, String deftLanguage, LayoutGraph defltGraph,
-			String scriptPath, List<String> sourceCrashes, CodeLiteralExtractor.Extraction codeExtraction) {
+			LLMTranslator llm, StringInventory inventory, Path inventoryFile, String extraPath,
+			String appName, JSONObject lngsResults, String deftLanguage, LayoutGraph defltGraph,
+			String scriptPath, List<String> sourceCrashes, CodeLiteralExtractor.Extraction codeExtraction,
+			Set<String> copiesOfSource) {
 		System.out.println("Processing " + lang + " app version");
 		JSONObject langJson = new JSONObject();
-		langJson.put("lang", lngBundle.isLanguageSelected(lang) ? lngBundle.getBundle().getString(lang) : lang);
+		langJson.put("lang", LanguageBundle.name(lang));
 		langJson.put("shippedByApp", translated);
 		langJson.put("resultsFolder", translated ? "trnsResults" : "noTrnsResults");
 		lngsResults.put(lang, langJson);
-		int patched = 0;
 		RunMetrics metrics = RunMetrics.get();
 		Path apkForLang = Paths.get(outputPath, appName + "-" + lang + "-aligned-debugSigned.apk").toAbsolutePath();
 		// the repaired right-to-left build and its outcome
@@ -847,54 +810,41 @@ public class ITDroid {
 				throw new ITDroidException(unsupported + ": this language was not evaluated");
 			}
 			metrics.begin("translate:" + lang);
-			// Resources. A shipped language keeps its strings and only gets the ones ITDroid added.
+			// Resources, with the hardcoded strings moved to them. A shipped language keeps its strings and
+			// only gets the ones ITDroid added, and the app's copies of the default text are translated in place.
 			if (!new File(defaultStringsXml).isFile()) {
-				System.out.println("The app has no default strings.xml: there are no resources to translate, only hardcoded strings.");
+				System.out.println("The app has no default strings.xml: there are no resources to translate.");
 			} else if (!translated) {
 				System.out.println("We are going to translate your strings...");
-				llm.translate(defaultStringsXml, sourceLang, lang);
+				llm.translate(defaultStringsXml, sourceLang, lang, null, copiesOfSource);
 			} else {
-				System.out.println("Resources for " + lang + " already shipped by the app; only hardcoded strings are translated.");
-				if (!inventory.extractedResources().isEmpty()) {
-					llm.translate(defaultStringsXml, sourceLang, lang, inventory.extractedResources());
+				System.out.println("Resources for " + lang + " already shipped by the app; only the strings ITDroid added are translated.");
+				if (!inventory.extractedResources().isEmpty() || !copiesOfSource.isEmpty()) {
+					llm.translate(defaultStringsXml, sourceLang, lang, inventory.extractedResources(), copiesOfSource);
 				}
 			}
-			// Hardcoded code literals, patched only where the policy says the text is shown.
-			List<String> hardcoded = inventory.hardcodedTexts();
-			Map<String, String> translations = hardcoded.isEmpty() ? new LinkedHashMap<>()
-					: llm.translateUiLabels(hardcoded, sourceLang, lang);
-			List<SmaliPatcher.Patch> applied = patcher.patch(inventory.hardcodedPlaces(), translations, codeExtraction::currentLine);
-			patched = applied.size();
+			langJson.put("translation", llm.report(lang));
 			int moved = codeExtraction.places.size();
 			Path hardcodedCsv = Paths.get(outputPath, "hardcoded_" + lang + ".csv");
-			HardcodedLog.write(hardcodedCsv, inventory, lang, translations, applied, null);
+			HardcodedLog.write(hardcodedCsv, inventory, lang, llm.keptInSource(lang), null);
 			System.out.println("Hardcoded strings of the code for " + lang + ": " + moved + " places read from resources, "
-					+ patched + " places patched");
-			langJson.put("patchedHardcoded", patched);
+					+ inventory.summary().get("hardcodedPlacesNotMoved") + " places left in the source language");
 			langJson.put("extractedCodeLiterals", (long) codeExtraction.names().size());
 			langJson.put("extractedXmlLiterals", (long) (inventory.extractedResources().size() - codeExtraction.names().size()));
 			inventory.save(inventoryFile);
 
-			// Rebuild, then the smali goes back to pristine either way.
 			metrics.end("translate:" + lang);
 			metrics.begin("build:" + lang);
-			String built;
-			try {
-				built = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
-				if (built != null && !built.isEmpty()) {
-					Files.copy(Paths.get(built), apkForLang, StandardCopyOption.REPLACE_EXISTING);
-					if (rtlRepair && Helper.languageIsRTL(lang)) {
-						// built now so the two builds differ only in the repair
-						metrics.end("build:" + lang);
-						metrics.begin("rtlBuild:" + lang);
-						repairInfo = new JSONObject();
-						repairedApk = buildRtlRepaired(lang, extraPath, appName, repairInfo);
-						metrics.end("rtlBuild:" + lang);
-					}
-				}
-			} finally {
-				if (patched > 0) {
-					patcher.restoreOriginal();
+			String built = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
+			if (built != null && !built.isEmpty()) {
+				Files.copy(Paths.get(built), apkForLang, StandardCopyOption.REPLACE_EXISTING);
+				if (config.isRtlRepair() && Helper.languageIsRTL(lang)) {
+					// built now so the two builds differ only in the repair
+					metrics.end("build:" + lang);
+					metrics.begin("rtlBuild:" + lang);
+					repairInfo = new JSONObject();
+					repairedApk = buildRtlRepaired(lang, extraPath, appName, repairInfo);
+					metrics.end("rtlBuild:" + lang);
 				}
 			}
 			if (built == null || built.isEmpty()) {
@@ -903,41 +853,39 @@ public class ITDroid {
 
 			metrics.end("build:" + lang);
 			metrics.begin("replay:" + lang);
-			// Replay the source path. If the patched build does not start or crashes where the original
-			// did not, a translated literal was data, so the language is rebuilt with resources only.
+			// Replay the source path. If the build does not start or crashes where the original did not, a
+			// translated code literal was data, so the language is rebuilt with those in the source language.
 			String resultFolder = null;
-			String patchProblem = null;
+			String hardcodedProblem = null;
 			try {
 				resultFolder = AdbExplorer.replayLanguage(lang, outputPath, translated, apkForLang.toString(), appName, scriptPath, explorerOptions);
 				List<String> crashes = newCrashes(resultFolder, sourceCrashes);
 				if (!crashes.isEmpty()) {
 					langJson.put("crashes", jsonArray(crashes));
-					if (patched > 0 || moved > 0) {
-						patchProblem = "the app crashed during the replay: " + crashes.get(0);
+					if (moved > 0) {
+						hardcodedProblem = "the app crashed during the replay: " + crashes.get(0);
 					}
 				}
 			} catch (ExplorationException e) {
-				if ((patched == 0 && moved == 0) || e.getMessage() == null || !e.getMessage().contains("did not reach the foreground")) {
+				if (moved == 0 || e.getMessage() == null || !e.getMessage().contains("did not reach the foreground")) {
 					throw e;
 				}
-				patchProblem = e.getMessage();
+				hardcodedProblem = e.getMessage();
 			}
-			if (patchProblem != null) {
-				System.out.println("WARNING: the " + lang + " build with " + (patched + moved) + " translated places of hardcoded strings failed ("
-						+ patchProblem + "). Rebuilding it with the translated resources only.");
-				langJson.put("hardcodedFallback", "the build with translated hardcoded strings failed and was evaluated with translated resources only: " + patchProblem);
-				langJson.put("revertedHardcoded", patched + moved);
-				langJson.put("patchedHardcoded", 0);
-				HardcodedLog.write(hardcodedCsv, inventory, lang, translations, applied, patchProblem);
-				if (moved > 0) {
-					// the moved literals fall back to the source text for this language only
-					File languageStrings = new File(new File(defaultStringsXml).getParentFile().getParentFile(),
-							"values-" + lang + File.separator + "strings.xml");
-					CodeLiteralExtractor.removeTranslations(languageStrings);
-				}
+			if (hardcodedProblem != null) {
+				System.out.println("WARNING: the " + lang + " build with the " + codeExtraction.names().size() + " code literals translated failed ("
+						+ hardcodedProblem + "). Rebuilding it with those literals in the source language.");
+				// the moved literals fall back to the source text for this language only
+				File languageStrings = new File(new File(defaultStringsXml).getParentFile().getParentFile(),
+						"values-" + lang + File.separator + "strings.xml");
+				int dropped = CodeLiteralExtractor.removeTranslations(languageStrings);
+				langJson.put("hardcodedFallback", "the build with the code literals translated failed and was evaluated with them"
+						+ " in the source language: " + hardcodedProblem);
+				langJson.put("revertedHardcoded", (long) dropped);
+				HardcodedLog.write(hardcodedCsv, inventory, lang, llm.keptInSource(lang), hardcodedProblem);
 				String plain = APKToolWrapper.buildAPK(extraPath, appName, outputPath);
 				if (plain == null || plain.isEmpty()) {
-					throw new ExplorationException("apktool could not rebuild the " + lang + " version without hardcoded patches");
+					throw new ExplorationException("apktool could not rebuild the " + lang + " version without its translated code literals");
 				}
 				Files.copy(Paths.get(plain), apkForLang, StandardCopyOption.REPLACE_EXISTING);
 				resultFolder = AdbExplorer.replayLanguage(lang, outputPath, translated, apkForLang.toString(), appName, scriptPath, explorerOptions);
@@ -945,9 +893,9 @@ public class ITDroid {
 				if (again.isEmpty()) {
 					langJson.remove("crashes");
 				} else {
-					// it crashes without the patches too, so they were not the cause
+					// it crashes without them too, so they were not the cause
 					langJson.put("crashes", jsonArray(again));
-					langJson.put("hardcodedFallbackNote", "the build without the patches crashed as well: " + again.get(0));
+					langJson.put("hardcodedFallbackNote", "the build without the translated code literals crashed as well: " + again.get(0));
 				}
 			}
 			System.out.println("The app has been inspected");
@@ -956,18 +904,16 @@ public class ITDroid {
 			// Compare against the source graph.
 			metrics.end("replay:" + lang);
 			metrics.begin("compare:" + lang);
-			LayoutGraph langGraph = new LayoutGraph(lang, resultFolder, graphDumps);
+			LayoutGraph langGraph = new LayoutGraph(resultFolder);
 			langJson.put("amStates", langGraph.getStates().size());
-			langJson.put("amTrans", langGraph.getTransitions().size());
-			graphs.put(lang, langGraph);
-			LayoutGraphComparision lgc = new LayoutGraphComparision(deftLanguage, defltGraph,
-					String.valueOf(langJson.get("lang")), lang, langGraph, resultFolder, outputPath, langJson);
-			lgcomparisions.put(lang, lgc);
+			langJson.put("amTrans", langGraph.getTransitionCount());
+			new LayoutGraphComparision(deftLanguage, defltGraph,
+					String.valueOf(langJson.get("lang")), lang, langGraph, langJson);
 
 			// The same path on the repaired right-to-left build.
 			if (repairInfo != null) {
 				langJson.put("rtlRepair", repairInfo);
-				if (repairedApk != null && patchProblem != null) {
+				if (repairedApk != null && hardcodedProblem != null) {
 					repairInfo.put("error", "not evaluated: the build of this language had to be made again without its hardcoded strings");
 				} else if (repairedApk != null) {
 					metrics.end("compare:" + lang);
@@ -990,8 +936,8 @@ public class ITDroid {
 		if (repairInfo != null && !langJson.containsKey("rtlRepair")) {
 			langJson.put("rtlRepair", repairInfo);   // the language failed before the repaired build was evaluated
 		}
-		if (!keepLanguageApks) {
-			// only its code patches are lost, and the hardcoded CSV of the language lists them
+		if (!config.isKeepLanguageApks()) {
+			// the internationalized APK has the same resources, so nothing of the language is lost
 			try {
 				if (repairedApk != null) {
 					Files.deleteIfExists(repairedApk);
@@ -1032,28 +978,11 @@ public class ITDroid {
 	}
 
 	private static void printUsage() {
-		System.out.println("******* ERROR: INCORRECT USAGE *******");
-		System.out.println("Recommended: pass a single config file");
-		System.out.println("  java -jar ITDroid.jar itdroid.config.properties");
-		System.out.println("  (copy itdroid.config.example.properties and edit it)");
-		System.out.println();
-		System.out.println("Or the positional form (7 required arguments + 1 optional):");
-		System.out.println("1. APK path");
-		System.out.println("2. Package Name");
-		System.out.println("3. Binaries path (the extra/ folder)");
-		System.out.println("4. Directory containing settings.properties and strings.xml");
-		System.out.println("5. Amount of untranslatable strings (alpha)");
-		System.out.println("6. Path where test output will be stored");
-		System.out.println("7. Name of the emulator/AVD (or a connected physical device)");
-		System.out.println("8. (Optional) Ollama model name or a command to start the local LLM server, e.g.");
-		System.out.println("   \"qwen2.5:3b\" or \"llama-server -m model.gguf --port 8080\".");
-		System.out.println("   If omitted, the LLM server must already be running.");
-		System.out.println();
-		System.out.println("Other modes (no device, no LLM):");
-		System.out.println("  java -jar ITDroid.jar --static <config file>                              decode and analyse only: hardcoded strings and inventory");
-		System.out.println("  java -jar ITDroid.jar --static <apk> <package> <extraFolder> <settingsDir> <outputFolder>");
-		System.out.println("  java -jar ITDroid.jar --report [resultsFolder] [--port N] [--no-browser]   web report");
-		System.out.println("  java -jar ITDroid.jar --reanalyze <folder> [--out <folder>] [--min-similarity <0..1>]   recompute the comparison of stored evaluations");
+		System.out.println("Usage, from the ITDroid folder. Everything is set in itdroid.config.properties.");
+		System.out.println("  java -jar target/ITDroid-1.0.0.jar [config file]                evaluate the app of the config, itdroid.config.properties by default");
+		System.out.println("  java -jar target/ITDroid-1.0.0.jar --static [config file]       decode and analyse only, no device and no LLM");
+		System.out.println("  java -jar target/ITDroid-1.0.0.jar --report [folder] [--port N] [--no-browser]   web report of the results folder");
+		System.out.println("  java -jar target/ITDroid-1.0.0.jar --reanalyze <folder> [--out <folder>] [--min-similarity <0..1>]   recompute stored evaluations");
 	}
 
 	/** Builds and saves the inventory, seeded with the translations of a previous run. */
@@ -1062,9 +991,9 @@ public class ITDroid {
 			List<HardcodedStringFinder.Hit> hits, List<XmlLiterals.Literal> xmlLiterals, XmlLiterals.Extraction extraction,
 			CodeLiteralExtractor.Extraction codeExtraction, String sourceLang, Path inventoryFile) throws IOException {
 		StringInventory inventory = StringInventory.collect(decodedFolderPath, appName, dictionary, hits, xmlLiterals,
-				hardcodedPolicy, extraction, codeExtraction);
+				config.getHardcodedPolicy(), extraction, codeExtraction);
 		inventory.setSourceLanguage(sourceLang);
-		if (reuseInventory) {
+		if (config.isReuseInventory()) {
 			int reused = inventory.loadPreviousTranslations(inventoryFile);
 			if (reused > 0) {
 				System.out.println("Reusing " + reused + " translations from the previous " + inventoryFile.getFileName());
@@ -1073,6 +1002,41 @@ public class ITDroid {
 		inventory.save(inventoryFile);
 		report.put("inventory", inventory.summary());
 		return inventory;
+	}
+
+	/** The code literals chosen for translation that stay in the code, deduplicated and capped, for report.json. */
+	@SuppressWarnings("unchecked")
+	static void putNotMoved(JSONObject codeExtractionInfo, StringInventory inventory, boolean print) {
+		Map<String, String> notMoved = inventory.notMovedCodeLiterals();
+		JSONArray list = new JSONArray();
+		int printed = 0;
+		for (Map.Entry<String, String> e : notMoved.entrySet()) {
+			if (list.size() < NOT_MOVED_LISTED) {
+				JSONObject o = new JSONObject();
+				o.put("text", e.getKey());
+				o.put("reason", e.getValue());
+				list.add(o);
+			}
+			if (print && printed++ < NOT_MOVED_PRINTED) {
+				System.out.println("NOTE: code literal not moved to a resource, it stays in the source language: \"" + e.getKey() + "\" ("
+						+ e.getValue() + ")");
+			}
+		}
+		if (print && notMoved.size() > NOT_MOVED_PRINTED) {
+			System.out.println("NOTE: and " + (notMoved.size() - NOT_MOVED_PRINTED) + " more code literals not moved, see codeExtraction in report.json");
+		}
+		codeExtractionInfo.put("notMoved", list);
+		codeExtractionInfo.put("notMovedCount", (long) notMoved.size());
+	}
+
+	/** Entries of codeExtraction.notMoved in report.json, and lines of them printed. */
+	private static final int NOT_MOVED_LISTED = 200;
+	private static final int NOT_MOVED_PRINTED = 20;
+
+	/** The strings a language file only copies from the default text, which ITDroid translates in place. */
+	private static Set<String> copiesOfSource(XMLComparator xmlc, String languageStringsPath) {
+		XMLComparator.LanguageStatus status = xmlc.status(languageStringsPath);
+		return status == null ? Set.of() : new java.util.LinkedHashSet<>(status.copiesOfSource);
 	}
 
 	/** The crashes listed in an exploration script or a replay report. */

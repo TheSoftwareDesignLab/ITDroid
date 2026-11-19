@@ -1,12 +1,10 @@
 package uniandes.tsdl.itdroid.model;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -15,14 +13,11 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
-import org.json.simple.JSONObject;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
-
-import uniandes.tsdl.itdroid.helper.Helper;
 
 public class State {
 
@@ -36,10 +31,6 @@ public class State {
 
 	private List<AndroidNode> stateNodes;
 
-	private List<Transition> outboundTransitions = new ArrayList<Transition>();
-
-	private List<Transition> inboundTransitions = new ArrayList<Transition>();
-
 	private String screenShot;
 
 	private Set<GraphEdgeType>[][] graph;
@@ -50,8 +41,6 @@ public class State {
 	/** Parses the raw XML dump of a screen into its nodes and the relations between them. */
 	public State(int id, String activityName, String rawXML, String screenShot) throws ParserConfigurationException, SAXException, IOException {
 		stateNodes = new ArrayList<AndroidNode>();
-		outboundTransitions = new ArrayList<Transition>();
-		inboundTransitions = new ArrayList<Transition>();
 
 		this.id = id;
 		this.activityName = activityName;
@@ -86,6 +75,33 @@ public class State {
 		}
 	}
 
+	/**
+	 * Pixels two boxes may overlap and still be side by side or one above the other. The layout rounds
+	 * every edge, so two elements that touch can share a pixel, and a mirrored layout rounds them again.
+	 */
+	public static final int SLACK = 2;
+
+	/** How much two intervals share, negative when they are apart. */
+	private static int overlap(int a1, int a2, int b1, int b2) {
+		return Math.min(a2, b2) - Math.max(a1, b1);
+	}
+
+	/**
+	 * True when two intervals cross by a sliver, at most {@link #SLACK} pixels and less than half of the
+	 * shorter one, which is the rounding of the layout and not an overlap. An element cut by the edge of
+	 * the screen down to a pixel or two is not a sliver of what it touches.
+	 */
+	private static boolean sliver(int a1, int a2, int b1, int b2) {
+		int o = overlap(a1, a2, b1, b2);
+		return o > 0 && o <= SLACK && 2 * o < Math.min(a2 - a1, b2 - b1);
+	}
+
+	/** True when the two boxes share part of their height, more than a sliver, so they are in one row. */
+	public static boolean sameRow(AndroidNode a, AndroidNode b) {
+		int a1 = a.getPoint1()[1], a2 = a.getPoint2()[1], b1 = b.getPoint1()[1], b2 = b.getPoint2()[1];
+		return overlap(a1, a2, b1, b2) > 0 && !sliver(a1, a2, b1, b2);
+	}
+
 	/** True when both nodes hang from the same parent (two top-level nodes count as siblings). */
 	public boolean nodesAreSiblings(int node1, int node2) {
 		return stateNodes.get(node1).getParentPosition() == stateNodes.get(node2).getParentPosition();
@@ -113,19 +129,22 @@ public class State {
 		tempGraph[secondNodeIndex][firstNodeIndex] = EnumSet.noneOf(GraphEdgeType.class);
 		tempGraph[firstNodeIndex][secondNodeIndex] = EnumSet.noneOf(GraphEdgeType.class);
 
-		if(firstNodeCoor1[yCoord]>=secondNodeCoor2[yCoord]) {
+		// two boxes that cross by a sliver still count as one after the other
+		boolean sliverY = sliver(firstNodeCoor1[yCoord], firstNodeCoor2[yCoord], secondNodeCoor1[yCoord], secondNodeCoor2[yCoord]);
+		boolean sliverX = sliver(firstNodeCoor1[xCoord], firstNodeCoor2[xCoord], secondNodeCoor1[xCoord], secondNodeCoor2[xCoord]);
+		if(firstNodeCoor1[yCoord]>=secondNodeCoor2[yCoord] || (sliverY && firstNodeCoor1[yCoord]>secondNodeCoor1[yCoord])) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.ABOVE);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.BELOW);
 		}
-		if(firstNodeCoor2[yCoord]<=secondNodeCoor1[yCoord]) {
+		if(firstNodeCoor2[yCoord]<=secondNodeCoor1[yCoord] || (sliverY && firstNodeCoor1[yCoord]<secondNodeCoor1[yCoord])) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.BELOW);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.ABOVE);
 		}
-		if(firstNodeCoor1[xCoord]>=secondNodeCoor2[xCoord]) {
+		if(firstNodeCoor1[xCoord]>=secondNodeCoor2[xCoord] || (sliverX && firstNodeCoor1[xCoord]>secondNodeCoor1[xCoord])) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.LEFT);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.RIGHT);
 		}
-		if(firstNodeCoor2[xCoord]<=secondNodeCoor1[xCoord]) {
+		if(firstNodeCoor2[xCoord]<=secondNodeCoor1[xCoord] || (sliverX && firstNodeCoor1[xCoord]<secondNodeCoor1[xCoord])) {
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.RIGHT);
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.LEFT);
 		}
@@ -159,10 +178,11 @@ public class State {
 			tempGraph[firstNodeIndex][secondNodeIndex].add(GraphEdgeType.CONTAINED);
 			tempGraph[secondNodeIndex][firstNodeIndex].add(GraphEdgeType.CONTAINS);
 		}
-		// Two elements intersect when they share area and neither holds the other, even when aligned,
-		// as two buttons of one row overlapped by a longer text are.
+		// Two elements intersect when they share area, more than a sliver each way, and neither holds the
+		// other, even when aligned, as two buttons of one row overlapped by a longer text are.
 		boolean shareArea = firstNodeCoor1[xCoord] < secondNodeCoor2[xCoord] && secondNodeCoor1[xCoord] < firstNodeCoor2[xCoord]
-				&& firstNodeCoor1[yCoord] < secondNodeCoor2[yCoord] && secondNodeCoor1[yCoord] < firstNodeCoor2[yCoord];
+				&& firstNodeCoor1[yCoord] < secondNodeCoor2[yCoord] && secondNodeCoor1[yCoord] < firstNodeCoor2[yCoord]
+				&& !sliverX && !sliverY;
 		boolean oneHoldsTheOther = tempGraph[firstNodeIndex][secondNodeIndex].contains(GraphEdgeType.CONTAINS)
 				|| tempGraph[firstNodeIndex][secondNodeIndex].contains(GraphEdgeType.CONTAINED);
 		if((shareArea && !oneHoldsTheOther) || (tempGraph[firstNodeIndex][secondNodeIndex].size()==0
@@ -201,14 +221,6 @@ public class State {
 		return rawXML;
 	}
 
-	public void addInboundTransition(Transition pTransition) {
-		inboundTransitions.add(pTransition);
-	}
-
-	public void addOutboundTransition(Transition pTransition) {
-		outboundTransitions.add(pTransition);
-	}
-
 	public List<AndroidNode> getStateNodes() {
 		return stateNodes;
 	}
@@ -221,155 +233,9 @@ public class State {
 		return graph;
 	}
 
-	public AndroidNode getAndroidNode(String resourceID, String xpath, String text) {
-
-		for (int i = 0; i < stateNodes.size(); i++) {
-			AndroidNode temp = stateNodes.get(i);
-			if(temp.getxPath().equals(xpath)&&temp.getResourceID().equals(resourceID)&&temp.getText().equals(text)) {
-				return temp;
-			}
-		}
-		return null;
-
-	}
-
 	@Override
 	public String toString() {
-		String result = id+" - "+activityName+"\n";
-		for (int j = 0; j < outboundTransitions.size(); j++) {
-			result += outboundTransitions.get(j).toString()+"\n";
-		}
-		for (int j = 0; j < stateNodes.size(); j++) {
-			result += stateNodes.get(j).toString()+"\n";
-		}
-		for (int i = 0; i < graph.length; i++) {
-			for (int j = 0; j < graph[0].length; j++) {
-				result += i+" -> "+j+" := ";
-				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
-				while(iter.hasNext()) {
-					result += iter.next()+";";
-				}
-				result += "\n";
-			}
-		}
-		return result;
-	}
-
-	public void writeFile(BufferedWriter bw) throws IOException {
-		bw.write("State: "+id+" - "+activityName);
-		bw.write("Transitions:");
-		bw.newLine();
-		for (int j = 0; j < outboundTransitions.size(); j++) {
-			bw.write("\t"+outboundTransitions.get(j).toString());
-			bw.newLine();
-		}
-		bw.write("Android Nodes:");
-		bw.newLine();
-		for (int j = 0; j < stateNodes.size(); j++) {
-			bw.write("\t"+stateNodes.get(j).toString());
-			bw.newLine();
-		}
-		bw.write("Graph Edges:");
-		bw.newLine();
-		for (int i = 0; i < graph.length; i++) {
-			for (int j = 0; j < graph[0].length; j++) {
-				bw.write("\t"+i+" -> "+j+" := ");
-				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
-				while(iter.hasNext()) {
-					bw.write(iter.next()+";");
-				}
-				bw.newLine();
-			}
-		}
-	}
-
-	@SuppressWarnings("unchecked")
-	public JSONObject getStateInfo(){
-		JSONObject state = new JSONObject();
-		state.put("id", id);
-		state.put("activityName", activityName);
-		JSONObject transitions = new JSONObject();
-		JSONObject transition;
-		Transition t;
-		//Get transitions information
-		for(int i = 0; i< outboundTransitions.size(); i++){
-			transition = new JSONObject();
-			t = outboundTransitions.get(i);
-			transition.put("origin", t.getOrigin().getId());
-			transition.put("destination", t.getDestination().getId());
-			transition.put("type", t.getType().toString());
-			transitions.put(i, transition);
-		}
-		state.put("transitions", transitions);
-		//Get nodes information
-		JSONObject nodes = new JSONObject();
-		JSONObject point1;
-		JSONObject point2;
-		JSONObject node;
-		for(int i = 0; i < stateNodes.size(); i++ ){
-			node = new JSONObject();
-			node.put("index", stateNodes.get(i).getIndex());
-			node.put("xPath", stateNodes.get(i).getxPath());
-			point1 = new JSONObject();
-			point1.put("x", stateNodes.get(i).getPoint1()[0]);
-			point1.put("y", stateNodes.get(i).getPoint1()[1]);
-			point2 = new JSONObject();
-			point2.put("x", stateNodes.get(i).getPoint2()[0]);
-			point2.put("y", stateNodes.get(i).getPoint2()[1]);
-			node.put("point1", point1);
-			node.put("point2", point2);
-
-			nodes.put(i,node);
-		}
-		state.put("nodes", nodes);
-		//Get edges information
-		JSONObject edges = new JSONObject();
-		JSONObject edge;
-		JSONObject relations;
-		int totalEdges = 0;
-		for (int i = 0; i < graph.length; i++) {
-			for (int j = 0; j < graph[0].length; j++) {
-				edge = new JSONObject();
-				relations = new JSONObject();
-				edge.put("origin",i);
-				edge.put("destination", j);
-				Iterator<GraphEdgeType> iter = graph[i][j].iterator();
-				int index = 0;
-				while(iter.hasNext()) {
-					relations.put(index, iter.next().toString());
-					index ++;
-				}
-				edge.put("relations", relations);
-
-				edges.put(totalEdges,edge);
-				totalEdges ++;
-			}
-		}
-		state.put("edges", edges);
-		return state;
-	}
-
-	/** True when {@code langTempState} is considered the same screen as this one (same activity,
-	 *  near-equal node count, and raw XML within a 10% Levenshtein threshold). */
-	public boolean compareTo(State langTempState) {
-		if(!activityName.equals(langTempState.getActivityName())) {
-			return false;
-		}
-		int amntNodesDiff = Math.abs(stateNodes.size()-langTempState.getStateNodes().size());
-		if(amntNodesDiff>1) {
-			return false;
-		}
-		// Long avoids overflow on large XML, and a minimum of 1 lets identical short XML still pair.
-		int acceptancePercentage = 10;
-		int lvnshtnDist =Helper.levenshteinDistance(rawXML, langTempState.getRawXML());
-		long threshold = ((long) rawXML.length() * acceptancePercentage) / 100;
-		if(threshold < 1) {
-			threshold = 1;
-		}
-		if(lvnshtnDist>=threshold) {
-			return false;
-		}
-		return true;
+		return id + " - " + activityName + " (" + stateNodes.size() + " elements)";
 	}
 
 }

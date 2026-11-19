@@ -47,7 +47,7 @@ class CodeLiteralExtractorTest {
         FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
         freeActivity = app.resolve("smali/com/example/shop/free/FreeActivity.smali");
         cartRepository = app.resolve("smali/com/example/shop/free/CartRepository.smali");
-        scan = SmaliScan.scan(app.toString(), APPLICATION_ID);
+        scan = Fixtures.scan(app.toString(), APPLICATION_ID);
         hits = HardcodedStringFinder.hits(scan);
     }
 
@@ -64,7 +64,8 @@ class CodeLiteralExtractorTest {
     }
 
     private StringInventory inventory(HardcodedPolicy policy, CodeLiteralExtractor.Extraction extraction) throws Exception {
-        return StringInventory.collect(app.toString(), APPLICATION_ID, new NotTranslatableStringsDictionary(Fixtures.settingsDir().toString()),
+        // the scan made before the extraction, whose places the extraction recorded
+        return StringInventory.collect(app.toString(), APPLICATION_ID, new NotTranslatableStringsDictionary(List.of()),
                 hits, XmlLiterals.find(app.toString()), policy, null, extraction);
     }
 
@@ -82,7 +83,7 @@ class CodeLiteralExtractorTest {
 
         assertEquals(8, extraction.places.size(), "the eight places the app shows text in");
         assertEquals(8, extraction.names().size());
-        assertTrue(extraction.problems.isEmpty());
+        assertTrue(extraction.notMoved.isEmpty());
 
         List<String> code = lines(freeActivity);
         int at = code.indexOf("    const-string v3, \"Welcome back\"");
@@ -130,7 +131,8 @@ class CodeLiteralExtractorTest {
         assertTrue(welcome.translatable);
         assertEquals(name("Welcome back"), welcome.extractedTo);
         assertEquals(1, welcome.extractedPlaces.size());
-        assertTrue(welcome.patchPlaces.isEmpty());
+        assertTrue(welcome.notMovedPlaces.isEmpty());
+        assertNull(welcome.notMovedReason);
         assertEquals("smali/com/example/shop/free/FreeActivity.smali:26", welcome.origin);
 
         StringInventory.Entry premium = inventory.entries().stream()
@@ -138,39 +140,21 @@ class CodeLiteralExtractorTest {
         assertEquals(List.of("showPlan"), premium.extractedPlaces.stream().map(p -> p.method).toList());
 
         assertTrue(inventory.resourceEntries().stream().anyMatch(e -> e.name.equals(name("Welcome back")) && e.translatable));
-        assertTrue(inventory.hardcodedTexts().isEmpty(), "nothing is left to patch: every chosen place reads a resource");
-        assertTrue(inventory.hardcodedPlaces().isEmpty());
+        assertTrue(inventory.notMovedCodeLiterals().isEmpty(), "every chosen place reads a resource");
         assertTrue(inventory.extractedResources().contains(name("Saved")));
         assertEquals(8L, inventory.summary().get("hardcodedCodeExtracted"));
         assertEquals(8L, inventory.summary().get("hardcodedPlacesExtracted"));
-        assertEquals(0L, inventory.summary().get("hardcodedPlacesToPatch"));
+        assertEquals(0L, inventory.summary().get("hardcodedPlacesNotMoved"));
         assertEquals(8L, inventory.summary().get("hardcodedTranslatable"));
 
         // the translation the resource gets is the one shown for the literal
         inventory.putTranslation("es", "\"Items: \"", "\"Art\u00edculos: \"");
         Path csv = tmp.resolve("hardcoded_es.csv");
-        Map<String, Integer> counts = HardcodedLog.write(csv, inventory, "es", Map.of(), List.of(), null);
-        assertEquals(8, counts.get("extracted"));
+        Map<String, Integer> counts = HardcodedLog.write(csv, inventory, "es", Map.of(), null);
+        assertEquals(1, counts.get("translated"));
+        assertEquals(7, counts.get("kept in source"), "the others have no translation for this language yet");
         assertTrue(Files.readString(csv, StandardCharsets.UTF_8).contains(
-                "code;\"Items: \";\"\"\"Art\u00edculos: \"\"\";extracted;\"@string/" + name("Items: ") + "\";"));
-    }
-
-    @Test
-    void placesBelowAMovedLiteralAreFoundOnTheirNewLine() throws Exception {
-        SmaliScan.Occurrence operand = scan.occurrences().stream()
-                .filter(o -> o.text.equals("Premium") && o.method.equals("isPremium")).findFirst().get();
-        assertEquals(98, operand.line);
-
-        CodeLiteralExtractor.Extraction extraction = extract(HardcodedPolicy.UI);
-
-        // six literals were moved above it in the same file, two lines each
-        assertEquals(110, extraction.currentLine(operand));
-        assertEquals("    const-string v0, \"Premium\"", lines(freeActivity).get(109));
-
-        // so a place that still has to be patched is patched where it is now
-        List<SmaliPatcher.Patch> patched = new SmaliPatcher(app.toString()).patch(List.of(operand), Map.of("Premium", "De pago"), extraction::currentLine);
-        assertEquals(1, patched.size());
-        assertEquals("    const-string v0, \"De pago\"", lines(freeActivity).get(109));
+                "code;\"Items: \";\"\"\"Art\u00edculos: \"\"\";translated;\"@string/" + name("Items: ") + "\";"));
     }
 
     @Test
@@ -210,13 +194,14 @@ class CodeLiteralExtractorTest {
                 StringInventory.placesToTranslate(app.toString(), hits, HardcodedPolicy.UI), full);
 
         assertEquals(Set.of("Your cart is empty"), extraction.nameByText.keySet(), "only the literal of the second dex");
-        assertTrue(extraction.problems.get(0).startsWith("smali has no room"));
+        assertTrue(extraction.notMoved.get("Welcome back").startsWith("its dex file (smali) is at the limit of 65536 method references"),
+                extraction.notMoved.toString());
         assertEquals(Files.readAllLines(Fixtures.decodedApp().resolve("smali/com/example/shop/free/FreeActivity.smali")), lines(freeActivity));
-        // what was not moved is still patched
+        // what was not moved stays in the source language, with the reason
         StringInventory inventory = inventory(HardcodedPolicy.UI, extraction);
-        assertEquals(7, inventory.hardcodedPlaces().size());
-        assertTrue(inventory.hardcodedTexts().contains("Welcome back"));
-        assertFalse(inventory.hardcodedTexts().contains("Your cart is empty"));
+        assertEquals(7L, inventory.summary().get("hardcodedPlacesNotMoved"));
+        assertEquals(extraction.notMoved.get("Welcome back"), inventory.notMovedCodeLiterals().get("Welcome back"));
+        assertFalse(inventory.notMovedCodeLiterals().containsKey("Your cart is empty"));
     }
 
     /** A dex header with only the counters ITDroid reads, type_ids_size at 0x40 and method_ids_size at 0x58. */
@@ -244,13 +229,14 @@ class CodeLiteralExtractorTest {
                 + "    const-string v0, \"BB\"\n\n    invoke-virtual {p1, v0}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V\n\n"
                 + "    return-void\n.end method\n", StandardCharsets.UTF_8);
         String decoded = tmp.resolve("clash").toString();
-        List<SmaliScan.Occurrence> places = SmaliScan.scan(decoded, "com.acme.app").occurrences();
+        List<SmaliScan.Occurrence> places = Fixtures.scan(decoded, "com.acme.app").occurrences();
 
         CodeLiteralExtractor.Extraction extraction = CodeLiteralExtractor.extract(decoded, places, Set.of());
 
         assertEquals(Set.of("Aa"), extraction.nameByText.keySet());
         assertEquals(1, extraction.places.size());
-        assertTrue(extraction.problems.get(0).contains("\"BB\""), "the second one is left to be patched");
+        assertEquals("the resource name " + name("BB") + " is already in use", extraction.notMoved.get("BB"),
+                "the second one stays in the code");
     }
 
     @Test
@@ -273,7 +259,9 @@ class CodeLiteralExtractorTest {
             assertTrue(smali.contains(".catch Ljava/lang/Throwable;"), "whatever fails, the app gets its own text back");
             assertTrue(smali.contains("return-object p0"));
         }
-        assertNull(CodeLiteralExtractor.none().nameByText.get("anything"));
-        assertFalse(CodeLiteralExtractor.none().active());
+        CodeLiteralExtractor.Extraction off = CodeLiteralExtractor.none("moving code literals to resources is turned off");
+        assertNull(off.nameByText.get("anything"));
+        assertFalse(off.active());
+        assertEquals("moving code literals to resources is turned off", off.notMovedReason("Welcome back"));
     }
 }

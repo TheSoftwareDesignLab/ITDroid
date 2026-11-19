@@ -17,39 +17,38 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.io.FileUtils;
 import org.jdom2.Element;
 import org.jdom2.input.SAXBuilder;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import uniandes.tsdl.itdroid.Fixtures;
-import uniandes.tsdl.itdroid.helper.NotTranslatableStringsDictionary;
+import uniandes.tsdl.itdroid.helper.LanguageBundle;
 import uniandes.tsdl.itdroid.helper.StringInventory;
+import uniandes.tsdl.itdroid.helper.Translatability;
 
 /** Tests the LLM translator against {@link FakeLlmServer}, with no model and no network beyond localhost. */
 class LLMTranslatorTest {
 
     private static final String[] KEYS = {"ITDROID_LLM_ENDPOINT", "ITDROID_LLM_MODEL", "ITDROID_LLM_TIMEOUT",
             "ITDROID_LLM_TEMPERATURE", "ITDROID_LLM_STYLE", "ITDROID_LLM_MASK_PLACEHOLDERS", "ITDROID_LLM_PROMPT_TEMPLATE",
-            "ITDROID_LLM_CONTEXT"};
+            "ITDROID_LLM_CONTEXT", "ITDROID_LLM_PROTECTED_TERMS"};
 
     @TempDir
     Path tmp;
 
     private FakeLlmServer server;
-    private Path settingsDir;
     private final Map<String, String> savedProperties = new LinkedHashMap<>();
 
     @BeforeEach
     void startTheFakeServer() throws IOException {
         server = new FakeLlmServer();
-        // Its own settings folder with an empty .env, so a developer's real .env is never read.
-        settingsDir = Files.createDirectories(tmp.resolve("settings"));
-        Files.writeString(settingsDir.resolve(".env"), "");
-        FileUtils.copyFile(Fixtures.settingsDir().resolve("strings.xml").toFile(), settingsDir.resolve("strings.xml").toFile());
         for (String k : KEYS) {
             savedProperties.put(k, System.getProperty(k));
         }
+        System.clearProperty("ITDROID_LLM_PROTECTED_TERMS");
         System.setProperty("ITDROID_LLM_ENDPOINT", server.endpoint());
         System.setProperty("ITDROID_LLM_MODEL", "test-model");
         System.setProperty("ITDROID_LLM_TIMEOUT", "20");
@@ -83,7 +82,7 @@ class LLMTranslatorTest {
     }
 
     private LLMTranslator translator() {
-        return new LLMTranslator(settingsDir.toString());
+        return new LLMTranslator();
     }
 
     // ------------------------------------------------------------------ batched JSON style
@@ -119,9 +118,8 @@ class LLMTranslatorTest {
     @Test
     void aTextAlreadyInTheInventoryIsNotSentAgain() throws Exception {
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
-        StringInventory inventory = StringInventory.collect(Fixtures.decodedApp().toString(), "com.example.shop.free",
-                new NotTranslatableStringsDictionary(settingsDir.toString()));
-        LLMTranslator translator = new LLMTranslator(settingsDir.toString(), inventory);
+        StringInventory inventory = Fixtures.inventory(Fixtures.decodedApp().toString(), "com.example.shop.free");
+        LLMTranslator translator = new LLMTranslator(inventory);
 
         translator.translateResourceTexts(List.of("Your cart"), "en", "es");
         Map<String, String> second = translator.translateResourceTexts(List.of("Your cart", "Checkout now"), "en", "es");
@@ -192,17 +190,25 @@ class LLMTranslatorTest {
         assertEquals(Map.of("Your cart", "Your cart"), out);
     }
 
-    /** A translation that lost its placeholder would crash the app, so it is rejected, retried and the source kept. */
+    /**
+     * A translation that lost its placeholder would crash the app, so it is rejected. The second request is
+     * not the same one again, the text is cut at its placeholder and the piece is translated alone.
+     */
     @Test
-    void theBatchedStyleRejectsATranslationThatLostItsPlaceholder() {
+    void theBatchedStyleTranslatesByPartsATextWhoseAnswerLostItsPlaceholder() {
         server.responder = r -> FakeLlmServer.translateItems(r, v -> v.startsWith("Hello") ? "Hola" : "ES " + v);
 
-        Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s", "Saved"), "en", "es");
+        LLMTranslator translator = translator();
+        Map<String, String> out = translator.translateResourceTexts(List.of("Hello %1$s", "Saved"), "en", "es");
 
-        assertEquals("Hello %1$s", out.get("Hello %1$s"), "kept in the source language");
+        assertEquals("Hola %1$s", out.get("Hello %1$s"), "the piece translated and the placeholder put back where it was");
         assertEquals("ES Saved", out.get("Saved"), "the rest of the batch is not affected");
-        assertEquals(2, server.requests.size(), "the batch and one retry of the rejected text");
-        assertEquals(List.of("Hello %1$s"), List.copyOf(server.requests.get(1).items.values()));
+        assertEquals(2, server.requests.size(), "the batch and one request with the piece");
+        assertEquals(List.of("Hello"), List.copyOf(server.requests.get(1).items.values()));
+        JSONObject report = translator.report("es");
+        assertEquals(1L, report.get("byPartsCount"));
+        assertEquals("Hola %1$s", ((JSONObject) ((JSONArray) report.get("byParts")).get(0)).get("translation"));
+        assertEquals(0L, report.get("keptInSourceCount"));
     }
 
     // ------------------------------------------------------------------ one text per request
@@ -232,14 +238,37 @@ class LLMTranslatorTest {
     }
 
     @Test
-    void aTranslationThatLosesItsPlaceholderTwiceIsKeptInTheSourceLanguage() {
+    void aTranslationThatLosesItsPlaceholderIsTranslatedByParts() {
         useTemplateStyle(false);
         server.responder = r -> "Hola";
 
         Map<String, String> out = translator().translateResourceTexts(List.of("Hello %1$s"), "en", "es");
 
-        assertEquals("Hello %1$s", out.get("Hello %1$s"));
-        assertEquals(2, server.requests.size(), "one attempt and one retry");
+        assertEquals("Hola %1$s", out.get("Hello %1$s"));
+        assertEquals(2, server.requests.size(), "one attempt and one request for the piece");
+        assertEquals("Hello", server.requests.get(1).text, "the second request is not the first one again");
+    }
+
+    /** When a piece cannot be used either, the text stays in the source language and the language records why. */
+    @Test
+    void whatFailsAsAWholeAndByPartsIsKeptAndReportedForThatLanguage() throws Exception {
+        useTemplateStyle(true);
+        server.responder = r -> r.text.contains("tap to place") ? "Sure! here it is" : "\u041d\u0430\u0436\u043c\u0438\u0442\u0435";
+
+        LLMTranslator translator = translator();
+        Map<String, String> out = translator.translateResourceTexts(List.of("%1$s \u00b7 tap to place"), "en", "ru");
+
+        assertEquals("%1$s \u00b7 tap to place", out.get("%1$s \u00b7 tap to place"));
+        assertEquals("<ph0> \u00b7 tap to place", server.requests.get(0).text);
+        assertEquals("tap to place", server.requests.get(1).text, "the piece between the placeholder and the end");
+        Map<String, String> kept = translator.keptInSource("ru");
+        assertTrue(kept.get("%1$s \u00b7 tap to place").startsWith("a placeholder was lost, and by parts: 'tap to place' "), kept.toString());
+        JSONObject report = translator.report("ru");
+        assertEquals(1L, report.get("keptInSourceCount"));
+        JSONObject entry = (JSONObject) ((JSONArray) report.get("keptInSource")).get(0);
+        assertEquals("%1$s \u00b7 tap to place", entry.get("text"));
+        assertEquals(List.of(), entry.get("names"), "a loose text has no resource name");
+        assertTrue(translator.keptInSource("es").isEmpty(), "recorded per language");
     }
 
     /** A literal is often a piece of a sentence built in code, so the translation takes the source's edge whitespace. */
@@ -248,7 +277,7 @@ class LLMTranslatorTest {
         useTemplateStyle(true);
         server.responder = r -> r.text.contains("of 3") ? "de 3 en tu carrito" : "  Art\u00edculos:";
 
-        Map<String, String> out = translator().translateUiLabels(List.of(" of 3 in your cart", "Items: "), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of(" of 3 in your cart", "Items: "), "en", "es");
 
         assertEquals(" de 3 en tu carrito", out.get(" of 3 in your cart"));
         assertEquals("Art\u00edculos: ", out.get("Items: "), "the model's own edge whitespace is dropped");
@@ -258,19 +287,10 @@ class LLMTranslatorTest {
     void theBatchedStyleKeepsTheEdgeSpacesToo() {
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v.trim());
 
-        Map<String, String> out = translator().translateUiLabels(List.of(" of 3 in your cart", "Saved\n"), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of(" of 3 in your cart", "Saved\n"), "en", "es");
 
         assertEquals(" ES of 3 in your cart", out.get(" of 3 in your cart"));
         assertEquals("ES Saved\n", out.get("Saved\n"));
-    }
-
-    @Test
-    void withEdgesPutsTheWhitespaceOfTheSourceAroundTheTranslation() {
-        assertEquals(" de 3 ", LLMTranslator.withEdges(" of 3 ", "de 3"));
-        assertEquals("Guardado", LLMTranslator.withEdges("Saved", "  Guardado \n"));
-        assertEquals("\n\tTexto", LLMTranslator.withEdges("\n\tText", "Texto"));
-        assertEquals("", LLMTranslator.withEdges(" x ", "   "), "an empty answer stays empty: it means no answer");
-        assertEquals("hola", LLMTranslator.withEdges("   ", "hola"), "a source that is only whitespace gives no edges");
     }
 
     // ------------------------------------------------------------------ values wrapped in quotes
@@ -294,11 +314,11 @@ class LLMTranslatorTest {
 
     @Test
     void theBatchedStyleAlsoSendsWhatIsInsideTheQuotes() {
-        server.responder = r -> FakeLlmServer.translateItems(r, v -> v.equals("Items: ") ? "\"Art\u00edculos:\"" : "ES " + v);
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> v.equals("Items:") ? "\"Art\u00edculos:\"" : "ES " + v);
 
         Map<String, String> out = translator().translateResourceTexts(List.of("\"Items: \"", "\"It's here\""), "en", "es");
 
-        assertEquals(List.of("Items: ", "It's here"), List.copyOf(server.requests.get(0).items.values()));
+        assertEquals(List.of("Items:", "It's here"), List.copyOf(server.requests.get(0).items.values()), "the edge space is set aside too");
         assertEquals("\"Art\u00edculos: \"", out.get("\"Items: \""), "quotes the model added on its own are not doubled");
         assertEquals("\"ES It's here\"", out.get("\"It's here\""));
     }
@@ -322,10 +342,9 @@ class LLMTranslatorTest {
         Files.writeString(strings, Files.readString(strings).replace("</resources>",
                 "    <string name=\"hint\">\"It's here\"</string>\n</resources>"));
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
-        StringInventory inventory = StringInventory.collect(app.toString(), "",
-                new NotTranslatableStringsDictionary(settingsDir.toString()));
+        StringInventory inventory = Fixtures.inventory(app.toString(), "");
 
-        new LLMTranslator(settingsDir.toString(), inventory).translate(strings.toString(), "en", "es");
+        new LLMTranslator(inventory).translate(strings.toString(), "en", "es");
 
         String written = Files.readString(app.resolve("res/values-es/strings.xml"));
         assertTrue(written.contains(">\"ES It\\'s here\"<"), written);
@@ -355,7 +374,7 @@ class LLMTranslatorTest {
         System.setProperty("ITDROID_LLM_STYLE", "plamo");
         server.responder = r -> "ES " + r.user;
 
-        translator().translateUiLabels(List.of("Open", "Your cart is empty right now"), "en", "es");
+        translator().translateResourceTexts(List.of("Open", "Your cart is empty right now"), "en", "es");
 
         Map<String, String> systemByText = new LinkedHashMap<>();
         server.requests.forEach(r -> systemByText.put(r.user, r.system));
@@ -372,7 +391,7 @@ class LLMTranslatorTest {
         System.setProperty("ITDROID_LLM_CONTEXT", "none");
         server.responder = r -> "ES " + r.user;
 
-        translator().translateUiLabels(List.of("Open"), "en", "es");
+        translator().translateResourceTexts(List.of("Open"), "en", "es");
 
         assertEquals("[plamo-translate]\nsource_lang=en\ntarget_lang=es", server.requests.get(0).system);
     }
@@ -405,7 +424,7 @@ class LLMTranslatorTest {
         server.responder = r -> "Guardado";
 
         LLMTranslator translator = translator();
-        Map<String, String> out = translator.translateUiLabels(List.of("Saved"), "en", "es");
+        Map<String, String> out = translator.translateResourceTexts(List.of("Saved"), "en", "es");
 
         assertEquals("plamo", translator.settings().get("style"));
         assertEquals(true, translator.settings().get("maskPlaceholders"));
@@ -424,11 +443,11 @@ class LLMTranslatorTest {
         server.responder = r -> echo;
         long before = (Long) LLMTranslator.stats().get("answersRejected");
 
-        Map<String, String> out = translator().translateUiLabels(List.of("English"), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of("English"), "en", "es");
 
         assertEquals("English", out.get("English"));
-        assertEquals(2, server.requests.size(), "asked once more before giving up");
-        assertEquals(before + 2, LLMTranslator.stats().get("answersRejected"));
+        assertEquals(1, server.requests.size(), "one word cannot be cut, and the same request would give the same answer");
+        assertEquals(before + 1, LLMTranslator.stats().get("answersRejected"));
     }
 
     @Test
@@ -459,12 +478,12 @@ class LLMTranslatorTest {
 
     // ------------------------------------------------------------------ protected terms
 
-    private void protect(String... terms) throws IOException {
-        Files.writeString(settingsDir.resolve(LLMTranslator.PROTECTED_TERMS_FILE),
-                "# names that are never translated\n\n" + String.join("\n", terms) + "\n");
+    /** The translation.protectedTerms line of the config, comma separated. */
+    private void protect(String... terms) {
+        System.setProperty("ITDROID_LLM_PROTECTED_TERMS", String.join(", ", terms));
     }
 
-    /** A name in protected-terms.txt travels as a token and comes back exactly as written. */
+    /** A name of translation.protectedTerms travels as a token and comes back exactly as written. */
     @Test
     void aProtectedTermTravelsMaskedAndComesBackAsWritten() throws IOException {
         protect("Juan P\u00e9rez", "Beanbook Cloud");
@@ -472,7 +491,7 @@ class LLMTranslatorTest {
         server.responder = r -> r.text.replace("Welcome back,", "\u0421\u043d\u043e\u0432\u0430 \u0440\u0430\u0434\u044b \u0432\u0438\u0434\u0435\u0442\u044c \u0432\u0430\u0441,");
 
         LLMTranslator translator = translator();
-        Map<String, String> out = translator.translateUiLabels(List.of("Welcome back, Juan P\u00e9rez"), "en", "ru");
+        Map<String, String> out = translator.translateResourceTexts(List.of("Welcome back, Juan P\u00e9rez"), "en", "ru");
 
         assertEquals(List.of("Juan P\u00e9rez", "Beanbook Cloud"), translator.protectedTerms());
         assertEquals("Welcome back, <ph0>", server.requests.get(0).text);
@@ -481,15 +500,15 @@ class LLMTranslatorTest {
     }
 
     @Test
-    void aTranslationThatLosesAProtectedTermIsKeptInTheSourceLanguage() throws IOException {
-        protect("ShiftSwift");
+    void aTranslationThatLosesAProtectedTermIsTranslatedByParts() throws IOException {
+        protect("Shiftswift");
         useTemplateStyle(true);
-        server.responder = r -> "Inicia sesi\u00f3n";     // the model dropped the token
+        server.responder = r -> "Inicia sesi\u00f3n en";     // the model dropped the token
 
-        Map<String, String> out = translator().translateUiLabels(List.of("Log in to ShiftSwift"), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of("Log in to Shiftswift"), "en", "es");
 
-        assertEquals("Log in to ShiftSwift", out.get("Log in to ShiftSwift"));
-        assertEquals(2, server.requests.size());
+        assertEquals("Inicia sesi\u00f3n en Shiftswift", out.get("Log in to Shiftswift"));
+        assertEquals(List.of("Log in to <ph0>", "Log in to"), server.requests.stream().map(r -> r.text).toList());
     }
 
     @Test
@@ -517,10 +536,10 @@ class LLMTranslatorTest {
         assertTrue(t.termsKept("Mail help@acme.com", "Escribe a help@acme.com"));
         assertFalse(t.termsKept("Mail help@acme.com", "Escribe a ayuda@acme.com"));
 
-        assertTrue(LLMTranslator.looksLikeBrand("ShiftSwift"));
-        assertTrue(LLMTranslator.looksLikeBrand("Super Productivity"));
-        assertTrue(LLMTranslator.looksLikeBrand("uMath+"));
-        assertFalse(LLMTranslator.looksLikeBrand("Tasks"), "an ordinary word is only protected when the user lists it");
+        assertTrue(Translatability.looksLikeBrand("ShiftSwift"));
+        assertTrue(Translatability.looksLikeBrand("Super Productivity"));
+        assertTrue(Translatability.looksLikeBrand("uMath+"));
+        assertFalse(Translatability.looksLikeBrand("Tasks"), "an ordinary word is only protected when the user lists it");
     }
 
     /** Models rewrite figures in the target locale's format, so a figure travels as a token and comes back as written. */
@@ -529,9 +548,9 @@ class LLMTranslatorTest {
         useTemplateStyle(true);
         server.responder = r -> r.text.replace("Balance on", "Saldo al").replace("at", "a las");
 
-        Map<String, String> out = translator().translateUiLabels(List.of("Balance on 20/09/2026 at 09:41: 6,568.65 EUR"), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of("Balance on 20/09/2026 at 09:41: 6,568.65 EUR"), "en", "es");
 
-        assertEquals("Balance on <ph0> at <ph1>: <ph2> EUR", server.requests.get(0).text);
+        assertEquals("Balance on <ph0> at <ph1>: <ph2>", server.requests.get(0).text, "the amount travels with its currency");
         assertEquals("Saldo al 20/09/2026 a las 09:41: 6,568.65 EUR", out.get("Balance on 20/09/2026 at 09:41: 6,568.65 EUR"));
     }
 
@@ -556,19 +575,24 @@ class LLMTranslatorTest {
         useTemplateStyle(true);
         server.responder = r -> "6.568,65 EUR en total";     // the model wrote the figure itself instead of the token
 
-        Map<String, String> out = translator().translateUiLabels(List.of("6,568.65 EUR in total"), "en", "es");
+        Map<String, String> out = translator().translateResourceTexts(List.of("6,568.65 EUR in total"), "en", "es");
 
         assertEquals("6,568.65 EUR in total", out.get("6,568.65 EUR in total"));
-        assertEquals(2, server.requests.size(), "asked again once, then the source text is kept");
+        assertEquals(2, server.requests.size(), "asked again by parts, where the piece came back with a figure it did not have");
     }
 
     // ------------------------------------------------------------------ placeholder helpers
+
+    /** The placeholders, tags and entities of a text masked as a request with maskPlaceholders masks them. */
+    private static String mask(String text, List<String> originals) {
+        return LLMTranslator.maskSpans(text, List.of(Translatability.PLACEHOLDER), originals, true);
+    }
 
     @Test
     void maskReplacesFormatsNamedPlaceholdersTagsAndEntities() {
         List<String> originals = new ArrayList<>();
 
-        String masked = LLMTranslator.mask("Hi %1$s &amp; {name}: <b>%.2f</b>", originals);
+        String masked = mask("Hi %1$s &amp; {name}: <b>%.2f</b>", originals);
 
         assertEquals("Hi <ph0> <ph1> <ph2>: <ph3><ph4><ph5>", masked);
         assertEquals(List.of("%1$s", "&amp;", "{name}", "<b>", "%.2f", "</b>"), originals);
@@ -584,7 +608,7 @@ class LLMTranslatorTest {
     void anEscapedLineBreakTravelsAsARealOneAndComesBackEscaped() {
         List<String> originals = new ArrayList<>();
 
-        String masked = LLMTranslator.mask("Line one\\nLine two", originals);
+        String masked = mask("Line one\\nLine two", originals);
 
         assertEquals("Line one\nLine two", masked);
         assertEquals("Línea uno\\nLínea dos", LLMTranslator.unmask("Línea uno\nLínea dos", originals, true));
@@ -604,15 +628,15 @@ class LLMTranslatorTest {
     void aPercentageIsNotTakenForAPlaceholder() {
         List<String> originals = new ArrayList<>();
 
-        assertEquals("50% of users", LLMTranslator.mask("50% of users", originals));
-        assertEquals("Symbol size (% of line width)", LLMTranslator.mask("Symbol size (% of line width)", originals));
-        assertEquals("20%off today", LLMTranslator.mask("20%off today", originals));
+        assertEquals("50% of users", mask("50% of users", originals));
+        assertEquals("Symbol size (% of line width)", mask("Symbol size (% of line width)", originals));
+        assertEquals("20%off today", mask("20%off today", originals));
         assertTrue(originals.isEmpty());
 
-        assertEquals("<ph0><ph1> of goal", LLMTranslator.mask("%1$d%% of goal", originals));
+        assertEquals("<ph0><ph1> of goal", mask("%1$d%% of goal", originals));
         assertEquals(List.of("%1$d", "%%"), originals, "the doubled percent is kept as it is");
         originals.clear();
-        assertEquals("<ph0> items (<ph1>), <ph2>MB of <ph3>", LLMTranslator.mask("%d items (%.2f), %dMB of %s", originals));
+        assertEquals("<ph0> items (<ph1>), <ph2>MB of <ph3>", mask("%d items (%.2f), %dMB of %s", originals));
         assertEquals(List.of("%d", "%.2f", "%d", "%s"), originals);
         assertTrue(LLMTranslator.placeholdersKept("50% of users", "50 % de los usuarios"), "no placeholder to keep");
         assertFalse(LLMTranslator.placeholdersKept("%d%% done", "%d hecho"));
@@ -625,10 +649,9 @@ class LLMTranslatorTest {
         Path app = tmp.resolve("shop");
         FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
-        StringInventory inventory = StringInventory.collect(app.toString(), "com.example.shop.free",
-                new NotTranslatableStringsDictionary(settingsDir.toString()));
+        StringInventory inventory = Fixtures.inventory(app.toString(), "com.example.shop.free");
 
-        new LLMTranslator(settingsDir.toString(), inventory)
+        new LLMTranslator(inventory)
                 .translate(app.resolve("res/values/strings.xml").toString(), "en", "es");
 
         Element root = new SAXBuilder().build(app.resolve("res/values-es/strings.xml").toFile()).getRootElement();
@@ -658,10 +681,9 @@ class LLMTranslatorTest {
         Files.writeString(values.resolve("strings.xml"),
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <string name=\"cart_title\">Tu carrito</string>\n</resources>\n");
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
-        StringInventory inventory = StringInventory.collect(app.toString(), "com.example.shop.free",
-                new NotTranslatableStringsDictionary(settingsDir.toString()));
+        StringInventory inventory = Fixtures.inventory(app.toString(), "com.example.shop.free");
 
-        new LLMTranslator(settingsDir.toString(), inventory)
+        new LLMTranslator(inventory)
                 .translate(app.resolve("res/values/strings.xml").toString(), "en", "es");
 
         Element root = new SAXBuilder().build(values.resolve("strings.xml").toFile()).getRootElement();
@@ -682,15 +704,219 @@ class LLMTranslatorTest {
         uniandes.tsdl.itdroid.helper.XmlLiterals.Extraction extraction = uniandes.tsdl.itdroid.helper.XmlLiterals.extract(
                 app.toString(), uniandes.tsdl.itdroid.helper.XmlLiterals.find(app.toString()), java.util.Set.of("Shop"));
         server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
-        StringInventory inventory = StringInventory.collect(app.toString(), "",
-                new NotTranslatableStringsDictionary(settingsDir.toString()));
+        StringInventory inventory = Fixtures.inventory(app.toString(), "");
 
-        new LLMTranslator(settingsDir.toString(), inventory)
+        new LLMTranslator(inventory)
                 .translate(app.resolve("res/values/strings.xml").toString(), "en", "es", extraction.names());
 
         Element root = new SAXBuilder().build(values.resolve("strings.xml").toFile()).getRootElement();
         assertEquals(List.of("cart_title", "itdroid_hc_1", "itdroid_hc_2", "itdroid_hc_3"),
                 root.getChildren().stream().map(e -> e.getAttributeValue("name")).toList(), "greeting and terms stay missing, as the developer left them");
         assertEquals("ES Add to cart", root.getChildren().get(1).getText());
+    }
+
+    // ------------------------------------------------------------------ answers that are not translations
+
+    /** A sentence left as it was is not a translation, a word, an acronym or a name may stay as it is. */
+    @Test
+    void aTextOfSeveralWordsLeftAsItWasIsRejected() {
+        LLMTranslator t = translator();
+
+        assertEquals("left in the source language", t.rejectReason("Backup to Google Drive now", "Backup to Google Drive now", "it"));
+        assertEquals("left in the source language", t.rejectReason("Sync failed.", "Sync failed", "es"), "punctuation does not count");
+        assertNull(t.rejectReason("Magnet", "Magnet", "it"));
+        assertNull(t.rejectReason("OK", "OK", "ar"));
+        assertNull(t.rejectReason("(GPX, KML)", "(GPX, KML)", "es"), "acronyms in capitals");
+        assertNull(t.rejectReason("Google Drive", "Google Drive", "es"), "a name of the built-in list");
+        assertNull(t.rejectReason("&lt;a href=\"https://x.org\"&gt;Link&lt;/a&gt;", "&lt;a href=\"https://x.org\"&gt;Link&lt;/a&gt;", "it"),
+                "one word inside an escaped link, Link is Italian too");
+        assertNull(t.rejectReason("pref_dark_mode", "pref_dark_mode", "es"), "an identifier is one word");
+    }
+
+    /** An answer with the letters of the source but other punctuation or case is unchanged, not in a wrong script. */
+    @Test
+    void anAnswerWithTheLettersOfTheSourceIsUnchangedNotInAWrongScript() {
+        LLMTranslator t = translator();
+
+        assertNull(t.rejectReason("(GPX, GeoJSON, KML)", "(GPX\u060c GeoJSON\u060c KML)", "ar"));
+        assertNull(t.rejectReason("Youtube", "YouTube", "ru"));
+    }
+
+    /** A Latin language takes no letters of another script, any other language takes Latin names besides its own script. */
+    @Test
+    void lettersOfAnotherScriptAreRejected() {
+        LLMTranslator t = translator();
+
+        assertEquals("not written in the script of the language", t.rejectReason("Backup to Google Drive", "\u5099\u4efd su Google Drive", "it"));
+        assertNull(t.rejectReason("Backup to Google Drive", "Backup su Google Drive", "it"));
+        assertEquals("not written in the script of the language",
+                t.rejectReason("Settings", "\u041f\u043e\u0434\u0435\u0448\u0430\u0432\u0430\u045a\u0430", "b+sr+Latn"), "Serbian in Latin letters");
+        assertNull(t.rejectReason("Settings", "Pode\u0161avanja", "b+sr+Latn"));
+        assertEquals("not written in the script of the language",
+                t.rejectReason("Open settings", "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u8a2d\u5b9a", "ru"), "a third script in a Russian answer");
+        assertNull(t.rejectReason("Value of \u03c0", "Valor de \u03c0", "es"), "a letter the source has");
+    }
+
+    @Test
+    void placeholdersMustNotMoveRepeatOrBeLeftAsTokens() {
+        LLMTranslator t = translator();
+
+        assertEquals("the order of the placeholders changed", t.rejectReason("%s has %d items", "%d art\u00edculos en %s", "es"));
+        assertNull(t.rejectReason("%1$s of %2$s", "%2$s de %1$s", "es"), "a positional placeholder may move");
+        assertEquals("a placeholder was repeated", t.rejectReason("%1$s items", "%1$s %1$s art\u00edculos", "es"));
+        assertEquals("a masking token was left in the answer", t.rejectReason("Save", "Guardar <ph1>", "es"));
+        assertEquals("a placeholder was lost", t.rejectReason("Hello {0}, you have {1} messages", "Hola, tienes mensajes", "es"));
+        assertEquals("a masking token was repeated", LLMTranslator.tokenProblem("<ph0> y <ph0>", 1));
+        assertEquals("the answer has a masking token the text did not have", LLMTranslator.tokenProblem("<ph0> y <ph1>", 1));
+        assertNull(LLMTranslator.tokenProblem("<ph1> y < PH0 >", 2));
+    }
+
+    // ------------------------------------------------------------------ what travels masked
+
+    @Test
+    void aDateSpecifierAndANumberedPlaceholderTravelWhole() {
+        List<String> originals = new ArrayList<>();
+
+        assertEquals("<ph0>-<ph1> or <ph2>", mask("%1$tY-%1$tm or {0}", originals));
+        assertEquals(List.of("%1$tY", "%1$tm", "{0}"), originals);
+    }
+
+    /** A link written with entities is one token, and the URL inside it ends at the escaped bracket. */
+    @Test
+    void anEscapedTagIsOneTokenAndAUrlStopsAtAnEntity() {
+        LLMTranslator t = translator();
+        List<String> originals = new ArrayList<>();
+        String source = "&lt;a href=https://www.cyclosm.org/&gt;CyclOSM&lt;/a&gt;, by OSM";
+
+        assertEquals("<ph0><ph1><ph2>, by OSM", t.maskTerms(source, originals));
+        assertEquals(List.of("&lt;a href=https://www.cyclosm.org/&gt;", "CyclOSM", "&lt;/a&gt;"), originals);
+        assertNull(t.rejectReason(source, "&lt;a href=https://www.cyclosm.org/&gt;CyclOSM&lt;/a&gt;\u060c \u0645\u0646 OSM", "ar"));
+        assertEquals("Visit <ph0>. Today", t.maskTerms("Visit https://acme.com/help. Today", new ArrayList<>()), "the period ends the sentence");
+    }
+
+    @Test
+    void addressesPathsNamesAndFiguresWithUnitsTravelMasked() {
+        LLMTranslator t = translator();
+
+        assertEquals(List.of("myapp://open/item"), masked(t, "Open myapp://open/item"));
+        assertEquals(List.of("content://com.example.provider/items"), masked(t, "Read content://com.example.provider/items"));
+        assertEquals(List.of("/sdcard/Download/MyApp/backup.json"), masked(t, "Saved to /sdcard/Download/MyApp/backup.json"));
+        assertEquals(List.of("com.example.app.MainActivity"), masked(t, "Started com.example.app.MainActivity"));
+        assertEquals(List.of("SettingsFragment"), masked(t, "Open SettingsFragment first"));
+        assertEquals(List.of("GeoJSON", "TabGreater", "iPhone"), masked(t, "GeoJSON for TabGreater on iPhone"));
+        assertEquals(List.of("Google Drive", "Ko-fi"), masked(t, "Backup to Google Drive or Ko-fi"));
+        assertEquals(List.of("5 km", "120 MB", "$5", "6,568.65 EUR"), masked(t, "Walk 5 km, download 120 MB, pay $5 of 6,568.65 EUR"));
+        assertEquals(List.of(), masked(t, "Top 10 results in 5 minutes"), "a bare number stays, the words around it agree with it");
+        assertEquals(List.of(), masked(t, "Yes/No and/or km/h"), "a slash between words is not a path");
+    }
+
+    private static List<String> masked(LLMTranslator t, String text) {
+        List<String> originals = new ArrayList<>();
+        t.maskTerms(text, originals);
+        return originals;
+    }
+
+    /** An escaped newline at the edge of a value is set aside and put back, so the answer is not rejected for losing it. */
+    @Test
+    void anEscapedNewlineAtTheEdgeIsSetAsideAndPutBack() {
+        useTemplateStyle(true);
+        server.responder = r -> r.text.equals("Sync failed.") ? "La sincronizaci\u00f3n fall\u00f3." : "ES " + r.text;
+
+        Map<String, String> out = translator().translateResourceTexts(List.of("Sync failed.\\n", "\\n\\tTap to retry"), "en", "es");
+
+        assertEquals("La sincronizaci\u00f3n fall\u00f3.\\n", out.get("Sync failed.\\n"));
+        assertEquals("\\n\\tES Tap to retry", out.get("\\n\\tTap to retry"));
+        assertTrue(server.requests.stream().noneMatch(r -> r.text.contains("\\")), "no escape reaches the model");
+    }
+
+    /** A value that is only a placeholder or a name has nothing to translate, so it is not sent. */
+    @Test
+    void aValueWithNothingToTranslateIsNotSent() {
+        useJsonStyle();
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
+
+        Map<String, String> out = translator().translateResourceTexts(List.of("%1$s", "GitHub", "https://acme.com"), "en", "es");
+
+        assertEquals(Map.of("%1$s", "%1$s", "GitHub", "GitHub", "https://acme.com", "https://acme.com"), out);
+        assertTrue(server.requests.isEmpty());
+    }
+
+    // ------------------------------------------------------------------ the translation memory
+
+    /** An answer stored by an older run that the checks now reject, or that another model gave, is asked again. */
+    @Test
+    void theMemoryOnlyReusesWhatTheSameModelGaveAndStillPassesTheChecks() throws Exception {
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> "ES " + v);
+        StringInventory inventory = Fixtures.inventory(Fixtures.decodedApp().toString(), "com.example.shop.free");
+        inventory.useModel("es", "test-model");
+        inventory.putTranslation("es", "Your cart", "Your cart");            // identical, several words
+        inventory.putTranslation("es", "Checkout now", "Pagar ahora");      // fine
+
+        Map<String, String> out = new LLMTranslator(inventory).translateResourceTexts(List.of("Your cart", "Checkout now"), "en", "es");
+
+        assertEquals("ES Your cart", out.get("Your cart"));
+        assertEquals("Pagar ahora", out.get("Checkout now"), "reused");
+        assertEquals(List.of("Your cart"), List.copyOf(server.requests.get(0).items.values()));
+
+        // saved with the model, and a run with another model does not reuse it
+        Path saved = tmp.resolve("strings_inventory.json");
+        inventory.save(saved);
+        assertTrue(Files.readString(saved).contains("\"translationModels\": {\n    \"es\": \"test-model\""), Files.readString(saved));
+        StringInventory next = Fixtures.inventory(Fixtures.decodedApp().toString(), "com.example.shop.free");
+        next.loadPreviousTranslations(saved);
+        System.setProperty("ITDROID_LLM_MODEL", "other-model");
+        server.requests.clear();
+        new LLMTranslator(next).translateResourceTexts(List.of("Checkout now"), "en", "es");
+        assertEquals(1, server.requests.size(), "another model translates it again");
+        assertEquals("ES Checkout now", next.translation("es", "Checkout now"));
+    }
+
+    // ------------------------------------------------------------------ languages
+
+    /** Every code gets its English name with region or script, Swedish was answered in Polish when the code went bare. */
+    @Test
+    void theModelIsToldTheFullNameOfAnyLanguage() {
+        useTemplateStyle(true);
+        server.responder = r -> "X " + r.text;
+        LLMTranslator t = translator();
+
+        t.translateResourceTexts(List.of("Your cart"), "en", "sv");
+        t.translateResourceTexts(List.of("Your cart"), "en", "zh-rTW");
+        t.translateResourceTexts(List.of("Your cart"), "en", "b+sr+Latn");
+
+        assertEquals(List.of("Translate into Swedish:", "Translate into Chinese (Taiwan):", "Translate into Serbian (Latin):"),
+                server.requests.stream().map(r -> r.user.substring(0, r.user.indexOf('\n'))).toList());
+        assertEquals("Portuguese (Portugal)", LanguageBundle.name("pt-rPT"));
+        assertEquals("sr-Latn", LanguageBundle.tag("b+sr+Latn"));
+        assertEquals("sr", LLMTranslator.plamoCode("b+sr+Latn"));
+    }
+
+    // ------------------------------------------------------------------ the app's copies of the source text
+
+    /** A string the app ships for a language with the English text is translated where it is, never defined twice. */
+    @Test
+    void theAppsCopyOfTheSourceTextIsTranslatedInPlace() throws Exception {
+        Path app = tmp.resolve("shop");
+        FileUtils.copyDirectory(Fixtures.decodedApp().toFile(), app.toFile());
+        Path values = Files.createDirectories(app.resolve("res/values-es"));
+        Files.writeString(values.resolve("strings.xml"),
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <string name=\"cart_title\">Your cart</string>\n</resources>\n");
+        server.responder = r -> FakeLlmServer.translateItems(r, v -> v.equals("Your cart") ? "Tu carrito" : "ES " + v);
+        StringInventory inventory = Fixtures.inventory(app.toString(), "com.example.shop.free");
+
+        LLMTranslator translator = new LLMTranslator(inventory);
+        translator.translate(app.resolve("res/values/strings.xml").toString(), "en", "es", null, java.util.Set.of("cart_title"));
+
+        Element root = new SAXBuilder().build(values.resolve("strings.xml").toFile()).getRootElement();
+        List<Element> titles = root.getChildren().stream().filter(e -> "cart_title".equals(e.getAttributeValue("name"))).toList();
+        assertEquals(1, titles.size(), "a resource must not be defined twice");
+        assertEquals("Tu carrito", titles.get(0).getText());
+        assertTrue(root.getChildren().stream().anyMatch(e -> "greeting".equals(e.getAttributeValue("name"))), "the missing ones are added as usual");
+        JSONObject report = translator.report("es");
+        assertEquals(1L, report.get("appCopiesCount"));
+        JSONObject copy = (JSONObject) ((JSONArray) report.get("appCopies")).get(0);
+        assertEquals("cart_title", copy.get("name"));
+        assertEquals("Your cart", copy.get("text"));
+        assertEquals("Tu carrito", copy.get("translation"));
     }
 }

@@ -2,7 +2,7 @@ package uniandes.tsdl.itdroid.helper;
 
 import java.io.UnsupportedEncodingException;
 
-/** The working directory, which languages are written from right to left, and a Levenshtein distance. */
+/** The working directory and which languages are written from right to left. */
 public class Helper {
 
 	private static Helper instance = null;
@@ -30,55 +30,4 @@ public class Helper {
 	public String getCurrentDirectory() throws UnsupportedEncodingException {
 		return System.getProperty("user.dir");
 	}
-
-	public static int levenshteinDistance(String left, String right) {
-		left = left.toLowerCase();
-		right = right.toLowerCase();
-        int n = left.length();
-        int m = right.length();
-
-        if (n == 0) {
-            return m;
-        } else if (m == 0) {
-            return n;
-        }
-
-        if (n > m) {
-            // the shorter string sizes the row, to use less memory
-            final String tmp = left;
-            left = right;
-            right = tmp;
-            n = m;
-            m = right.length();
-        }
-
-        int[] p = new int[n + 1];
-
-        int i;
-        int j;
-        int upper_left;
-        int upper;
-
-        char rightJ;
-        int cost;
-
-        for (i = 0; i <= n; i++) {
-            p[i] = i;
-        }
-
-        for (j = 1; j <= m; j++) {
-            upper_left = p[0];
-            rightJ = right.charAt(j - 1);
-            p[0] = j;
-
-            for (i = 1; i <= n; i++) {
-                upper = p[i];
-                cost = left.charAt(i - 1) == rightJ ? 0 : 1;
-                p[i] = Math.min(Math.min(p[i - 1] + 1, p[i] + 1), upper_left + cost);
-                upper_left = upper;
-            }
-        }
-
-        return p[n];
-    }
 }

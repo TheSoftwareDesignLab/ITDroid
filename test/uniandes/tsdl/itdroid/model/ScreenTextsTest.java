@@ -164,6 +164,23 @@ class ScreenTextsTest {
         assertTrue(apk.has("Settings"));
     }
 
+    /** soundpod showed other artists in the dump than in the screenshot, a cut text there says nothing of a translation. */
+    @Test
+    void onlyATextOfTheApkCountsAsATranslation() {
+        try {
+            ScreenTexts.setApkTexts(java.util.List.of("Select Preset", "Shots Fired: %d"), "asia russia sia fans");
+            assertTrue(ScreenTexts.isAppString("Select Preset"));
+            assertTrue(ScreenTexts.isAppString("Shots Fired: 12"), "a format of one");
+            assertFalse(ScreenTexts.isAppString("Michael Jackson"), "a name from the network");
+            assertFalse(ScreenTexts.isAppString("Sia"), "found by chance in the files, not a string of the app");
+            assertFalse(ScreenTexts.isAppString("Select"), "a part of a string");
+            ScreenTexts.setApkTexts(null);
+            assertTrue(ScreenTexts.isAppString("Michael Jackson"), "with the texts of the APK unknown nothing is left out");
+        } finally {
+            ScreenTexts.setApkTexts(null);
+        }
+    }
+
     @Test
     void aTextOfSeveralLinesIsInTheApkWhenEachLineIs() {
         ScreenTexts.ApkTexts apk = new ScreenTexts.ApkTexts(java.util.List.of("Pick a place. Put your phone away.", "It rings when you arrive."));

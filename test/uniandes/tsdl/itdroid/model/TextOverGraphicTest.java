@@ -69,7 +69,7 @@ class TextOverGraphicTest {
     private static List<TextOverGraphic.Hit> find(String sourceDump, BufferedImage sourceShot, String languageDump, BufferedImage languageShot) throws Exception {
         State source = new State(1, ".Main", sourceDump, "");
         State language = new State(1, ".Main", languageDump, "");
-        return TextOverGraphic.find(source, sourceShot, language, languageShot, NodePairing.of(source, language));
+        return TextOverGraphic.find(source, new Ink(sourceShot), language, new Ink(languageShot), NodePairing.of(source, language, false, 0));
     }
 
     @Test
@@ -84,6 +84,41 @@ class TextOverGraphicTest {
         int[] g = hit.graphic;
         assertTrue(g[0] >= 790 && g[0] <= 805 && g[2] >= 855 && g[2] <= 870 && g[1] >= 130 && g[3] <= 190,
                 "the graphic is the arrow: " + java.util.Arrays.toString(g));
+    }
+
+    /** The text covers half of the arrow, which no longer looks the same where it is covered. */
+    @Test
+    void anArrowMostlyCoveredByTheTextIsStillFoundWhereItIs() throws Exception {
+        BufferedImage translated = shot(640, 860, 140, 180);
+        Graphics2D g = translated.createGraphics();
+        g.setColor(Color.BLACK);
+        for (int x = 646; x <= 860; x += 12) {
+            g.fillRect(x, 140, 3, 40);
+        }
+        g.dispose();
+
+        List<TextOverGraphic.Hit> hits = find(dump("Select preset", false), shot(120, 400, 145, 175), dump("Elegir", false), translated);
+
+        assertEquals(1, hits.size());
+        int[] box = hits.get(0).graphic;
+        assertTrue(box[0] >= 790 && box[2] <= 870, "the graphic is the arrow: " + java.util.Arrays.toString(box));
+    }
+
+    /** The outline of the drop-down reaches from its top to its bottom, a side of its frame and not a graphic in it. */
+    @Test
+    void theSideOfTheFrameOfTheBoxIsNotAGraphic() throws Exception {
+        BufferedImage source = shot(120, 400, 145, 175), translated = shot(640, 898, 150, 170);
+        for (BufferedImage img : new BufferedImage[] { source, translated }) {
+            Graphics2D g = img.createGraphics();
+            g.setColor(Color.DARK_GRAY);
+            g.fillRect(894, 102, 6, 116);
+            g.dispose();
+        }
+
+        List<TextOverGraphic.Hit> hits = find(dump("Select preset", false), source, dump("Elegir", false), translated);
+
+        assertEquals(1, hits.size(), "only the arrow");
+        assertTrue(hits.get(0).graphic[2] <= 870, java.util.Arrays.toString(hits.get(0).graphic));
     }
 
     @Test
